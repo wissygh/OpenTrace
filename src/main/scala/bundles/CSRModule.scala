@@ -87,7 +87,7 @@ class CSRModule[T <: CSRBundle](
 
 class CSRAddrWriteBundle[T <: CSRBundle](bundle: T) extends Bundle {
   val wen = Bool()
-  val wdata = UInt(64.W)
+  val wdata = UInt(32.W)
 
   def wdataFields: T = {
     val wdataField = (Wire(bundle))

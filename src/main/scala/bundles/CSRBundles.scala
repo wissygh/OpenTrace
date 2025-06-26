@@ -9,7 +9,7 @@ import chisel3.experimental.noPrefix
 
 object CSRBundles {
   class OneFieldBundle extends CSRBundle {
-    val ALL = RW(32, 0)
+    val ALL = RW(31, 0)
   }
 
   class FieldInitBundle extends OneFieldBundle {
