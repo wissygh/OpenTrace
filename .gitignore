@@ -45,6 +45,9 @@ test_run_dir/*
 *_usage.xml
 *_xst.xrpt
 
+# todo list
+src/main/scala/todo.md
+
 # project-wide generated files
 *.gise
 par_usage_statistics.html
