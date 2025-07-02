@@ -11,7 +11,6 @@ import trace.Trace
 
 import scala.collection.immutable.SeqMap
 
-object PibAddr {
-  val trPibControl = 0x000
-  val trPibImpl    = 0x004
+trait PIBSinkControl {
+
 }

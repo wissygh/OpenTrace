@@ -1,4 +1,4 @@
-package trace.control
+ package trace.control
 
 import chisel3._
 import chisel3.util._
@@ -11,44 +11,33 @@ import trace.Trace
 import trace.component.Funnel
 
 import scala.collection.immutable.SeqMap
+ 
+trait FunnelControl extends ControlBase { self: Funnel =>
 
-object FunnelAddr {
-  val trFunnelControl = 0x000
-  val trFunnelImpl = 0x004
-  val trFunnelDisInput = 0x008
-
-  // Timestamp control
-  val trTsControl = 0x040
-  val trTsCounterLow = 0x048
-  val trTsCounterHigh = 0x04c
-}
-
-trait FunnelControl { self: Funnel =>
-
-  val trFunnelContrl = Module(new CSRModule("TrFunnelControl", new TrFunnelContrlBundle))
-    .setAddr(FunnelAddr.trFunnelControl)
+  val trFunnelControl = Module(new CSRModule("TrFunnelControl", new TrFunnelControlBundle))
+    .setAddr(CtrlReg.trFunnelControl)
 
   val trFunnelImpl = Module(new CSRModule("TrFunnelImpl", new TrFunnelImplBundle){})
-    .setAddr(FunnelAddr.trFunnelImpl)
+    .setAddr(CtrlReg.trFunnelImpl)
 
   val trFunnelDisInput = Module(new CSRModule("trFunnelDisInput", new TrFunnelDisInputBundle){})
-    .setAddr(FunnelAddr.trFunnelDisInput)
-  
+    .setAddr(CtrlReg.trFunnelDisInput)
+
   /**
    * timestamp todo: fix name
    */
   val trTsControl = Module(new CSRModule("trTsControl", new OneROFieldBundle){})
-    .setAddr(FunnelAddr.trTsControl)
+    .setAddr(CtrlReg.trTsControl)
 
   val trTsCounterLow = Module(new CSRModule("trTsCounterLow", new OneROFieldBundle){})
-    .setAddr(FunnelAddr.trTsCounterLow)
+    .setAddr(CtrlReg.trTsCounterLow)
 
   val trTsCounterHigh = Module(new CSRModule("trTsCounterHigh", new OneROFieldBundle){})
-    .setAddr(FunnelAddr.trTsCounterHigh)
-  
+    .setAddr(CtrlReg.trTsCounterHigh)
 
-  val funnelRegMods: Seq[CSRModule[_]] = Seq(
-    trFunnelContrl,
+
+  override val controlMods: Seq[CSRModule[_]] = Seq(
+    trFunnelControl,
     trFunnelImpl,
     trFunnelDisInput,
     trTsControl,
@@ -56,18 +45,11 @@ trait FunnelControl { self: Funnel =>
     trTsCounterHigh,
   )
 
-  val funnelRegRWMap: SeqMap[Int, (CSRAddrWriteBundle[_], UInt)] = SeqMap.from(
-    funnelRegMods.map(reg => (reg.addr -> (reg.w -> reg.rdata))).iterator
-  )
-
-  val funnelRegOutMap: SeqMap[Int, UInt] = SeqMap.from(
-    funnelRegMods.map(reg => (reg.addr -> reg.regOut.asInstanceOf[CSRBundle].asUInt)).iterator
-  )
 
 }
 
 
-class TrFunnelContrlBundle extends CSRBundle {
+class TrFunnelControlBundle extends CSRBundle {
   val Active              = RW(0)
   val Enable              = RW(1)
   val Emptry              = RO(3)
@@ -76,7 +58,7 @@ class TrFunnelContrlBundle extends CSRBundle {
 class TrFunnelImplBundle extends CSRBundle {
   val VerMajor      = RO(3, 0)
   val VerMinor      = RO(7, 4)
-  val CompType      = RO(11, 8).withReset(TrcompTypeFiled.Funnel)
+  val CompType      = TrcompTypeFiled(11, 8, wNoFilter).withReset(TrcompTypeFiled.Funnel)
 }
 
 class TrFunnelDisInputBundle extends CSRBundle {
