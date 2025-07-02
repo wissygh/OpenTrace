@@ -14,8 +14,6 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import utils._
 
-import scala.collection.immutable.SeqMap
-
 class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends LazyModule
   with TraceParameters
 {
@@ -26,20 +24,16 @@ class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends La
   ))))
   val tlnode = tl.map(tl => InModuleBody(tl.makeIOs()))
 
-  val axi4 = Option.when(busType.isAXI)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
-    Seq(AXI4MasterParameters("axi4", IdRange(0, 1)))
-  ))))
-  val axi4node = axi4.map(axi4 => InModuleBody {
-    val axi4node = chisel3.IO(Flipped(new VerilogAXI4Record(axi4.out.head._1.params)))
-    axi4node.viewAs[AXI4Bundle] <> axi4.out.head._1
-    axi4node
-  })
+  bus2Control.tl.foreach(_ := tl.get)
 
-  bus2Control.tlnode.foreach(_ <> tlnode.get)
-//  bus2Control.xbar.foreach(_ := tlnode.get)
-  bus2Control.axi4node.foreach(_ <> axi4node.get)
-
-
+//  val axi4 = Option.when(busType.isAXI)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
+//    Seq(AXI4MasterParameters("axi4", IdRange(0, 1)))
+//  ))))
+//  val axi4node = axi4.map(axi4 => InModuleBody {
+//    val axi4node = chisel3.IO(Flipped(new VerilogAXI4Record(axi4.out.head._1.params)))
+//    axi4node.viewAs[AXI4Bundle] <> axi4.out.head._1
+//    axi4node
+//  })
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) {
     val io = IO(new Bundle {
@@ -52,13 +46,19 @@ class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends La
      */
     val (fromCore, toCore) = (io.fromCore, io.toCore)
 
+//    bus2Control.tlnode.foreach(_ <> tlnode.get)
+    //  bus2Control.xbar.foreach(_ := tlnode.get)
+//    bus2Control.axi4node.foreach(_ <> axi4node.get)
 
     /**
      * module: [[bus2ctrl]] [[encoderVec]] [[funnel]]
      */
-    val encoderVec = Range(0, hart_num).map(i => Module(new Encoder))
+    val encoderVec = Range(0, hart_num).map(i => Module(new Encoder(encoderBaseAddr + memStep * i)))
     val bus2ctrl = bus2Control.module
-    val funnel = Module(new Funnel)
+    val funnel = Module(new Funnel(funnelBaseAddr))
+
+//    encoderVec.foreach(_.connect())
+//    funnel.connect()
 
     /**
      * connection
@@ -77,18 +77,21 @@ class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends La
      *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]]
      *             \---- [bus read req] <----------- [read data] <-------/
      */
-    encoderVec.zip(fromCore).zip(funnel.io.packets).map{ case((encoder, ingressPort), packet) => {
-      encoder.io.bus.b2c := bus2ctrl.io.b2c
+    encoderVec.zip(fromCore).zip(toCore).zip(funnel.io.packets).map{ case(((encoder, ingressPort), toCore), packet) => {
+      encoder.bus.b2c := bus2ctrl.io.b2c
       toCore := encoder.io.toCore
 
       encoder.io.fromCore := ingressPort
       packet := encoder.io.packet
     }}
 
-    val compControl2Bus = (encoderVec.map(_.io.bus) ++ Seq(funnel.io.bus)).map(_.c2b)
+    funnel.bus.b2c := bus2ctrl.io.b2c
+
+    val compControl2Bus = (encoderVec.map(_.bus) ++ Seq(funnel.bus)).map(_.c2b)
     bus2ctrl.io.c2b.error := compControl2Bus.map(_.error).reduce(_ | _)
     bus2ctrl.io.c2b.dataRead := compControl2Bus.map(_.dataRead).reduce(_ | _)
   }
 
   lazy val module = new TraceImp(this)
 }
+

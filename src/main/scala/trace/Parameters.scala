@@ -49,15 +49,6 @@ trait TraceParameters {
   def doptions_width_p = 2
 
   /**
-   * Trace components' memmory map base address
-   */
-  def encoder0_base_address = 0x0;
-  def funnel0_base_address = 0x0;
-  def atbbridge_base_address = 0x0;
-  def pib_base_address = 0x0;
-  def ramsink_base_address = 0x0;
-
-  /**
    * the num of harts
    * the num of filter
    * the num of comparator
@@ -74,6 +65,38 @@ trait TraceParameters {
   def trcomp_ramsink   = 0x9
   def trcomp_pibsink   = 0xA
   def trcomp_atbbridge = 0xE
+
+  /**
+   * trace memory map address
+   * Each Trace Component is controlled by a set of 32-bit registers occupying up to 4KB of an address
+   * space. Base address of each trace component must be aligned on the 4KB boundary.
+   *
+   * 1. MemMap("h00_2000_0000", "h00_20FF_FFFF",   "h0", "Reserved",    "RW")
+   *  => real Range: ("h00_2000_0000", "h00_2000_0000" + "h1_0000" * [[allComp_num]] -"h1")
+   *  encoder, funnel, atbbridge, pib, ramsink
+   */
+
+  def encoder0_base_address = 0x0;
+  def funnel0_base_address = 0x0;
+  def atbbridge_base_address = 0x0;
+  def pib_base_address = 0x0;
+  def ramsink_base_address = 0x0;
+
+  def encoder_num = hart_num
+  def funnel_num = 1
+  def atbbridge_num = 1
+  def pib_num = 1
+  def ramsink_num = 1
+  def allComp_num = encoder_num + funnel_num + atbbridge_num + pib_num + ramsink_num
+
+  def traceBaseAddr   = 0x00_2000_0000
+  def memStep         = 0x1_0000
+
+  def encoderBaseAddr   = traceBaseAddr
+  def funnelBaseAddr    = encoderBaseAddr   + memStep * encoder_num
+  def atbbridgeBaseAddr = funnelBaseAddr    + memStep * funnel_num
+  def pibBaseAddr       = atbbridgeBaseAddr + memStep * atbbridge_num
+  def ramSinkAddr       = pibBaseAddr       + memStep * pib_num
 }
 
 case class BusType(

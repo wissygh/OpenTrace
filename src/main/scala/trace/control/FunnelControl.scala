@@ -23,7 +23,7 @@ object FunnelAddr {
   val trTsCounterHigh = 0x04c
 }
 
-trait FunnelControl { self: Funnel =>
+trait FunnelControl extends ControlBase { self: Funnel =>
 
   val trFunnelContrl = Module(new CSRModule("TrFunnelControl", new TrFunnelContrlBundle))
     .setAddr(FunnelAddr.trFunnelControl)
@@ -47,7 +47,7 @@ trait FunnelControl { self: Funnel =>
     .setAddr(FunnelAddr.trTsCounterHigh)
   
 
-  val funnelRegMods: Seq[CSRModule[_]] = Seq(
+  override val controlMods: Seq[CSRModule[_]] = Seq(
     trFunnelContrl,
     trFunnelImpl,
     trFunnelDisInput,
@@ -56,12 +56,12 @@ trait FunnelControl { self: Funnel =>
     trTsCounterHigh,
   )
 
-  val funnelRegRWMap: SeqMap[Int, (CSRAddrWriteBundle[_], UInt)] = SeqMap.from(
-    funnelRegMods.map(reg => (reg.addr -> (reg.w -> reg.rdata))).iterator
+  override val controlRWMap: SeqMap[Int, (CSRAddrWriteBundle[_], UInt)] = SeqMap.from(
+    controlMods.map(reg => (reg.addr -> (reg.w -> reg.rdata))).iterator
   )
 
-  val funnelRegOutMap: SeqMap[Int, UInt] = SeqMap.from(
-    funnelRegMods.map(reg => (reg.addr -> reg.regOut.asInstanceOf[CSRBundle].asUInt)).iterator
+  override val controlOutMap: SeqMap[Int, UInt] = SeqMap.from(
+    controlMods.map(reg => (reg.addr -> reg.regOut.asInstanceOf[CSRBundle].asUInt)).iterator
   )
 
 }
@@ -76,7 +76,7 @@ class TrFunnelContrlBundle extends CSRBundle {
 class TrFunnelImplBundle extends CSRBundle {
   val VerMajor      = RO(3, 0)
   val VerMinor      = RO(7, 4)
-  val CompType      = RO(11, 8).withReset(TrcompTypeFiled.Funnel)
+  val CompType      = TrcompTypeFiled(11, 8, wNoFilter).withReset(TrcompTypeFiled.Funnel)
 }
 
 class TrFunnelDisInputBundle extends CSRBundle {

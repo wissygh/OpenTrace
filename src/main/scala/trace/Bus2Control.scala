@@ -45,15 +45,27 @@ class Control2BusRegBundle extends Bundle {
 //}
 
 
-class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends LazyModule {
+class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends LazyModule with TraceParameters {
 
-  val tl = Option.when(busType.isTL)(TLClientNode(Seq(TLMasterPortParameters.v1(
-    Seq(TLMasterParameters.v1("tl", IdRange(0, 1)))
-  ))))
-  val tlnode = tl.map(tl => InModuleBody(tl.makeIOs()))
+  val tl = Option.when(busType.isTL)(TLIdentityNode())
 
-//  val xbar = Option.when(busType.isTL)(TLXbar())
-//  xbar.foreach(_ := tlnode.get)
+  def mask = 0xFF_FFFF
+  def addressSet = AddressSet(traceBaseAddr, mask)
+  def addrWidth = 64
+  def dataSize = 32
+
+  private val dummy = LazyModule(new TLError(
+    params = DevNullParams(
+      address = AddressSet(0, (BigInt(1) << addrWidth) - 1).subtract(addressSet),
+      maxAtomic = 8,
+      maxTransfer = 64
+    ),
+    beatBytes = dataSize / 8
+  ))
+
+  val xbar = Option.when(busType.isTL)(TLXbar())
+  xbar.foreach(_ := tl.get)
+  dummy.node := xbar.get
 
 
   val axi4 = Option.when(busType.isAXI)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
@@ -76,8 +88,8 @@ class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) exte
         val readEn     = RegInit(false.B)
         val writeEn    = RegInit(false.B)
 
-        val aChannel = wrapper.tlnode.get.head.a
-        val dChannel = wrapper.tlnode.get.head.d
+        val aChannel = wrapper.tl.get.in.head._1.a
+        val dChannel = wrapper.tl.get.in.head._1.d
 
         address   := aChannel.bits.address
         writeEn   := aChannel.bits.opcode === TLMessages.Get && aChannel.valid
@@ -92,7 +104,7 @@ class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) exte
         io.b2c.readEn   := readEn
         dChannel.bits.data := RegNext(io.c2b.dataRead)
         dChannel.valid := RegNext(readEn)
-        dChannel.bits.corrupt := RegNext(address(1, 0) =/= 0.U) || io.c2b.error //todo: check msb of addr
+        dChannel.bits.corrupt := RegNext(address(1, 0) =/= 0.U) || io.c2b.error //msb enqual checking in tlerror
 
         aChannel.ready := true.B
       } else if(busType.isAXI) {
