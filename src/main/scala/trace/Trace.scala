@@ -19,12 +19,25 @@ class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends La
 {
   val bus2Control = LazyModule(new Bus2Control(busType))
 
-  val tl = Option.when(busType.isTL)(TLClientNode(Seq(TLMasterPortParameters.v1(
-    Seq(TLMasterParameters.v1("tl", IdRange(0, 1)))
+  /**
+   * tilelink
+   */
+  val tlmatser = Option.when(busType.isTL && !xs_imisc)(TLClientNode(Seq(TLMasterPortParameters.v1(
+    Seq(TLMasterParameters.v1(
+      name = "tl",
+      sourceId = IdRange(0, 1)
+    ))
   ))))
-  val tlnode = tl.map(tl => InModuleBody(tl.makeIOs()))
+  val tlmasternode = tlmatser.map(tl => InModuleBody(tl.makeIOs()))
+  tlmatser.foreach(bus2Control.tlslavenode.get := _)
 
-  val axi4 = Option.when(busType.isAXI)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
+  val tlnode = Option.when(busType.isTL && xs_imisc)(TLIdentityNode())
+  tlnode.foreach(bus2Control.tlslavenode.get := _)
+
+  /**
+   * axi todo
+   */
+  val axi4 = Option.when(busType.isAXI && !xs_imisc)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
     Seq(AXI4MasterParameters("axi4", IdRange(0, 1)))
   ))))
   val axi4node = axi4.map(axi4 => InModuleBody {
@@ -33,7 +46,18 @@ class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends La
     axi4node
   })
 
-  bus2Control.tl.foreach(_ := tl.get)
+  /**
+   * apb todo
+   */
+  val apb = Option.when(busType.isAPB && !xs_imisc)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
+    Seq(AXI4MasterParameters("axi4", IdRange(0, 1)))
+  ))))
+  val apbnode = apb.map(axi4 => InModuleBody {
+    val axi4node = chisel3.IO(Flipped(new VerilogAXI4Record(axi4.out.head._1.params)))
+    axi4node.viewAs[AXI4Bundle] <> axi4.out.head._1
+    axi4node
+  })
+
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) {
     val io = IO(new Bundle {
@@ -70,13 +94,14 @@ class Trace(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends La
      *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]]
      *             \---- [bus read req] <----------- [read data] <-------/
      */
-    encoderVec.zip(fromCore).zip(toCore).zip(funnel.io.packets).map{ case(((encoder, ingressPort), toCore), packet) => {
+    encoderVec.zip(fromCore).zip(toCore).map{ case((encoder, ingressPort), toCore) => {
       encoder.bus.b2c := bus2ctrl.io.b2c
       toCore := encoder.io.toCore
 
       encoder.io.fromCore := ingressPort
-      packet := encoder.io.packet
     }}
+
+    encoderVec.zip(funnel.io.packets).map{ case (encoder, packet) => packet := encoder.io.packet }
 
     funnel.bus.b2c := bus2ctrl.io.b2c
 

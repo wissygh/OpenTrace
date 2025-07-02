@@ -24,12 +24,12 @@ abstract class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends Modu
   // control write
   def connectCtrlReg() = {
       for ((id, (wBundle, _)) <- controlRWMap) {
-        wBundle.wen := bus.b2c.writeEn && bus.b2c.address === (baseAddr + id).U
+        wBundle.wen := bus.b2c.writeEn && bus.b2c.address === (((baseAddr & mask) + id)).U
         wBundle.wdata := bus.b2c.dataWrite
       }
     // control read
     bus.c2b.dataRead := Mux1H(controlOutMap.map { case (id, data) =>
-      (bus.b2c.readEn && bus.b2c.address === id.U) -> data
+      (bus.b2c.readEn && bus.b2c.address === ((baseAddr & mask) + id).U) -> data
     })
     bus.c2b.error := false.B
   }

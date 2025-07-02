@@ -10,18 +10,16 @@ import org.chipsalliance.cde.config.Parameters
 
 import utils._
 
-
-
-class Bus2ControlBundle extends Bundle {
-  val address    = UInt(64.W)
-  val dataWrite  = UInt(32.W)
+class Bus2ControlBundle extends Bundle with TraceParameters {
+  val address    = UInt(addrWidthInner.W)
+  val dataWrite  = UInt(dataSize.W)
   //  val dataSize   = UInt(2.W) // 0->32bits, 1->64bits, 2->128bits, 3->256bits todo: support 256 bit mem access
   val readEn     = Bool()
   val writeEn    = Bool()
 }
 
-class Control2BusBundle extends Bundle {
-  val dataRead   = UInt(32.W)
+class Control2BusBundle extends Bundle with TraceParameters {
+  val dataRead   = UInt(dataSize.W)
   val error      = Bool() // reserved
 }
 
@@ -30,43 +28,16 @@ class Control2BusRegBundle extends Bundle {
   val c2b = Output(new Control2BusBundle)
 }
 
-//val io = IO(new Bundle {
-//  val rdEn = Input(Bool())
-//  val wrEn = Input(Bool())
-//  val addrIn = Input(UInt(128.W))
-//  val dataIn = Input(UInt(128.W))
-//  val sizeIn = Input(UInt(3.W))
-//  val rdLegal = Output(Bool())
-//  val wrLegal = Output(Bool())
-//  val rdDone = Output(Bool())
-//  val wrDone = Output(Bool())
-//  val respError = Output(Bool())
-//  val dataOut = Output(UInt(8.W))
-//}
-
-
 class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends LazyModule with TraceParameters {
 
-  val tl = Option.when(busType.isTL)(TLIdentityNode())
-
-  def mask = 0xFF_FFFF
-  def addressSet = AddressSet(traceBaseAddr, mask)
-  def addrWidth = 64
-  def dataSize = 32
-
-  private val dummy = LazyModule(new TLError(
-    params = DevNullParams(
-      address = AddressSet(0, (BigInt(1) << addrWidth) - 1).subtract(addressSet),
-      maxAtomic = 8,
-      maxTransfer = 64
-    ),
-    beatBytes = dataSize / 8
-  ))
-
-  val xbar = Option.when(busType.isTL)(TLXbar())
-  xbar.foreach(_ := tl.get)
-  dummy.node := xbar.get
-
+  def beatBytes = dataSize / 8
+  val tlslavenode = Option.when(busType.isTL)(TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
+    address = Seq(addressSet),
+    regionType = RegionType.UNCACHED,
+    supportsGet = TransferSizes(1, beatBytes),
+    supportsPutFull = TransferSizes(1, beatBytes),
+    fifoId = Some(0)
+  )), beatBytes))))
 
   val axi4 = Option.when(busType.isAXI)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
     Seq(AXI4MasterParameters("axi4", IdRange(0, 1)))
@@ -83,28 +54,31 @@ class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) exte
      * bus 2 trace control layer
      */
       if(busType.isTL){
-        val address    = Reg(UInt(64.W))
-        val dataWrite  = Reg(UInt(32.W))
+        val address    = Reg(UInt(addrWidthInner.W))
+        val dataWrite  = Reg(UInt(dataSize.W))
         val readEn     = RegInit(false.B)
         val writeEn    = RegInit(false.B)
-
-        val aChannel = wrapper.tl.get.in.head._1.a
-        val dChannel = wrapper.tl.get.in.head._1.d
+        
+        val (tl, edge) = tlslavenode.get.in(0)
+        val aChannel = tl.a
+        val dChannel = tl.d
 
         address   := aChannel.bits.address
-        writeEn   := aChannel.bits.opcode === TLMessages.Get && aChannel.valid
+        readEn    := aChannel.bits.opcode === TLMessages.Get && aChannel.valid
         dataWrite := aChannel.bits.data
-        readEn    := aChannel.bits.opcode === TLMessages.PutFullData && aChannel.valid
+        writeEn   := aChannel.bits.opcode === TLMessages.PutFullData && aChannel.valid
 
         io.b2c.address := address
         // bus write
         io.b2c.writeEn   := writeEn
         io.b2c.dataWrite := dataWrite
-        // bus read
+        // bus read, only support 32 bits!
+        val size = RegNext(RegNext(aChannel.bits.size))
         io.b2c.readEn   := readEn
         dChannel.bits.data := RegNext(io.c2b.dataRead)
-        dChannel.valid := RegNext(readEn)
-        dChannel.bits.corrupt := RegNext(address(1, 0) =/= 0.U) || io.c2b.error //msb enqual checking in tlerror
+        dChannel.valid := RegNext(readEn | writeEn)
+        dChannel.bits.corrupt := RegNext(address(1, 0) =/= 0.U) || (size =/= tlSize.U) || io.c2b.error  //msb enqual checking in tlerror
+        dChannel.bits.size := size
 
         aChannel.ready := true.B
       } else if(busType.isAXI) {

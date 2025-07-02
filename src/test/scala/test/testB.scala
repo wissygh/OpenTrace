@@ -20,12 +20,17 @@ trait HasConnect {
 class BaseB extends BaseA with HasConnect
 {
   def d = a + b + c
-  println(s"before:$d")
+//  println(s"before:$d")
 }
 
 class B extends BaseB with A
 
 object B extends App {
   val b = new B
-  println(b.d)
+
+  def traceBaseAddr   = 0x00_2000_0000
+  def memStep         = 0x1_0000
+  def mask            = 0xFF_FFFF
+  println((traceBaseAddr & mask) + 0x1)
+  println(traceBaseAddr & mask + 0x1)
 }

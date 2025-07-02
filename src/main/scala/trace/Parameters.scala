@@ -2,6 +2,7 @@ package trace
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.diplomacy.AddressSet
 
 trait TraceParameters {
 
@@ -53,9 +54,10 @@ trait TraceParameters {
    * the num of filter
    * the num of comparator
    */
-  def hart_num = 4
-  def filter_num = 2
-  def comparator_num = 3
+  def xs_imisc = true
+  def hart_num = 1
+  def filter_num = 1
+  def comparator_num = 1
 
   /**
    * component type
@@ -75,13 +77,6 @@ trait TraceParameters {
    *  => real Range: ("h00_2000_0000", "h00_2000_0000" + "h1_0000" * [[allComp_num]] -"h1")
    *  encoder, funnel, atbbridge, pib, ramsink
    */
-
-  def encoder0_base_address = 0x0;
-  def funnel0_base_address = 0x0;
-  def atbbridge_base_address = 0x0;
-  def pib_base_address = 0x0;
-  def ramsink_base_address = 0x0;
-
   def encoder_num = hart_num
   def funnel_num = 1
   def atbbridge_num = 1
@@ -91,6 +86,13 @@ trait TraceParameters {
 
   def traceBaseAddr   = 0x00_2000_0000
   def memStep         = 0x1_0000
+  def mask            = 0xFF_FFFF
+  def addressSet      = AddressSet(traceBaseAddr, mask)
+  def addrWidth       = 64
+  def dataSize        = 32
+  def tlSize          = log2Up(dataSize / 8) //  2^n bytes
+  def addrWidthInner  = mask.U.getWidth
+
 
   def encoderBaseAddr   = traceBaseAddr
   def funnelBaseAddr    = encoderBaseAddr   + memStep * encoder_num

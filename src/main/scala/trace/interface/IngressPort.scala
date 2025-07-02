@@ -7,18 +7,18 @@ import utils._
 import trace.TraceParameters
 
 class FromCore extends Bundle with TraceParameters {
-  val priv    = Priv()
-  val time    = UInt(Xlen.W)
-  val context = UInt(Xlen.W)
-  val cause   = UInt(CauseWidth.W)
-  val tval    = UInt(TvalWidth.W)
-  val trigger = UInt((2 + BlockNum).W)
-  val blocks  = Vec(BlockNum, ValidIO(new Bundle{
-    val iaddr     = UInt(IaddrWidth.W)
-    val itype     = UInt(ItypeWidth.W)
-    val iretire   = UInt(IretireWidthCompressed.W)
-    val ilastsize = UInt(IlastsizeWidth.W)
-  }))
+//  val priv    = Priv()
+//  val time    = UInt(Xlen.W)
+//  val context = UInt(Xlen.W)
+//  val cause   = UInt(CauseWidth.W)
+//  val tval    = UInt(TvalWidth.W)
+//  val trigger = UInt((2 + BlockNum).W)
+//  val blocks  = Vec(BlockNum, ValidIO(new Bundle{
+//    val iaddr     = UInt(IaddrWidth.W)
+//    val itype     = UInt(ItypeWidth.W)
+//    val iretire   = UInt(IretireWidthCompressed.W)
+//    val ilastsize = UInt(IlastsizeWidth.W)
+//  }))
 }
 
 class ToCore extends Bundle{
