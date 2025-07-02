@@ -11,120 +11,80 @@ import trace.component.Encoder
 
 import scala.collection.immutable.SeqMap
 
-object EncoderAddr {
-  // reserved:  0x014-0x18, 0x020-0x3f, 0x44, 0x060-0x3ff
+trait EncoderControl extends ControlBase { self: Encoder =>
 
-  val trTeControl           = 0x000
-  val trTeImpl              = 0x004
-  val trTeInstFeatures      = 0x008
-  val trTeInstFilters       = 0x00c
-
-  // data trace control
-  val trTeDataControl       = 0x010
-  val trTeDataFilters       = 0x01c
-
-  // Timestamp control
-  val trTsControl           = 0x040
-  val trTsCounterLow        = 0x048
-  val trTsCounterHigh       = 0x04c
-
-  // trigger control
-  val trTeTrigDbgControl    = 0x050
-  val trTeTrigExtInControl  = 0x054 // don't support
-  val trTeTrigExtOutControl = 0x058 // don't support
-
-  // Filters & comparators
-  // filters 0x400-0x5ff
-  // comparator 0x600-0x7ff
-  val trTeFilter0Control     = 0x400
-  val trTeFilter0MatchInst   = 0x404
-  val trTeFilter0MatchEcauseLow   = 0x408
-  val trTeFilter0MatchEcauseHigh  = 0x40c
-  val trTeFilter0MatchValueImpdef = 0x410
-  val trTeFilter0MatchMaskImpdef  = 0x414
-  val trTeFilter0MatchData   = 0x418
-
-  val trTeComp0Control       = 0x600
-  val trTeComp0PMacthLow     = 0x600
-  val trTeComp0PMatchHigh    = 0x600
-  val trTeComp0SMatchLow     = 0x600
-  val trTeComp0SMatchHigh    = 0x600
-}
-
-trait EncoderControl { self: Encoder =>
-
-  val trTeContrl = Module(new CSRModule("TrTeControl", new TrTeContrlBundle))
-    .setAddr(EncoderAddr.trTeControl)
+  val trTeControl = Module(new CSRModule("TrTeControl", new TrTeControlBundle))
+    .setAddr(CtrlReg.trTeControl)
 
   val trTeImpl = Module(new CSRModule("TrTeImpl", new TrTeImplBundle){})
-    .setAddr(EncoderAddr.trTeImpl)
+    .setAddr(CtrlReg.trTeImpl)
 
   val trTeInstFeatures = Module(new CSRModule("trTeInstFeatures", new TrTeInstFeaturesBundle){})
-    .setAddr(EncoderAddr.trTeInstFeatures)
+    .setAddr(CtrlReg.trTeInstFeatures)
 
   val trTeInstFilters = Module(new CSRModule("trTeInstFilters", new TrTeInstFiltersBundle){})
-    .setAddr(EncoderAddr.trTeInstFilters)
+    .setAddr(CtrlReg.trTeInstFilters)
 
   val trTeDataControl = Module(new CSRModule("trTeDataControl", new TrTeDataControlBundle){})
-    .setAddr(EncoderAddr.trTeDataControl)
+    .setAddr(CtrlReg.trTeDataControl)
 
   val trTeDataFilters = Module(new CSRModule("trTeDataFilters", new TrTeDataFiltersBundle){})
-    .setAddr(EncoderAddr.trTeDataFilters)
+    .setAddr(CtrlReg.trTeDataFilters)
 
   /**
    * timestamp
    */
   val trTsControl = Module(new CSRModule("trTsControl", new OneROFieldBundle){})
-    .setAddr(EncoderAddr.trTsControl)
+    .setAddr(CtrlReg.trTsControl)
 
   val trTsCounterLow = Module(new CSRModule("trTsCounterLow", new OneROFieldBundle){})
-    .setAddr(EncoderAddr.trTsCounterLow)
+    .setAddr(CtrlReg.trTsCounterLow)
 
   val trTsCounterHigh = Module(new CSRModule("trTsCounterHigh", new OneROFieldBundle){})
-    .setAddr(EncoderAddr.trTsCounterHigh)
+    .setAddr(CtrlReg.trTsCounterHigh)
 
   /**
    * trigger
    */
   val trTeTrigDbgControl = Module(new CSRModule("trTeTrigDbgControl", new OneFieldBundle){})
-    .setAddr(EncoderAddr.trTeTrigDbgControl)
+    .setAddr(CtrlReg.trTeTrigDbgControl)
 
   /**
    * Filter
    */
   val trTeFilterControlVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"Control", new TrTeFilterControlBundle))
-      .setAddr(EncoderAddr.trTeFilter0Control + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0Control, i))
   )
 
   val trTeFilterMatchInstVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"MatchInst", new TrTeFilterMatchInstBundle))
-      .setAddr(EncoderAddr.trTeFilter0MatchInst + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0MatchInst, i))
   )
 
   val trTeFilterMatchEcauseLowVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"MatchEcauseLow", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeFilter0MatchEcauseLow + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0MatchEcauseLow, i))
   )
 
   val trTeFilterMatchEcauseHighVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"MatchEcauseHigh", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeFilter0MatchEcauseHigh + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0MatchEcauseHigh, i))
   )
 
   val trTeFilterMatchValueImpdefVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"MatchValueImpdef", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeFilter0MatchValueImpdef + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0MatchValueImpdef, i))
   )
 
   val trTeFilterMatchMaskImpdefVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"MatchMaskImpdef", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeFilter0MatchMaskImpdef + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0MatchMaskImpdef, i))
   )
 
   val trTeFilterMatchDataVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
     Module(new CSRModule(s"trTeFilter$i" + s"MatchData", new TrTeFilterMatchDataBundle))
-      .setAddr(EncoderAddr.trTeFilter0MatchData + 0x20 * i)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeFilter0MatchData, i))
   )
 
 
@@ -133,40 +93,40 @@ trait EncoderControl { self: Encoder =>
    */
   val trTeCompControlVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
     Module(new CSRModule(s"trTeComp$j" + s"Control", new TrTeCompControlBundle))
-      .setAddr(EncoderAddr.trTeComp0Control + 0x20 * j)
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeComp0Control, j))
   )
 
-  val trTeCompPMacthLowVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
-    Module(new CSRModule(s"trTeComp$j" + s"PMacthLow", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeComp0PMacthLow + 0x20 * j)
+  val trTeCompPMatchLowVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+    Module(new CSRModule(s"trTeComp$j" + s"PMatchLow", new OneFieldBundle))
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeComp0PMatchLow, j))
   )
 
-  val trTeCompPMacthHighVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
-    Module(new CSRModule(s"trTeComp$j" + s"PMacthHigh", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeComp0PMatchHigh + 0x20 * j)
+  val trTeCompPMatchHighVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+    Module(new CSRModule(s"trTeComp$j" + s"PMatchHigh", new OneFieldBundle))
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeComp0PMatchHigh, j))
   )
 
-  val trTeCompSMacthLowVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
-    Module(new CSRModule(s"trTeComp$j" + s"SMacthLow", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeComp0SMatchLow + 0x20 * j)
+  val trTeCompSMatchLowVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+    Module(new CSRModule(s"trTeComp$j" + s"SMatchLow", new OneFieldBundle))
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeComp0SMatchLow, j))
   )
 
-  val trTeCompSMacthHighVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
-    Module(new CSRModule(s"trTeComp$j" + s"SMacthHigh", new OneFieldBundle))
-      .setAddr(EncoderAddr.trTeComp0SMatchHigh + 0x20 * j)
+  val trTeCompSMatchHighVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+    Module(new CSRModule(s"trTeComp$j" + s"SMatchHigh", new OneFieldBundle))
+      .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.trTeComp0SMatchHigh, j))
   )
 
-  val filterRegMods: Seq[CSRModule[_]] = trTeFilterControlVec ++ trTeFilterMatchInstVec ++
+  val filterMods: Seq[CSRModule[_]] = trTeFilterControlVec ++ trTeFilterMatchInstVec ++
     trTeFilterMatchEcauseLowVec ++ trTeFilterMatchEcauseHighVec ++
     trTeFilterMatchValueImpdefVec ++ trTeFilterMatchMaskImpdefVec ++
     trTeFilterMatchDataVec
 
-  val comptatorRegMods: Seq[CSRModule[_]] = trTeCompControlVec ++
-    trTeCompPMacthLowVec ++ trTeCompPMacthHighVec ++
-    trTeCompSMacthLowVec ++ trTeCompSMacthHighVec
+  val comptatorMods: Seq[CSRModule[_]] = trTeCompControlVec ++
+    trTeCompPMatchLowVec ++ trTeCompPMatchHighVec ++
+    trTeCompSMatchLowVec ++ trTeCompSMatchHighVec
 
-  val encodcerRegMods: Seq[CSRModule[_]] = Seq(
-    trTeContrl,
+  override val controlMods: Seq[CSRModule[_]] = Seq(
+    trTeControl,
     trTeImpl,
     trTeInstFeatures,
     trTeInstFilters,
@@ -175,34 +135,26 @@ trait EncoderControl { self: Encoder =>
     trTsControl,
     trTsCounterLow,
     trTsCounterHigh,
-    trTeTrigDbgControl,
-  ) ++ filterRegMods ++ comptatorRegMods
-
-  val encodcerRegRWMap: SeqMap[Int, (CSRAddrWriteBundle[_], UInt)] = SeqMap.from(
-    encodcerRegMods.map(reg => (reg.addr -> (reg.w -> reg.rdata))).iterator
-  )
-
-  val encodcerRegOutMap: SeqMap[Int, UInt] = SeqMap.from(
-    encodcerRegMods.map(reg => (reg.addr -> reg.regOut.asInstanceOf[CSRBundle].asUInt)).iterator
-  )
+    trTeTrigDbgControl
+  ) ++ filterMods ++ comptatorMods
 
 }
 
 
-class TrTeContrlBundle extends CSRBundle {
+class TrTeControlBundle extends CSRBundle {
   val Active              = RW(0).withReset(0.U)
   val Enable              = RW(1).withReset(0.U)
   val InstTracing         = RW(2)
   val Emptry              = RO(3).withReset(1.U)
-  val InstMode            = InstModeFiled(6, 4).withReset(InstModeFiled.Baseline)
+  val InstMode            = InstModeFiled(6, 4, wNoFilter).withReset(InstModeFiled.Baseline)
   val Context             = RW(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
   val InstStallEna        = RW(13).withReset(0.U)
   val InhibitSrc          = RW(15).withReset(0.U)
-  val InstSyncMode        = InstSyncModeFiled(17, 16).withReset(InstSyncModeFiled.Off)
+  val InstSyncMode        = InstSyncModeFiled(17, 16, wNoFilter).withReset(InstSyncModeFiled.Off)
   val InstSyncMax         = RW(23, 20)
-  val Format              = FormatFiled(26, 24).withReset(FormatFiled.Etrace)
+  val Format              = FormatFiled(26, 24, wNoFilter).withReset(FormatFiled.Etrace)
 }
 
 object InstModeFiled extends CSREnum with WARLApply {
@@ -228,9 +180,9 @@ object FormatFiled extends CSREnum with WARLApply {
 }
 
 class TrTeImplBundle extends CSRBundle {
-  val VerMajor      = RO(3, 0).withReset(1.U)
+  val VerMajor      = RO(3, 0).withReset(0.U)
   val VerMinor      = RO(7, 4).withReset(0.U)
-  val CompType      = RO(11, 8).withReset(TrcompTypeFiled.Encoder)
+  val CompType      = TrcompTypeFiled(11, 8, wNoFilter).withReset(TrcompTypeFiled.Encoder)
   val ProtocolMajor = RO(19, 16).withReset(0.U)
   val ProtocolMinor = RO(23, 20).withReset(0.U)
 }
@@ -242,7 +194,7 @@ class TrTeInstFeaturesBundle extends CSRBundle {
   val InstEnImRet            = RW(3)
   val InstEnBranchPred       = RW(4)
   val InstEnJumpTargetCache  = RW(5)
-  val InstImRetMode          = ImpRetModeFiled(7, 6)
+  val InstImRetMode          = ImpRetModeFiled(7, 6, wNoFilter)
   val InstEnRepHistoty       = RW(8)
   val InstEnAllJumps         = RW(9)
   val InstExtendAddrMSB      = RW(10)
@@ -271,7 +223,7 @@ class TrTeDataControlBundle extends CSRBundle {
   val DataDropEna        = RW(6)
   val DataNoValue        = RW(16)
   val DataNoAddr         = RW(17)
-  val DataAddrCompress   = DataAddrCompressFiled(19, 18)
+  val DataAddrCompress   = DataAddrCompressFiled(19, 18, wNoFilter)
 }
 
 object DataAddrCompressFiled extends CSREnum with WARLApply {
@@ -291,7 +243,7 @@ class TrTsControlBundle extends CSRBundle {
   val Count               = RW(1).withReset(0.U)
   val Reset               = RW(2).withReset(0.U)
   val RunInDebug          = RW(3).withReset(1.U)
-  val Mode                = TrTsModeFiled(6, 4).withReset(TrTsModeFiled.None)
+  val Mode                = TrTsModeFiled(6, 4, wNoFilter).withReset(TrTsModeFiled.None)
   val Prescale            = RW(9, 8).withReset(0.U)
   val Enable              = RW(15).withReset(0.U)
   // (23, 16) todo: ?
@@ -338,7 +290,7 @@ class TrTeCompControlBundle extends CSRBundle {
   val PInput       = RW(1,  0).withReset(0.U)
   val SInput       = RW(3,  2).withReset(0.U)
   val PFunc        = RW(6,  4).withReset(0.U)
-  val SFunc        = RW(10, 8).withReset(1.U)
+  val SFunc        = RW(10, 8).withReset(0.U)
   val MatchMode    = RW(13, 12).withReset(0.U)
   val PNtify       = RW(14).withReset(0.U)
   val SNtify       = RW(15).withReset(0.U)

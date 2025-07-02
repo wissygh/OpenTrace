@@ -11,7 +11,4 @@ import trace.Trace
 
 import scala.collection.immutable.SeqMap
 
-object ATBBridgeAddr {
-  val trATBBridgeControl = 0x000
-  val trATBBridgeImpl    = 0x004
-}
+trait ATBBridgeControl { }
