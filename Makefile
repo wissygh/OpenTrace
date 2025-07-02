@@ -1,3 +1,9 @@
+compile:
+	mill -i OpenTrace.compile
+
+verilog:
+	mill -i OpenTrace.test.runMain trace.TraceMain
+
 clean:
 	rm -rf ./build
 
