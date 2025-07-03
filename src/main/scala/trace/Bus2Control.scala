@@ -1,6 +1,7 @@
 package trace
 
 import chisel3._
+import chisel3.util._
 import chisel3.experimental.dataview._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.devices.tilelink._
@@ -54,32 +55,35 @@ class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) exte
      * bus 2 trace control layer
      */
       if(busType.isTL){
-        val address    = Reg(UInt(addrWidthInner.W))
-        val dataWrite  = Reg(UInt(dataSize.W))
-        val readEn     = RegInit(false.B)
-        val writeEn    = RegInit(false.B)
-        
+
         val (tl, edge) = tlslavenode.get.in(0)
         val aChannel = tl.a
         val dChannel = tl.d
 
-        address   := aChannel.bits.address
-        readEn    := aChannel.bits.opcode === TLMessages.Get && aChannel.valid
-        dataWrite := aChannel.bits.data
-        writeEn   := aChannel.bits.opcode === TLMessages.PutFullData && aChannel.valid
+        val address   = aChannel.bits.address
+        val readEn    = aChannel.bits.opcode === TLMessages.Get && aChannel.valid
+        val dataWrite = aChannel.bits.data
+        val writeEn   = aChannel.bits.opcode === TLMessages.PutFullData && aChannel.valid
+        val size      = aChannel.bits.size
 
         io.b2c.address := address
         // bus write
         io.b2c.writeEn   := writeEn
         io.b2c.dataWrite := dataWrite
         // bus read, only support 32 bits!
-        val size = RegNext(RegNext(aChannel.bits.size))
         io.b2c.readEn   := readEn
-        dChannel.bits.data := RegNext(io.c2b.dataRead)
-        dChannel.valid := RegNext(readEn | writeEn)
-        dChannel.bits.corrupt := RegNext(address(1, 0) =/= 0.U) || (size =/= tlSize.U) || io.c2b.error  //msb enqual checking in tlerror
-        dChannel.bits.size := size
+        dChannel.bits := Mux1H(
+          Seq(
+            readEn,
+            writeEn
+          ),
+          Seq(
+            edge.AccessAck(aChannel.bits, io.c2b.dataRead, false.B, ((address(1, 0) =/= 0.U) || (size =/= tlSize.U) || io.c2b.error)),
+            edge.AccessAck(aChannel.bits)
+          )
+        )
 
+        dChannel.valid := aChannel.valid
         aChannel.ready := true.B
       } else if(busType.isAXI) {
         // todo axi 2 control
