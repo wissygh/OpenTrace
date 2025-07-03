@@ -15,23 +15,22 @@ abstract class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends Modu
   with ControlBase
   with TraceParameters {
 
-  lazy val bus = IO(new Control2BusRegBundle)
+  val bus = IO(new Control2BusRegBundle)
 
   /**
    * bus 2 control reg
    * Registers in the 4KB range that are not implemented are reserved and read as 0 and ignore writes.
    */
-  // control write
   def connectCtrlReg() = {
-      for ((id, (wBundle, _)) <- controlRWMap) {
-        wBundle.wen := bus.b2c.writeEn && bus.b2c.address === (baseAddr + id).U
-        wBundle.wdata := bus.b2c.dataWrite
-      }
+    // control write
+    for ((id, (wBundle, _)) <- controlRWMap) {
+      wBundle.wen := bus.b2c.writeEn && bus.b2c.address === (((baseAddr & mask) + id)).U
+      wBundle.wdata := bus.b2c.dataWrite
+    }
     // control read
-    bus.c2b.dataRead := Mux1H(controlOutMap.map { case (id, data) =>
-      (bus.b2c.readEn && bus.b2c.address === id.U) -> data
+    bus.c2b.dataRead := Mux1H(controlRWMap.map { case (id, (_, rdata)) =>
+      (bus.b2c.readEn && bus.b2c.address === ((baseAddr & mask) + id).U) -> rdata
     })
     bus.c2b.error := false.B
   }
-
 }
