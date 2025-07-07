@@ -29,10 +29,10 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
     ))
   ))))
   val tlmasternode = tlmatser.map(tl => InModuleBody(tl.makeIOs()))
-  tlmatser.foreach(bus2Control.tlslavenode.get := _)
+  tlmatser.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) :=  TLWidthWidget(tlSizeMax) := _)
 
   val tlnode = Option.when(busType.isTL && xs_socmisc)(TLIdentityNode())
-  tlnode.foreach(bus2Control.tlslavenode.get := _)
+  tlnode.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) :=  TLWidthWidget(tlSizeMax) := _)
 
   /**
    * axi todo
