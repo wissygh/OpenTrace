@@ -88,8 +88,10 @@ trait TraceParameters {
   def mask            = 0xFF_FFFF
   def addressSet      = AddressSet(traceBaseAddr, mask)
   def addrWidth       = 64
-  def dataSize        = 32
-  def tlSize          = log2Up(dataSize / 8) //  2^n bytes
+  def dataSize        = 32  // Data-width which control slave support
+  def dataSizeMax     = 256 // Max data-width which bus req support.
+  def tlSizeMin       = dataSize / 8
+  def tlSizeMax       = dataSizeMax / 8
   def addrWidthInner  = mask.U.getWidth
 
 
