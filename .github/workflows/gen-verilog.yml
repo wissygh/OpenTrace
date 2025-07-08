@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branched: [ master ]
+
+jobs:
+  gen-verilog:
+    name: gen-verilog
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache Scala
+        uses: coursier/cache-action@v6
+
+      - name: Setup Scala
+        uses: coursier/setup-action@v1
+
+      - name: Setup Mill
+        uses: jodersky/setup-mill@v0.3.0
+        with:
+          mill-version: 0.12.5
+
+      - name: Verilator
+        run: sudo apt install verilator
+
+      - name: gen-verilog
+        run: make verilog
+
+      - name: clean
+        run: make clean
