@@ -59,9 +59,11 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
   })
 
 
-  class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) {
+  class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) with RequireAsyncReset {
     val io = IO(new Bundle {
       val fromCore = Input(Vec(hart_num, new FromCore))
+      val extTrigIn = Input(Vec(8, Bool()))
+      val extTrigOut = Output(Vec(8, Bool()))
       val toCore   = Output(Vec(hart_num, new ToCore))
     })
 
@@ -74,7 +76,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
      * module: [[bus2ctrl]] [[encoderVec]] [[funnel]]
      */
     val bus2ctrl = bus2Control.module
-    val encoderVec = Range(0, hart_num).map(i => Module(new Encoder(encoderBaseAddr + memStep * i)))
+    val encoderVec = (0 until hart_num).map(i => Module(new Encoder(encoderBaseAddr + memStep * i)))
     val funnel = Module(new Funnel(funnelBaseAddr))
 
     /**
@@ -85,8 +87,11 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
     encoderVec.zip(fromCore).zip(toCore).map{ case((encoder, ingressPort), toCore) => {
       toCore := encoder.io.toCore
       encoder.io.fromCore := ingressPort
+      encoder.io.extTrigIn := io.extTrigIn
     }}
     encoderVec.zip(funnel.io.packets).map{ case (encoder, packet) => packet := encoder.io.packet }
+
+    io.extTrigOut := encoderVec.map(_.io.extTrigOut.asUInt).reduce(_ | _).asBools
 
     /**
      * control path:
