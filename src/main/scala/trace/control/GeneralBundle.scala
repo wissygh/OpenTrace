@@ -14,7 +14,22 @@ class OneROFieldBundle extends OneFieldBundle {
   this.ALL.setRO().withReset(0.U)
 }
 
-object TrcompTypeFiled extends CSREnum with WARLApply {
+object MajorVersion extends CSREnum with ROApply{
+  val Default =  Value(1.U)
+}
+object MinorVersion extends CSREnum with ROApply{
+  val Default =  Value(0.U)
+}
+
+object MajorProtocol extends CSREnum with ROApply{
+  val NDefault =  Value(1.U)
+  val EDefault =  Value(2.U)
+}
+object MinorProtocol extends CSREnum with ROApply{
+  val Default =  Value(0.U)
+}
+
+object TrcompTypeField extends CSREnum with ROApply {
   val Encoder   = Value(0x1.U)
   val Funnel    = Value(0x8.U)
   val Ramsink   = Value(0x9.U)

@@ -14,9 +14,10 @@ trait TraceParameters {
   def Xlen                   = 64
 
   def BlockNum               = 3
-  def CauseWidth             = 64
+  def CauseWidth             = 8 // todo: fix in harts, because int/exp in itype
   def TvalWidth              = 50
   def PrivWidth              = 3
+  def ImpdefWidth            = 32
   def IaddrWidth             = 50
   def ItypeWidth             = 4
   def IretireWidthInPipe     = log2Up(RenameWidth * 2 + 1)
@@ -44,6 +45,12 @@ trait TraceParameters {
   def cache_size_p = 8 // todo: fix
 
   /**
+   * timestamp parameters
+   */
+
+  def ts_width_p = 63
+
+  /**
    * Trace's Parameters Data trace
    */
   def nodatatrace_p = true
@@ -57,6 +64,7 @@ trait TraceParameters {
   def hart_num = 1
   def filter_num = 1
   def comparator_num = 1
+  require(comparator_num < 8, "comparator_num can not be greater 8, because width of trTeFilterControl.trTeFilterComp is 3.\n")
 
   /**
    * component type
@@ -100,6 +108,8 @@ trait TraceParameters {
   def atbbridgeBaseAddr = funnelBaseAddr    + memStep * funnel_num
   def pibBaseAddr       = atbbridgeBaseAddr + memStep * atbbridge_num
   def ramSinkAddr       = pibBaseAddr       + memStep * pib_num
+
+  def srcId(addr: Int): Int = (addr & mask) >> log2Up(memStep)
 }
 
 case class BusType(

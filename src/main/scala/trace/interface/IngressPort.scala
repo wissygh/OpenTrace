@@ -12,7 +12,12 @@ class FromCore extends Bundle with TraceParameters {
   val context = UInt(Xlen.W)
   val cause   = UInt(CauseWidth.W)
   val tval    = UInt(TvalWidth.W)
-  val trigger = UInt((2 + BlockNum).W)
+  val impdef  = UInt(ImpdefWidth.W)
+  val trigger = new Bundle {
+    val traceOn = Bool()
+    val traceOff = Bool()
+    val TraceNotify = Vec(BlockNum, Bool())
+  }
   val blocks  = Vec(BlockNum, ValidIO(new Bundle{
     val iaddr     = UInt(IaddrWidth.W)
     val itype     = UInt(ItypeWidth.W)
@@ -47,6 +52,10 @@ object Itype extends NamedUInt(4) {
   // Assuming the branchType is NonTaken here, it will be correctly modified after writeBack.
   def Branch = NonTaken
 
+  def isExp(itype: UInt) = Seq(Exception).map(_ === itype).reduce(_ || _)
+
+  def isInt(itype: UInt) = Seq(Interrupt).map(_ === itype).reduce(_ || _)
+
   def isTrap(itype: UInt) = Seq(Exception, Interrupt).map(_ === itype).reduce(_ || _)
 
   def isTrapOrXret(itype: UInt) = Seq(Exception, Interrupt, ExpIntReturn).map(_ === itype).reduce(_ || _)
@@ -72,4 +81,20 @@ object Priv extends NamedUInt(3) {
   def D  = 4.U
   def VU = 5.U
   def VS = 6.U
+}
+
+object Dtype extends NamedUInt(4) {
+  def Load                 = 0.U
+  def Store                = 1.U
+  def CSRRW                = 4.U
+  def CSRRS                = 5.U
+  def CSRRC                = 6.U
+  def AtomicSwap           = 8.U
+  def AtomicAdd            = 9.U
+  def AtomicAND            = 10.U
+  def AtomicOR             = 11.U
+  def AtomicXOR            = 12.U
+  def AtomicMax            = 13.U
+  def AtomicMin            = 14.U
+  def CondStFail           = 15.U
 }

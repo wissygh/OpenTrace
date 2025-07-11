@@ -14,32 +14,32 @@ import scala.collection.immutable.SeqMap
  
 trait FunnelControl extends ControlBase { self: Funnel =>
 
-  val trFunnelControl = Module(new CSRModule("TrFunnelControl", new TrFunnelControlBundle))
-    .setAddr(CtrlReg.trFunnelControl)
+  val funnelControl = Module(new CSRModule("FunnelControl", new FunnelControlBundle))
+    .setAddr(CtrlReg.FunnelControl)
 
-  val trFunnelImpl = Module(new CSRModule("TrFunnelImpl", new TrFunnelImplBundle){})
-    .setAddr(CtrlReg.trFunnelImpl)
+  val funnelImpl = Module(new CSRModule("FunnelImpl", new FunnelImplBundle){})
+    .setAddr(CtrlReg.FunnelImpl)
 
-  val trFunnelDisInput = Module(new CSRModule("trFunnelDisInput", new TrFunnelDisInputBundle){})
-    .setAddr(CtrlReg.trFunnelDisInput)
+  val funnelDisInput = Module(new CSRModule("FunnelDisInput", new FunnelDisInputBundle){})
+    .setAddr(CtrlReg.FunnelDisInput)
 
   /**
    * timestamp todo: fix name
    */
   val trTsControl = Module(new CSRModule("trTsControl", new OneROFieldBundle){})
-    .setAddr(CtrlReg.trTsControl)
+    .setAddr(CtrlReg.TsControl)
 
   val trTsCounterLow = Module(new CSRModule("trTsCounterLow", new OneROFieldBundle){})
-    .setAddr(CtrlReg.trTsCounterLow)
+    .setAddr(CtrlReg.TsCounterLow)
 
   val trTsCounterHigh = Module(new CSRModule("trTsCounterHigh", new OneROFieldBundle){})
-    .setAddr(CtrlReg.trTsCounterHigh)
+    .setAddr(CtrlReg.TsCounterHigh)
 
 
   override val controlMods: Seq[CSRModule[_]] = Seq(
-    trFunnelControl,
-    trFunnelImpl,
-    trFunnelDisInput,
+    funnelControl,
+    funnelImpl,
+    funnelDisInput,
     trTsControl,
     trTsCounterLow,
     trTsCounterHigh,
@@ -49,18 +49,18 @@ trait FunnelControl extends ControlBase { self: Funnel =>
 }
 
 
-class TrFunnelControlBundle extends CSRBundle {
+class FunnelControlBundle extends CSRBundle {
   val Active              = RW(0)
   val Enable              = RW(1)
   val Emptry              = RO(3)
 }
 
-class TrFunnelImplBundle extends CSRBundle {
-  val VerMajor      = RO(3, 0)
-  val VerMinor      = RO(7, 4)
-  val CompType      = TrcompTypeFiled(11, 8, wNoFilter).withReset(TrcompTypeFiled.Funnel)
+class FunnelImplBundle extends CSRBundle {
+  val VerMajor      = MajorVersion(3, 0).withReset(MajorVersion.Default)
+  val VerMinor      = MinorVersion(7, 0).withReset(MinorVersion.Default)
+  val CompType      = TrcompTypeField(11, 8).withReset(TrcompTypeField.Funnel)
 }
 
-class TrFunnelDisInputBundle extends CSRBundle {
+class FunnelDisInputBundle extends CSRBundle {
   val DisInput      = RW(15, 0)
 }
