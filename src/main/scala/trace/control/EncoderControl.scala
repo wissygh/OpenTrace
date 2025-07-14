@@ -9,6 +9,7 @@ import bundles.CSRFunc._
 import bundles.CSRBundles._
 import org.apache.commons.io.filefilter.IOFileFilter
 import trace.component.Encoder
+import trace.TraceParameters
 
 trait EncoderControl extends ControlBase { self: Encoder =>
 
@@ -60,10 +61,14 @@ trait EncoderControl extends ControlBase { self: Encoder =>
   val tsControl = Module(new CSRModule("TsControl", new TsControlBundle))
     .setAddr(CtrlReg.TsControl)
 
-  val tsCounterLow = Module(new CSRModule("TsCounterLow", new OneROFieldBundle))
+  val tsCounterLow = Module(new CSRModule("TsCounterLow", new OneROFieldBundle) with HasTsCountBundle {
+    regOut.ALL := TimeCount(31, 0)
+  })
     .setAddr(CtrlReg.TsCounterLow)
 
-  val tsCounterHigh = Module(new CSRModule("TsCounterHigh", new OneROFieldBundle))
+  val tsCounterHigh = Module(new CSRModule("TsCounterHigh", new OneROFieldBundle)with HasTsCountBundle{
+    regOut.ALL := TimeCount(63, 32)
+  })
     .setAddr(CtrlReg.TsCounterHigh)
 
   /**
@@ -80,39 +85,39 @@ trait EncoderControl extends ControlBase { self: Encoder =>
    *  logical or : all enabled filters' condition;
    *  logical and: all enabled conditions in a single filter.
    */
-  val teFilterControlVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterControlVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"Control", new TeFilterControlBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0Control, i))
   )
 
-  val teFilterMatchInstVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterMatchInstVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchInst", new TeFilterMatchInstBundle){
 
     })
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchInst, i))
   )
 
-  val teFilterMatchEcauseLowVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterMatchEcauseLowVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchEcauseLow", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchEcauseLow, i))
   )
 
-  val teFilterMatchEcauseHighVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterMatchEcauseHighVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchEcauseHigh", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchEcauseHigh, i))
   )
 
-  val teFilterMatchValueImpdefVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterMatchValueImpdefVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchValueImpdef", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchValueImpdef, i))
   )
 
-  val teFilterMatchMaskImpdefVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterMatchMaskImpdefVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchMaskImpdef", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchMaskImpdef, i))
   )
 
-  val teFilterMatchDataVec: Seq[CSRModule[_]] = Range(0, filter_num).map(i =>
+  val teFilterMatchDataVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchData", new TeFilterMatchDataBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchData, i))
   )
@@ -121,27 +126,27 @@ trait EncoderControl extends ControlBase { self: Encoder =>
   /**
    * Compatator
    */
-  val teCompControlVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+  val teCompControlVec: Seq[CSRModule[_]] = (0 until comparator_num).map(j =>
     Module(new CSRModule(s"TeComp$j" + s"Control", new TeCompControlBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0Control, j))
   )
 
-  val teCompPMatchLowVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+  val teCompPMatchLowVec: Seq[CSRModule[_]] = (0 until comparator_num).map(j =>
     Module(new CSRModule(s"TeComp$j" + s"PMatchLow", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0PMatchLow, j))
   )
 
-  val teCompPMatchHighVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+  val teCompPMatchHighVec: Seq[CSRModule[_]] = (0 until comparator_num).map(j =>
     Module(new CSRModule(s"TeComp$j" + s"PMatchHigh", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0PMatchHigh, j))
   )
 
-  val teCompSMatchLowVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+  val teCompSMatchLowVec: Seq[CSRModule[_]] = (0 until comparator_num).map(j =>
     Module(new CSRModule(s"TeComp$j" + s"SMatchLow", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0SMatchLow, j))
   )
 
-  val teCompSMatchHighVec: Seq[CSRModule[_]] = Range(0, comparator_num).map(j =>
+  val teCompSMatchHighVec: Seq[CSRModule[_]] = (0 until comparator_num).map(j =>
     Module(new CSRModule(s"TeComp$j" + s"SMatchHigh", new OneFieldBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0SMatchHigh, j))
   )
@@ -228,7 +233,7 @@ class TeInstFeaturesBundle extends CSRBundle {
   val EnImRet                = RW(3)
   val EnBranchPred           = RW(4)
   val EnJumpTargetCache      = RW(5)
-  val ImRetMode              = ImpRetModeField(7, 6, wNoFilter)
+  val ImRetMode              = ImpRetModeField(7, 6, wNoFilter).withReset(ImpRetModeField.None)
   val EnRepHistoty           = RW(8)
   val EnAllJumps             = RW(9)
   val ExtendAddrMSB          = RW(10)
@@ -243,8 +248,9 @@ object ImpRetModeField extends CSREnum with WARLApply {
   val FullAddr = Value(3.U)
 }
 
-class TeInstFiltersBundle extends CSRBundle {
-  val InstFilters     = FiltersIndexField(15, 0, wNoFilter).withReset(FiltersIndexField.Index_1) // 1hot: bit_i -> filter_i
+class TeInstFiltersBundle extends CSRBundle with  TraceParameters {
+  override val len: Int = filter_num
+  val InstFilters     = FiltersIndexField(len - 1, 0, wNoFilter).withReset(FiltersIndexField.Index_1) // 1hot: bit_i -> filter_i
 }
 
 object FiltersIndexField extends CSREnum with WARLApply {
@@ -281,7 +287,7 @@ class TeDataFiltersBundle extends CSRBundle {
 }
 
 /**
- * trigger bundle
+ * trigger bundle, todo: parameteried according to [[extTrig_num]]
  */
 
 class TeTrigExtInControlBundle extends CSRBundle {
@@ -330,13 +336,13 @@ class TeFilterControlBundle extends CSRBundle {
   val Enable           = RW(0).withReset(0.U) // set 1 after all is ready.
   val MatchPrivilege   = RW(1).withReset(0.U) // TeFilterMatchInst.MatchChoicePrivilege; set 1 after all is ready.
   val MatchEcause      = RW(2).withReset(0.U) // TeFilterMatchChoiceEcause
-  val MatchInterrupt   = RW(3).withReset(1.U) // TeFilterMatchInst.MatchValueInterrupt
+  val MatchInterrupt   = RW(3).withReset(0.U) // TeFilterMatchInst.MatchValueInterrupt
   val MatchComp1       = RW(4).withReset(0.U)
-  val Comp1            = RW(7, 5).withReset(0.U)
+  val Comp1            = CompField(7, 5, wNoFilter).withReset(CompField.Zero)
   val MatchComp2       = RW(8).withReset(0.U)
-  val Comp2            = RW(11, 9).withReset(0.U)
+  val Comp2            = CompField(11, 9, wNoFilter).withReset(CompField.Zero)
   val MatchComp3       = RW(12).withReset(0.U)
-  val Comp3            = RW(15, 13).withReset(0.U)
+  val Comp3            = CompField(15, 13, wNoFilter).withReset(CompField.Zero)
   val MatchImpdef      = RW(16).withReset(0.U) // trTeFilterMatchValueImpdef & trTeFilterMatchMaskImpdef
   val MatchDtype       = RW(24).withReset(0.U) // TeFilterMatchData.MatchChoiceDtype
   val MatchDSize       = RW(25).withReset(0.U) // TeFilterMatchData.MatchChoiceDsize
@@ -361,6 +367,12 @@ object MatchExpInt extends CSREnum with WARLApply {
   val Exception     = Value(0.U)
   val Interrupt     = Value(1.U)
 }
+
+object CompField extends CSREnum with WARLApply with TraceParameters {
+  val Zero     = Value(0.U)
+  override def isLegal(enumeration: CSREnumType): Bool = enumeration.asUInt < comparator_num.U
+}
+
 
 class TeFilterMatchDataBundle extends CSRBundle {
   val MatchChoiceDtype  = MatchDtype(15, 0, wNoFilter).withReset(MatchDtype.Load)
@@ -407,6 +419,8 @@ object CompInputField extends CSREnum with WARLApply {
   val Context   = Value(1.U)
   val Tval      = Value(2.U)
   val Daddr     = Value(3.U)
+
+  def isIaddr(enumeration: CSREnumType): Bool = enumeration.isOneOf(Iaddr)
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Iaddr, Context, Tval)
 }
 
@@ -454,4 +468,7 @@ trait HasTeInstFeaturesBundle { self: CSRModule[_] =>
   val Id = IO(Input(UInt(12.W)))
 }
 
+trait HasTsCountBundle { self: CSRModule[_] =>
+  val TimeCount = IO(Input(UInt(64.W)))
+}
 

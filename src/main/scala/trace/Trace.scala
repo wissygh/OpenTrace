@@ -62,9 +62,9 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) with RequireAsyncReset {
     val io = IO(new Bundle {
       val fromCore = Input(Vec(hart_num, new FromCore))
-      val extTrigIn = Input(Vec(8, Bool()))
-      val extTrigOut = Output(Vec(8, Bool()))
-      val toCore   = Output(Vec(hart_num, new ToCore))
+      val extTrigIn = Input(Vec(extTrig_num, Bool()))
+      val extTrigOut = Output(Vec(extTrig_num, Bool()))
+      val toCore = Output(Vec(hart_num, new ToCore))
     })
 
     /**
