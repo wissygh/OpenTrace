@@ -3,6 +3,7 @@ package trace
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy.AddressSet
+import shapeless.ops.nat.Pow
 
 trait TraceParameters {
 
@@ -49,12 +50,18 @@ trait TraceParameters {
    */
 
   def ts_width_p = 63
+  def ts_prescale_p = 2 // 0,1,2,3
+  def prescale_p = math.pow(2, 2 * ts_prescale_p).toInt
+  def clock_domain = 2 // 2: bus, 3: cpu
 
   /**
    * Trace's Parameters Data trace
    */
   def nodatatrace_p = true
   def doptions_width_p = 2
+
+  // ext trigger num
+  def extTrig_num = 4
 
   /**
    * the num of harts

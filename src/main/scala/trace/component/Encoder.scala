@@ -15,8 +15,8 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
 {
   val io = IO(new Bundle {
     val fromCore = Input(new FromCore)
-    val extTrigIn = Input(Vec(8, Bool()))
-    val extTrigOut = Output(Vec(8, Bool()))
+    val extTrigIn = Input(Vec(extTrig_num, Bool()))
+    val extTrigOut = Output(Vec(extTrig_num, Bool()))
     val toCore   = Output(new ToCore)
     val packet  = Output(new Payload)
   })
@@ -30,56 +30,49 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
   val ingressValid =  fromCore.blocks.map(_.valid).reduce(_ | _)
   val itypeIsInt = block0.valid && Itype.isInt(block0.bits.itype)
   val itypeIsExp = block0.valid && Itype.isExp(block0.bits.itype)
+  val runInDebug = priv === Priv.D
 
 
   /**
-   * external trigger
+   * trigger_begin: trigger Module & external trigger
    */
-  // extTrigAction, todo: how to select when trigger module and ext Trigger al fire.
-  val trigVec = Wire(Vec(8, UInt(4.W)))
+  // extTrigAction, todo: how to select when trigger module and ext Trigger all fire.
+  val trigVec = Wire(Vec(extTrig_num, UInt(4.W)))
   trigVec.map(_ := 0.U)
-  val extTrigAction = PriorityMux(io.extTrigIn, teTrigExtInControl.regOut.asUInt.asTypeOf(trigVec))
+  val extTrigInAction = PriorityMux(io.extTrigIn, teTrigExtInControl.regOut.asUInt.asTypeOf(trigVec))
   // extTrigEvent todo: start stop check
-  io.extTrigOut.zip(teTrigExtOutControl.regOut.asUInt.asTypeOf(trigVec)).map{ case(io, event) =>
-    io := (event === TrigEvent.Start.asUInt && teControl.regOut.InstTracing.asBool) ||
-      (event === TrigEvent.Start.asUInt && !teControl.regOut.InstTracing.asBool)
+  val instTracing = RegNext(teControl.regOut.InstTracing.asBool)
+  io.extTrigOut.zip(teTrigExtOutControl.regOut.asUInt.asTypeOf(trigVec)).map{ case(trigOut, event) =>
+    trigOut := MuxLookup(event, false.B)(Seq(
+      TrigEvent.Start.asUInt -> (!instTracing &&  teControl.regOut.InstTracing.asBool), //todo: check per block?
+      TrigEvent.Stop.asUInt  -> ( instTracing && !teControl.regOut.InstTracing.asBool),
+    ))
   }
 
+  // Trigger module
+  val triggerModEn = blocks.map(block => block.valid).reduce(_ | _) && (trigger.traceOn || trigger.traceOff)
+  val traceOn  = Mux(triggerModEn, trigger.traceOn,  extTrigInAction === TrigAction.TraceOn.asUInt)
+  val traceOff = Mux(triggerModEn, trigger.traceOff, extTrigInAction === TrigAction.TraceOff.asUInt)
 
-  /**
-   * control reg io
-   */
-  controlMods.foreach { mod =>
-    mod match {
-      case m: HasTeInstFeaturesBundle =>
-        m.Id := srcId(baseAddr).U
-      case m: HasTeCtrlBundle => // todo fix
-        m.stallOrOf   := false.B
-        m.allEmitted  := true.B
-        m.traceOn     := trigger.traceOn && blocks.map(block => block.valid).reduce(_ | _)
-        m.traceOff    := trigger.traceOff && blocks.map(block => block.valid).reduce(_ | _)
-      case _ =>
-    }
-  }
-
-  // traceNoftify, trigger from hart
+  //
   val notifyVec = trigger.TraceNotify.zip(blocks.map(block => block.valid)).map{
     case (notify, valid) => notify && valid && teControl.regOut.InstTracing.asBool
   }
-
-  // todo: (tsControl.regOut.Width.asUInt, 0)
-  val timeStamp = (tsCounterHigh.regOut.asUInt ## tsCounterLow.regOut.asUInt)(ts_width_p, 0)
-  assert(tsControl.regOut.Width.asUInt === ts_width_p.U, s"ts_width_p is not enqual tsControl.regOut.Width!")
+  val notifyTrig = notifyVec.reduce(_ | _) | extTrigInAction === TrigAction.TraceNotify.asUInt
+  val notifyCanGenPacket = notifyTrig & teControl.regOut.InstTracing.asBool  // todo: fix trigger module's notify
+  /**
+   * trigger_end: trigger Module & external trigger
+   */
 
 
   /**
-   * match_begin
+   * filters match_begin
    * todo: data trace match
    */
-  val compMatchVec   = Wire(Vec(filter_num, Bool()))
-  def matchPFunc(compInput: UInt, CompPFunc: UInt, matchRegData: UInt): Bool = {
+  val compMatchVec   = Wire(Vec(comparator_num, Bool()))
+  def matchFunc(isPfunc: Boolean)(compInput: UInt, CompPFunc: UInt, matchRegData: UInt): Bool = {
     val srcData = MuxLookup(compInput, block0.bits.iaddr)(Seq(
-      CompInputField.Iaddr.asUInt -> block0.bits.iaddr,
+      CompInputField.Iaddr.asUInt -> block0.bits.iaddr, //todo: check per block?
       CompInputField.Context.asUInt -> context,
       CompInputField.Tval.asUInt -> tval,
       // CompInputField.Daddr.asUInt -> Daddr // todo: support data trace
@@ -91,43 +84,17 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
     val gt = srcData > matchRegData
     val ge = srcData >=  matchRegData
 
-    MuxLookup(CompPFunc, eq)(Seq(
+    MuxLookup(CompPFunc, true.B)(Seq(
       CompPFuncField.Equal.asUInt -> eq,
       CompPFuncField.NotEqual.asUInt -> ne,
       CompPFuncField.LessThan.asUInt -> lt,
       CompPFuncField.LessEqual.asUInt -> le,
       CompPFuncField.GreaterThan.asUInt -> gt,
       CompPFuncField.GreaterEqual.asUInt -> ge,
-      CompPFuncField.AlwaysFalseLatch.asUInt -> false.B,
-      CompPFuncField.AlwaysTrue.asUInt -> true.B,
+      CompPFuncField.AlwaysFalseLatch.asUInt -> (if(isPfunc) false.B else true.B),
     ))
   }
 
-  def matchSFunc(compInput: UInt, CompPFunc: UInt, matchRegData: UInt): Bool = {
-    val srcData = MuxLookup(compInput, block0.bits.iaddr)(Seq(
-      CompInputField.Iaddr.asUInt -> block0.bits.iaddr,
-      CompInputField.Context.asUInt -> context,
-      CompInputField.Tval.asUInt -> tval,
-      // CompInputField.Daddr.asUInt -> Daddr // todo: support data trace
-    ))
-    val eq = srcData === matchRegData
-    val ne = srcData =/= matchRegData
-    val lt = srcData < matchRegData
-    val le = srcData <=  matchRegData
-    val gt = srcData > matchRegData
-    val ge = srcData >=  matchRegData
-
-    MuxLookup(CompPFunc, eq)(Seq(
-      CompSFuncField.Equal.asUInt -> eq,
-      CompSFuncField.NotEqual.asUInt -> ne,
-      CompSFuncField.LessThan.asUInt -> lt,
-      CompSFuncField.LessEqual.asUInt -> le,
-      CompSFuncField.GreaterThan.asUInt -> gt,
-      CompSFuncField.GreaterEqual.asUInt -> ge,
-      CompSFuncField.AlwaysTrueMask.asUInt -> true.B,
-      CompSFuncField.AlwaysTrue.asUInt -> true.B,
-    ))
-  }
   (0 until comparator_num).map { i =>
     val ctrlReg = Wire(new TeCompControlBundle)
     val pMatchRegData = Wire(UInt(64.W))
@@ -136,29 +103,30 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
     pMatchRegData := teCompPMatchHighVec(i).rdata ## teCompPMatchLowVec(i).rdata
     sMatchRegData := teCompSMatchHighVec(i).rdata ## teCompSMatchLowVec(i).rdata
 
-    val matchMode = ctrlReg.MatchMode.asUInt
-    val pMatch: Bool = matchPFunc(
+    val pMatch: Bool = matchFunc(true)(
       ctrlReg.PInput.asUInt,
       ctrlReg.PFunc.asUInt,
       Mux(ctrlReg.SFunc === CompSFuncField.AlwaysTrueMask, pMatchRegData & sMatchRegData, pMatchRegData)
-    )
-    val sMatch: Bool = matchSFunc(ctrlReg.SInput.asUInt, ctrlReg.SFunc.asUInt, sMatchRegData)
+    ) || CompInputField.isIaddr(ctrlReg.PInput) && ctrlReg.PNotify.asBool && notifyCanGenPacket
+    val sMatch: Bool = matchFunc(false)(ctrlReg.SInput.asUInt, ctrlReg.SFunc.asUInt, sMatchRegData) ||
+      CompInputField.isIaddr(ctrlReg.SInput) && ctrlReg.SNotify.asBool && notifyCanGenPacket
 
-    val puntilsReg = RegInit(false.B)
+    val puntilsMatchReg = RegInit(false.B)
     when(pMatch){
-      puntilsReg := true.B
+      puntilsMatchReg := true.B
     }.elsewhen(sMatch){
-      puntilsReg := false.B
+      puntilsMatchReg := false.B
     }
+    val matchMode = ctrlReg.MatchMode.asUInt
     compMatchVec(i) := (matchMode === MatchModeField.P.asUInt) && pMatch ||
       (matchMode === MatchModeField.PS.asUInt) && (pMatch & sMatch) ||
       (matchMode === MatchModeField.NonPS.asUInt) && !(pMatch & sMatch) ||
-      (matchMode === MatchModeField.PUntilS.asUInt) && puntilsReg // comp Match from p match to s match todo: checking spec
+      (matchMode === MatchModeField.PUntilS.asUInt) && puntilsMatchReg // comp Match from p match to s match todo: checking spec
   }
 
   val privMatchVec   = Wire(Vec(filter_num, Bool()))
   val ecauseMatchVec = Wire(Vec(filter_num, Bool()))
-  val intrMatchVec   = Wire(Vec(filter_num, Bool()))
+  val intExpMatchVec = Wire(Vec(filter_num, Bool()))
   val comp1MatchVec  = Wire(Vec(filter_num, Bool()))
   val comp2MatchVec  = Wire(Vec(filter_num, Bool()))
   val comp3MatchVec  = Wire(Vec(filter_num, Bool()))
@@ -173,7 +141,7 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
     val ecauseReg = Wire(UInt(64.W))
     val dataReg = Wire(new TeFilterMatchDataBundle)
 
-    ctrlReg :=teFilterControlVec(i).rdata
+    ctrlReg := teFilterControlVec(i).rdata
     instReg := teFilterMatchInstVec(i).rdata
     ecauseReg := teFilterMatchEcauseHighVec(i).rdata ## teFilterMatchEcauseLowVec(i).rdata
     dataReg := teFilterMatchDataVec(i).rdata
@@ -183,12 +151,17 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
       true.B
     )
 
+    // todo: Add count to hand nested trap.
     ecauseMatchVec(i) := Mux(ctrlReg.Enable.asBool && ctrlReg.MatchEcause.asBool,
       ecauseReg === UIntToOH(cause),
       true.B
     )
 
-    intrMatchVec(i) := Mux(ctrlReg.Enable.asBool, Mux(ctrlReg.MatchInterrupt.asBool, itypeIsInt, itypeIsExp), true.B)
+    // todo: Add count to hand nested trap.
+    intExpMatchVec(i) := Mux(ctrlReg.Enable.asBool && ctrlReg.MatchInterrupt.asBool,
+      Mux(instReg.MatchValueInterrupt.asBool, itypeIsInt, itypeIsExp),
+      true.B
+    )
 
     impdefMatchVec(i) := Mux(ctrlReg.Enable.asBool && ctrlReg.MatchImpdef.asBool,
       (impdef & teFilterMatchMaskImpdefVec(i).rdata) === (teFilterMatchValueImpdefVec(i).rdata & teFilterMatchMaskImpdefVec(i).rdata),
@@ -200,15 +173,64 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
     comp3MatchVec(i) := Mux(ctrlReg.Enable.asBool && ctrlReg.MatchComp3.asBool, compMatchVec(ctrlReg.Comp3.asUInt), true.B)
   }
 
-  // if several filters are enabled they act as logical OR. 
+  // if several filters are enabled they act as logical OR.
   // Several conditions for single filter act as logical AND.
-  val allFiltersMatchVec = Seq(privMatchVec, ecauseMatchVec, intrMatchVec, comp1MatchVec,
+  val allFiltersMatchVec = Seq(privMatchVec, ecauseMatchVec, intExpMatchVec, comp1MatchVec,
     comp2MatchVec, comp3MatchVec, impdefMatchVec).map(_.asUInt).reduce(_ & _)
-  val filter1H = teInstFilters.regOut.InstFilters.asUInt(filter_num - 1, 0)
-  val match2Gen = Mux(filter1H.orR, Mux1H(filter1H, allFiltersMatchVec), true.B)
+  val filter1H = teInstFilters.regOut.InstFilters.asUInt
+
+  val filterCanGenPacket = Mux(filter1H.orR, Mux1H(filter1H, allFiltersMatchVec), true.B)
   /**
-   * match_end
+   * filters match_end
    */
+
+
+  /**
+   * time stamp. todo: support what type counter? bus clock or hart clock? be determined to trace's clock domain
+   */
+  val w1toTsReset: Bool = tsControl.w.wen && tsControl.w.wdataFields.Reset.asBool
+  // Real time counter.
+  val timeCount = RegInit(0.U(ts_width_p.W))
+  val prescale  = RegInit(0.U(prescale_p.W))
+
+  val countEn = Mux(
+    runInDebug,
+    tsControl.regOut.RunInDebug.asBool,
+    (tsControl.regOut.Count.asUInt === TsCountEnField.Runs.asUInt)
+  )
+  when(w1toTsReset) {
+    prescale  := 0.U
+    timeCount := 0.U
+  }.elsewhen(countEn){
+    val tmpScaleCounter = prescale +& 1.U
+    prescale := tmpScaleCounter.tail(1)
+    timeCount := timeCount + tmpScaleCounter.head(1)
+  }
+
+
+  /**
+   * control reg io
+   */
+  controlMods.foreach { mod =>
+    mod match {
+      case m: HasTeInstFeaturesBundle =>
+        m.id := srcId(baseAddr).U
+      case _ =>
+    }
+    mod match {
+      case m: HasTeCtrlBundle => // todo fix
+        m.stallOrOf   := false.B
+        m.allEmitted  := true.B
+        m.traceOn     := traceOn
+        m.traceOff    := traceOff
+      case _ =>
+    }
+    mod match {
+      case m: HasTsCountBundle =>
+        m.TimeCount := timeCount
+      case _ =>
+    }
+  }
 
   /**
    * encoder IO
