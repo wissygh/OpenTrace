@@ -18,10 +18,10 @@ trait EncoderControl extends ControlBase { self: Encoder =>
       reg.Enable      := wdata.Active && wdata.Enable
     }
 
-    when(wen){
-      reg.InstTracing := wdata.Enable && wdata.InstTracing
-    }.elsewhen(traceOn || traceOff){
-      reg.InstTracing := (reg.Enable.asBool && reg.InstTrigEnable.asBool) && Mux1H(
+    when(wen && wdata.Enable.asBool){
+      reg.InstTracing := wdata.InstTracing
+    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool){
+      reg.InstTracing := Mux1H(
         Seq(traceOn, traceOff),
         Seq(true.B, false.B)
       )
@@ -42,7 +42,7 @@ trait EncoderControl extends ControlBase { self: Encoder =>
     .setAddr(CtrlReg.TeImpl)
 
   val teInstFeatures = Module(new CSRModule("TeInstFeatures", new TeInstFeaturesBundle) with HasTeInstFeaturesBundle{
-    regOut.SrcID := Id
+    regOut.SrcID := id
   })
     .setAddr(CtrlReg.TeInstFeatures)
 
@@ -62,12 +62,12 @@ trait EncoderControl extends ControlBase { self: Encoder =>
     .setAddr(CtrlReg.TsControl)
 
   val tsCounterLow = Module(new CSRModule("TsCounterLow", new OneROFieldBundle) with HasTsCountBundle {
-    regOut.ALL := TimeCount(31, 0)
+    regOut.ALL := timeCount(31, 0)
   })
     .setAddr(CtrlReg.TsCounterLow)
 
   val tsCounterHigh = Module(new CSRModule("TsCounterHigh", new OneROFieldBundle)with HasTsCountBundle{
-    regOut.ALL := TimeCount(63, 32)
+    regOut.ALL := timeCount(63, 32)
   })
     .setAddr(CtrlReg.TsCounterHigh)
 
@@ -181,24 +181,24 @@ class TeControlBundle extends CSRBundle {
   val Active              = RW(0).withReset(0.U)
   val Enable              = RW(1).withReset(0.U)
   val InstTracing         = RW(2)
-  val Emptry              = RO(3).withReset(1.U)
+  val Emptry              = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
   val InstMode            = InstModeField(6, 4, wNoFilter).withReset(InstModeField.BHT)
   val Context             = RW(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
-  val InstStallEna        = RW(13).withReset(0.U)
+  val InstStallEna        = RW(13).withReset(0.U) // 0: drop 1: stall
   val InhibitSrc          = RW(15).withReset(0.U)
   val InstSyncMode        = InstSyncModeField(17, 16, wNoFilter).withReset(InstSyncModeField.Cycles)
-  val InstSyncMax         = RW(23, 20) // counter >= 2^(InstSyncMax + 4), send sync package. 
+  val InstSyncMax         = InstSyncMaxROField(23, 20).withReset(InstSyncMaxROField.Default) // counter >= 2^(InstSyncMax + 4), send sync package. todo: fix to rw
   val Format              = FormatField(26, 24, wNoFilter).withReset(FormatField.Etrace)
 }
 
 object InstModeField extends CSREnum with WARLApply {
-  val Othertrace = Value(0.U)
-  val Baseline   = Value(3.U)
-  val BHT        = Value(6.U)
+  val DisableInstTrace = Value(0.U)
+  val Baseline         = Value(3.U)
+  val BHT              = Value(6.U)
 
-  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Othertrace, Baseline, BHT)
+  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(DisableInstTrace, Baseline, BHT)
 }
 
 object InstSyncModeField extends CSREnum with WARLApply {
@@ -206,6 +206,10 @@ object InstSyncModeField extends CSREnum with WARLApply {
   val Packets      = Value(1.U)
   val Cycles       = Value(2.U)
   val InstHalfWord = Value(3.U)
+}
+
+object InstSyncMaxROField extends CSREnum with ROApply with TraceParameters {
+  val Default     = Value(syncmax_p.U)
 }
 
 object FormatField extends CSREnum with WARLApply {
@@ -465,10 +469,10 @@ trait HasTeCtrlBundle { self: CSRModule[_] =>
 }
 
 trait HasTeInstFeaturesBundle { self: CSRModule[_] =>
-  val Id = IO(Input(UInt(12.W)))
+  val id = IO(Input(UInt(12.W)))
 }
 
 trait HasTsCountBundle { self: CSRModule[_] =>
-  val TimeCount = IO(Input(UInt(64.W)))
+  val timeCount = IO(Input(UInt(64.W)))
 }
 

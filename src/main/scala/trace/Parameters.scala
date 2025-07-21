@@ -45,6 +45,11 @@ trait TraceParameters {
   def f0s_width_p = 1
   def cache_size_p = 8 // todo: fix
 
+  // sync packets
+  def syncmax_p = 2 // [0, 16)
+  def synccounter_width_p = syncmax_p + 4
+  def countmax_p = math.pow(2, syncmax_p + 4).toInt
+
   /**
    * timestamp parameters
    */
