@@ -187,11 +187,11 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
 
   /**
    * time stamp. todo: support what type counter? bus clock or hart clock? be determined to trace's clock domain
+   * todo: prescale_p rw
    */
   val w1toTsReset: Bool = tsControl.w.wen && tsControl.w.wdataFields.Reset.asBool
   // Real time counter.
-  val timeCount = RegInit(0.U(ts_width_p.W))
-  val prescale  = RegInit(0.U(prescale_p.W))
+  val timeCount = RegInit(0.U((ts_width_p + prescale_p).W))
 
   val countEn = Mux(
     runInDebug,
@@ -199,14 +199,34 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
     (tsControl.regOut.Count.asUInt === TsCountEnField.Runs.asUInt)
   )
   when(w1toTsReset) {
-    prescale  := 0.U
     timeCount := 0.U
   }.elsewhen(countEn){
-    val tmpScaleCounter = prescale +& 1.U
-    prescale := tmpScaleCounter.tail(1)
-    timeCount := timeCount + tmpScaleCounter.head(1)
+    timeCount := timeCount + 1.U
   }
 
+  /**
+   * packets
+   */
+  val carryContext = teControl.regOut.Context.asBool
+  val carrySrc = !teControl.regOut.InhibitSrc.asBool && teInstFeatures.regOut.SrcBits.asUInt.orR
+  val carryTime = tsControl.regOut.Enable
+
+
+
+  val syncOther = WireInit(false.B)
+  val syncPeriodic = WireInit(false.B)
+  val syncCount = RegInit(0.U((synccounter_width_p).W))
+  when(syncOther || teControl.w.wen && (teControl.w.wdataFields.InstSyncMode =/= teControl.regOut.InstSyncMode)) {
+    syncCount := 0.U
+  }.elsewhen(countEn){
+    val tmpSyncCount = syncCount +& 1.U
+    syncPeriodic := tmpSyncCount.head(1)
+    syncCount := tmpSyncCount.tail(1)
+  }
+  val syncEn = syncOther || syncPeriodic
+
+  val stallHart = teControl.regOut.InstStallOrOverflow.asBool && teControl.regOut.InstStallEna.asBool
+  val instTraceEnable = teControl.regOut.InstTracing.asBool
 
   /**
    * control reg io
@@ -227,7 +247,7 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
     }
     mod match {
       case m: HasTsCountBundle =>
-        m.TimeCount := timeCount
+        m.timeCount := timeCount(ts_width_p + prescale_p - 1, prescale_p)
       case _ =>
     }
   }
@@ -235,8 +255,8 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
   /**
    * encoder IO
    */
-  io.toCore.stall := teControl.regOut.InstStallOrOverflow.asBool && teControl.regOut.InstStallEna.asBool
-  io.toCore.enable := teControl.regOut.InstTracing.asBool
+  io.toCore.stall := stallHart
+  io.toCore.enable := instTraceEnable
   io.packet.format := 0.U
   connectCtrlReg()
 }

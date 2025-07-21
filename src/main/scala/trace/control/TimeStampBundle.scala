@@ -16,7 +16,7 @@ class TsControlBundle extends CSRBundle {
   val Reset               = RW(2).withReset(0.U) // InternalSystem/InternalCore, W1 to clear timestamp counter.
   val RunInDebug          = TsCountEnField(3, wNoFilter).withReset(TsCountEnField.Stop) // InternalCore clock.
   val Mode                = TsModeROField(6, 4).withReset(TsModeROField.Default)
-  val Prescale            = TsPrescaleROField(9, 8).withReset(TsPrescaleROField.Default) // InternalSystem/InternalCore, clock prescale: 2^(2 * Prescale)
+  val Prescale            = TsPrescaleROField(9, 8).withReset(TsPrescaleROField.Default) // InternalSystem/InternalCore, clock prescale: 2^(2 * Prescale) todo: fix to rw
   val Enable              = RW(15).withReset(0.U)
   val Width               = TsWidthROField(29, 24).withReset(TsWidthROField.Default) // 6 bits; counter: 0 bits -> 63 bits
 }
