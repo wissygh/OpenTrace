@@ -68,10 +68,10 @@ object CtrlReg {
   val ATBBridgeImpl    = 0x004
 
   /**
-   * PibSink Reg Address
+   * PIBSink Reg Address
    */
-  val PibControl = 0x000
-  val PibImpl    = 0x004
+  val PIBControl = 0x000
+  val PIBImpl    = 0x004
 
   /**
    * RAMSink Reg Address

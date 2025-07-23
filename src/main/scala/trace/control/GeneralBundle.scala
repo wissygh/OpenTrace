@@ -33,6 +33,6 @@ object TrcompTypeField extends CSREnum with ROApply {
   val Encoder   = Value(0x1.U)
   val Funnel    = Value(0x8.U)
   val Ramsink   = Value(0x9.U)
-  val Pibsink   = Value(0xA.U)
+  val PIB       = Value(0xA.U)
   val Atbbridge = Value(0xE.U)
 }
