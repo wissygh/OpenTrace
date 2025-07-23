@@ -26,26 +26,8 @@ object TraceMain extends App {
         ChiselGeneratorAnnotation(() => trace.module),
         FirtoolOption("--disable-all-randomization"),
         FirtoolOption("--lowering-options=explicitBitcast,disallowLocalVariables,disallowPortDeclSharing,locationInfoStyle=none"),
-        circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.Verilog)
+        circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)
       )
     )
   }
 }
-
-
-//import freechips.rocketchip.diplomacy.LazyModule
-//
-//object BackendMain extends App {
-//  val (config, firrtlOpts, firtoolOpts) = ArgParser.parse(
-//    args :+ "--disable-always-basic-diff" :+ "--fpga-platform" :+ "--target" :+ "verilog")
-//
-//
-//  val trace = LazyModule(new Trace(BusType.TLbus)(null))
-//
-//  Generator.execute(
-//    firrtlOpts :+ "--full-stacktrace" :+ "--target-dir" :+ "backend",
-//    trace.module,
-//    firtoolOpts
-//  )
-//  println("done")
-//}
