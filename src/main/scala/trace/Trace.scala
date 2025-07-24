@@ -73,13 +73,14 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
     val (fromCore, toCore) = (io.fromCore, io.toCore)
 
     /**
-     * module: [[bus2ctrl]] [[encoderVec]] [[funnel]] [[pib]] [[atb]]
+     * module: [[bus2ctrl]] [[encoderVec]] [[funnel]] [[pib]] [[atb]] [[ram]]
      */
     val bus2ctrl = bus2Control.module
     val encoderVec = (0 until hart_num).map(i => Module(new Encoder(encoderBaseAddr + memStep * i)))
     val funnel = Module(new Funnel(funnelBaseAddr))
     val pib = Module(new PIB(pibBaseAddr))
     val atb = Module(new ATBBridge(atbbridgeBaseAddr))
+    val ram = Module(new RAM(ramSinkAddr))
 
     /**
      * data path(message stream):
@@ -106,7 +107,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
      *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]]
      *             \---- [bus read req] <----------- [read data] <-------/
      */
-    val components: Seq[ComponentBase] = (encoderVec.toSeq ++ Seq(funnel, pib, atb))
+    val components: Seq[ComponentBase] = (encoderVec.toSeq ++ Seq(funnel, pib, atb, ram))
     components.map(comp => comp.bus.b2c := bus2ctrl.io.b2c)
     bus2ctrl.io.c2b.error := components.map(_.bus.c2b.error).reduce(_ | _)
     bus2ctrl.io.c2b.dataRead := components.map(_.bus.c2b.dataRead).reduce(_ | _)

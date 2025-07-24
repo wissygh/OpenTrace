@@ -76,18 +76,18 @@ object CtrlReg {
   /**
    * RAMSink Reg Address
    */
-  val RamControl     = 0x000
-  val RamImpl        = 0x004
+  val RAMControl     = 0x000
+  val RAMImpl        = 0x004
 
-  val RamStartLow    = 0x010
-  val RamStartHigh   = 0x014
-  val RamLimitLow    = 0x018
-  val RamLimitHigh   = 0x01C
+  val RAMStartLow    = 0x010
+  val RAMStartHigh   = 0x014
+  val RAMLimitLow    = 0x018
+  val RAMLimitHigh   = 0x01C
 
-  val RamWPLow       = 0x020
-  val RamWPHigh      = 0x024
-  val RamRPLow       = 0x028
-  val RamRPHigh      = 0x02C
+  val RAMWPLow       = 0x020
+  val RAMWPHigh      = 0x024
+  val RAMRPLow       = 0x028
+  val RAMRPHigh      = 0x02C
 
-  val RamData        = 0x040
+  val RAMData        = 0x040
 }
