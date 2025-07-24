@@ -2,6 +2,7 @@ package trace
 
 import chisel3._
 import chisel3.util._
+import firrtl2.Utils.True
 import freechips.rocketchip.diplomacy.AddressSet
 import shapeless.ops.nat.Pow
 
@@ -51,6 +52,22 @@ trait TraceParameters {
   def countmax_p = math.pow(2, syncmax_p + 4).toInt
 
   /**
+   * Trace's Parameters Data trace
+   */
+  def nodatatrace_p = true
+  def doptions_width_p = 2
+
+  /**
+   * encoder parameters
+   */
+  def hart_num = 1
+  def filter_num = 1
+  def comparator_num = 1
+  require(comparator_num < 8, "comparator_num can not be greater 8, because width of trTeFilterControl.trTeFilterComp is 3.\n")
+  // ext trigger num
+  def extTrig_num = 4
+
+  /**
    * timestamp parameters
    */
 
@@ -60,32 +77,16 @@ trait TraceParameters {
   def clock_domain = 2 // 2: bus, 3: cpu
 
   /**
-   * Trace's Parameters Data trace
+   * RAM parameters
+   * only support sram & fixed smem
    */
-  def nodatatrace_p = true
-  def doptions_width_p = 2
+  def supportSRAM = true
+  def supportSMEM = true
+  def fixedSMEM   = true
+  def fixedStartAddr  = 0x0
+  def fixedLimitAddr  = 0x0
+  def ramLimitAddr    = 0x0
 
-  // ext trigger num
-  def extTrig_num = 4
-
-  /**
-   * the num of harts
-   * the num of filter
-   * the num of comparator
-   */
-  def hart_num = 1
-  def filter_num = 1
-  def comparator_num = 1
-  require(comparator_num < 8, "comparator_num can not be greater 8, because width of trTeFilterControl.trTeFilterComp is 3.\n")
-
-  /**
-   * component type
-   */
-  def trcomp_encoder   = 0x1
-  def trcomp_funnel    = 0x8
-  def trcomp_ramsink   = 0x9
-  def trcomp_pibsink   = 0xA
-  def trcomp_atbbridge = 0xE
 
   /**
    * trace memory map address
