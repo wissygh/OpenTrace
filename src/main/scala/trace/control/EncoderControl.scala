@@ -242,7 +242,7 @@ class TeInstFeaturesBundle extends CSRBundle {
   val EnAllJumps             = RW(9)
   val ExtendAddrMSB          = RW(10)
   val SrcID                  = RO(27, 16)
-  val SrcBits                = RW(31, 28)
+  val SrcBits                = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
 }
 
 object ImpRetModeField extends CSREnum with WARLApply {
@@ -250,6 +250,10 @@ object ImpRetModeField extends CSREnum with WARLApply {
   val Simple   = Value(1.U)
   val Partial  = Value(2.U)
   val FullAddr = Value(3.U)
+}
+
+object SrcBitsROField extends CSREnum with ROApply with TraceParameters {
+  val Default     = Value(src_bits_p.U)
 }
 
 class TeInstFiltersBundle extends CSRBundle with  TraceParameters {

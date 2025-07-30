@@ -66,6 +66,7 @@ trait TraceParameters {
   require(comparator_num < 8, "comparator_num can not be greater 8, because width of trTeFilterControl.trTeFilterComp is 3.\n")
   // ext trigger num
   def extTrig_num = 4
+  def src_bits_p  = 8
 
   /**
    * timestamp parameters
@@ -123,6 +124,12 @@ trait TraceParameters {
   def ramSinkAddr       = pibBaseAddr       + memStep * pib_num
 
   def srcId(addr: Int): Int = (addr & mask) >> log2Up(memStep)
+
+  /**
+   * interface parameter
+   */
+  def payload_max_width = 248
+  def trace_type_width = 1
 }
 
 case class BusType(
