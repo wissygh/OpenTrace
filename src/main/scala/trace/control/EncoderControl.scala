@@ -8,10 +8,10 @@ import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => W
 import bundles.CSRFunc._
 import bundles.CSRBundles._
 import org.apache.commons.io.filefilter.IOFileFilter
-import trace.component.Encoder
+import trace.component.EncoderImp
 import trace.TraceParameters
 
-trait EncoderControl extends ControlBase { self: Encoder =>
+trait EncoderControl extends ControlBase { self: EncoderImp =>
 
   val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle{
     when(wen) {

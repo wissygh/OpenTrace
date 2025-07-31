@@ -7,11 +7,11 @@ import bundles.CSRDefines._
 import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => WARL, _}
 import bundles.CSRFunc._
 import bundles.CSRBundles._
-import trace.component.ComponentBase
+import trace.component.ComponentBaseImp
 
 import scala.collection.immutable.SeqMap
 
-trait ControlBase { self: ComponentBase =>
+trait ControlBase { self: ComponentBaseImp =>
   
   val controlMods: Seq[CSRModule[_]] = null
 

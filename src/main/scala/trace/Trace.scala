@@ -19,6 +19,12 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
 {
   val bus2Control = LazyModule(new Bus2Control(busType))
 
+  val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + memStep * i)))
+  val funnel = LazyModule(new Funnel(funnelBaseAddr))
+  val pib = LazyModule(new PIB(pibBaseAddr))
+  val atb = LazyModule(new ATBBridge(atbbridgeBaseAddr))
+  val ram = LazyModule(new RAM(ramSinkAddr))
+
   /**
    * tilelink
    */
@@ -76,25 +82,31 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
      * module: [[bus2ctrl]] [[encoderVec]] [[funnel]] [[pib]] [[atb]] [[ram]]
      */
     val bus2ctrl = bus2Control.module
-    val encoderVec = (0 until hart_num).map(i => Module(new Encoder(encoderBaseAddr + memStep * i)))
-    val funnel = Module(new Funnel(funnelBaseAddr))
-    val pib = Module(new PIB(pibBaseAddr))
-    val atb = Module(new ATBBridge(atbbridgeBaseAddr))
-    val ram = Module(new RAM(ramSinkAddr))
+    val encoderModVec = encoderVec.map(_.module)
+    val funnelMod = funnel.module
+    val pibMod = pib.module
+    val atbMod = atb.module
+    val ramMod = ram.module
+
+    encoderModVec.map(encoder => dontTouch(encoder.io))
+    dontTouch(funnelMod.io)
+//    dontTouch(pibMod.io)
+//    dontTouch(atbMod.io)
+//    dontTouch(ramMod.io)
 
     /**
      * data path(message stream):
      *         [ingressPort]                      [packets]
      * hart ------------------> [[encoderVec]] ---------------> [[funnel]]
      */
-    encoderVec.zip(fromCore).zip(toCore).map{ case((encoder, ingressPort), toCore) => {
+    encoderModVec.zip(fromCore).zip(toCore).map{ case((encoder, ingressPort), toCore) => {
       toCore := encoder.io.toCore
       encoder.io.fromCore := ingressPort
       encoder.io.extTrigIn := io.extTrigIn
     }}
-    encoderVec.zip(funnel.io.packets).map{ case (encoder, packet) => packet := encoder.io.packet }
+    encoderModVec.zip(funnelMod.io.packets).map{ case (encoder, packet) => packet := encoder.io.packet }
 
-    io.extTrigOut := encoderVec.map(_.io.extTrigOut.asUInt).reduce(_ | _).asBools
+    io.extTrigOut := encoderModVec.map(_.io.extTrigOut.asUInt).reduce(_ | _).asBools
 
     /**
      * control path:
@@ -107,7 +119,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
      *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]]
      *             \---- [bus read req] <----------- [read data] <-------/
      */
-    val components: Seq[ComponentBase] = (encoderVec.toSeq ++ Seq(funnel, pib, atb, ram))
+    val components: Seq[ComponentBaseImp] = (encoderModVec.toSeq ++ Seq(funnelMod, pibMod, atbMod, ramMod))
     components.map(comp => comp.bus.b2c := bus2ctrl.io.b2c)
     bus2ctrl.io.c2b.error := components.map(_.bus.c2b.error).reduce(_ | _)
     bus2ctrl.io.c2b.dataRead := components.map(_.bus.c2b.dataRead).reduce(_ | _)

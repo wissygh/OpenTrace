@@ -4,6 +4,7 @@ package trace.component
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import freechips.rocketchip.diplomacy._
 import bundles.{CSRAddrWriteBundle, CSRModule}
 import trace.{Control2BusRegBundle, TraceParameters}
 import trace.control.ControlBase
@@ -11,7 +12,11 @@ import trace.interface.{FromCore, Payload, ToCore}
 
 import scala.collection.immutable.SeqMap
 
-abstract class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends Module
+class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule {
+  lazy val module = new ComponentBaseImp(this)(baseAddr)
+}
+
+class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parameters) extends LazyModuleImp(wrapper)
   with ControlBase
   with TraceParameters {
 
@@ -34,3 +39,4 @@ abstract class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends Modu
     bus.c2b.error := false.B
   }
 }
+

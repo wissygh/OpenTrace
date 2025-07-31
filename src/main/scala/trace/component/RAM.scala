@@ -6,7 +6,12 @@ import org.chipsalliance.cde.config.Parameters
 import trace.control._
 
 
-class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr)
+class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
+
+  override lazy val module = new RAMImp(this)(baseAddr)
+}
+
+class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
   with RAMControl
 {
 

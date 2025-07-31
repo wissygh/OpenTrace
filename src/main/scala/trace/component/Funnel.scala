@@ -11,8 +11,12 @@ import trace.interface.{FromCore, Payload, ToCore}
 
 import scala.collection.immutable.SeqMap
 
+class Funnel(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
-class Funnel(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr)
+  override lazy val module = new FunnelImp(this)(baseAddr)
+}
+
+class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
   with FunnelControl
 {
 

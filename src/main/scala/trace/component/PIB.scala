@@ -27,10 +27,13 @@ import scala.collection.immutable.SeqMap
  * when the Trace Encoder or Trace Funnel begins sending trace messages/packets.
  */
 
+class PIB(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
-class PIB(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr)
+  override lazy val module = new PIBImp(this)(baseAddr)
+}
+
+class PIBImp(wrapper: PIB)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
   with PIBControl
 {
-
   connectCtrlReg()
 }

@@ -8,11 +8,11 @@ import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => W
 import bundles.CSRFunc._
 import bundles.CSRBundles._
 import trace.Trace
-import trace.component.PIB
+import trace.component.PIBImp
 
 import scala.collection.immutable.SeqMap
 
-trait PIBControl extends ControlBase { self: PIB =>
+trait PIBControl extends ControlBase { self: PIBImp =>
 
   val PIBControl = Module(new CSRModule("PIBControl", new PIBControlBundle){
     when(wen && wdata.ClkCenter.asBool && PIBModeField.isParallel(wdata.Mode)){
