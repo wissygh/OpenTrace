@@ -8,11 +8,11 @@ import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => W
 import bundles.CSRFunc._
 import bundles.CSRBundles._
 import trace.Trace
-import trace.component.Funnel
+import trace.component.FunnelImp
 
 import scala.collection.immutable.SeqMap
  
-trait FunnelControl extends ControlBase { self: Funnel =>
+trait FunnelControl extends ControlBase { self: FunnelImp =>
 
   val funnelControl = Module(new CSRModule("FunnelControl", new FunnelControlBundle))
     .setAddr(CtrlReg.FunnelControl)

@@ -8,9 +8,9 @@ import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => W
 import bundles.CSRFunc._
 import bundles.CSRBundles._
 import trace.Trace
-import trace.component.ATBBridge
+import trace.component.ATBBridgeImp
 
-trait ATBBridgeControl extends ControlBase { self: ATBBridge =>
+trait ATBBridgeControl extends ControlBase { self: ATBBridgeImp =>
 
   val ATBControl = Module(new CSRModule("ATBBridgeControl", new ATBControlBundle))
     .setAddr(CtrlReg.ATBBridgeControl)

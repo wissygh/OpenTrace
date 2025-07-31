@@ -8,7 +8,7 @@ import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => W
 import bundles.CSRFunc._
 import bundles.CSRBundles._
 import trace.{Trace, TraceParameters}
-import trace.component.RAM
+import trace.component.RAMImp
 
 /**
  * Single RAM Sink may support both SRAM and SMEM modes, but not both may be enabled
@@ -21,7 +21,7 @@ import trace.component.RAM
  *
  */
 
-trait RAMControl extends ControlBase { self: RAM =>
+trait RAMControl extends ControlBase { self: RAMImp =>
 
   val ramControl = Module(new CSRModule("RAMControl", new RAMControlBundle))
     .setAddr(CtrlReg.RAMControl)
