@@ -83,10 +83,18 @@ trait TraceParameters {
    */
   def supportSRAM = true
   def supportSMEM = true
+  def ramIsSMEM   = true // true: SMEM false: SRAM
   def fixedSMEM   = true
   def fixedStartAddr  = 0x0
   def fixedLimitAddr  = 0x0
   def ramLimitAddr    = 0x0
+
+  // trace buffer
+  def buffer_num    = 2
+  def ramBaseAddr   = 0x00_4000_0000
+  def ramMask       = (buffer_num << 2) -1
+  def ramAddressSet = AddressSet(ramBaseAddr, ramMask)
+  def ramBeatBytes  = 32 / 8
 
 
   /**

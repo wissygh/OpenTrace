@@ -12,7 +12,7 @@ import trace.interface.{FromCore, Payload, ToCore}
 
 import scala.collection.immutable.SeqMap
 
-class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule {
+class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
   lazy val module = new ComponentBaseImp(this)(baseAddr)
 }
 

@@ -28,17 +28,27 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
   /**
    * tilelink
    */
-  val tlmatser = Option.when(busType.isTL && !xs_socmisc)(TLClientNode(Seq(TLMasterPortParameters.v1(
+  val ctrlmatser = Option.when(busType.isTL && !xs_socmisc)(TLClientNode(Seq(TLMasterPortParameters.v1(
     Seq(TLMasterParameters.v1(
-      name = "tl",
+      name = "tlctrl",
       sourceId = IdRange(0, 1)
     ))
   ))))
-  val tlmasternode = tlmatser.map(tl => InModuleBody(tl.makeIOs()))
-  tlmatser.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) :=  TLWidthWidget(tlSizeMax) := _)
+  val ctrlmasternode = ctrlmatser.map(tl => InModuleBody(tl.makeIOs()))
+  ctrlmatser.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) :=  TLWidthWidget(tlSizeMax) := _)
 
-  val tlnode = Option.when(busType.isTL && xs_socmisc)(TLIdentityNode())
-  tlnode.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) :=  TLWidthWidget(tlSizeMax) := _)
+  val ctrlnode = Option.when(busType.isTL && xs_socmisc)(TLIdentityNode())
+  ctrlnode.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) :=  TLWidthWidget(tlSizeMax) := _)
+
+  // for ram
+  val ramMaster = Option.when(ramIsSMEM)(TLClientNode(Seq(TLMasterPortParameters.v1(
+    Seq(TLMasterParameters.v1(
+      name = "tlram",
+      sourceId = IdRange(0, 1)
+    ))
+  ))))
+  val ramMasterNode = ramMaster.map(tl => InModuleBody(tl.makeIOs()))
+  ram.ramIdentityNode.foreach(_ := ramMaster.get)
 
   /**
    * axi todo
