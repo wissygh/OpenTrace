@@ -2,11 +2,17 @@ package trace.component
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import trace.control._
 
 
 class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
+
+  val buffer = LazyModule(new CircularBuffer)
+  val ramIdentityNode = Option.when(ramIsSMEM)(TLIdentityNode())
+  buffer.bufferNode.foreach(_ := ramIdentityNode.get)
 
   override lazy val module = new RAMImp(this)(baseAddr)
 }
@@ -15,11 +21,22 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
   with RAMControl
 {
 
-  val traceWrite = WireInit(false.B) // todo： fix
+  val bufferMod = wrapper.buffer.module
+
+  /**
+   * todo: some tmp signal which need to fix
+   */
+  val traceWrite = WireInit(true.B) // todo： fix
   val traceRead  = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
+  val bufferWriteData = Wire(UInt(32.W))
+  bufferWriteData := ramControl.rdata // use ramControl to gen correct verilog, todo: fix to packets
+  val bufferReadData = Wire(UInt(32.W))
+  bufferReadData := 0.U
 
   val wpReg = RegInit(0.U(62.W))
   val rpReg = RegInit(0.U(62.W))
+  val ramWP = ramWPHigh.rdata ## ramWPLow.rdata
+  val ramRP = ramWPHigh.rdata ## ramWPLow.rdata
   val ramStart = ramStartHigh.rdata ## ramStartLow.regOut.Low.asUInt
   val ramLimit = ramLimitHigh.rdata ## ramLimitLow.regOut.Low.asUInt
 
@@ -67,10 +84,23 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
     }
     mod match {
       case m: HasRAMRdataBundle =>
-        m.readData := 0.U // todo: fix
+        m.readData := bufferReadData
       case _ =>
     }
   }
+
+
+  // for sram and smem, packets -> ram sink
+  bufferMod.write.en := traceWrite
+  bufferMod.write.ptr := ramWP
+  bufferMod.write.data := bufferWriteData
+
+  // only for sram
+  bufferMod.read.foreach( rd => {
+    rd.en := traceRead
+    rd.ptr := ramRP
+    bufferReadData := rd.data
+  })
 
   connectCtrlReg()
 }
