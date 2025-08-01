@@ -25,6 +25,7 @@ object TraceMain extends App {
       Seq(
         ChiselGeneratorAnnotation(() => trace.module),
         FirtoolOption("--disable-all-randomization"),
+        FirtoolOption("--disable-annotation-unknown"),
         FirtoolOption("--lowering-options=explicitBitcast,disallowLocalVariables,disallowPortDeclSharing,locationInfoStyle=none"),
         circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)
       )
