@@ -54,6 +54,13 @@ object CtrlReg {
 
   def filterCompAddrGen(base: Int, num: Int): Int = (base + 0x20 * num) // todo：int or bigInt
 
+  // hpm
+  val TeHpm0Addr                 = 0x900
+  val TeHpm0EventLow             = 0x904
+  val TeHpm0EventHigh            = 0x908
+  val TeHpm0EventData            = 0x90c
+  def hpmAddrGen(base: Int, num: Int): Int = (base + 0x20 * num)
+
   /**
    * Funnel Reg Address
    */

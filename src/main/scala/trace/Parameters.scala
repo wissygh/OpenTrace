@@ -27,6 +27,14 @@ trait TraceParameters {
   def IlastsizeWidth         = 1
 
   /**
+   * hpm custom design
+   */
+  def supportHPM     = true
+  def hpmevent_num   = 2 // max is 8
+  def hpmevent_width = 55
+  def hpminc_width   = 6
+
+  /**
    * Trace's Parameters
    */
   def privilege_width_p = 3
