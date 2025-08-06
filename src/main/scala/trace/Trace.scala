@@ -81,6 +81,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
       val extTrigIn = Input(Vec(extTrig_num, Bool()))
       val extTrigOut = Output(Vec(extTrig_num, Bool()))
       val toCore = Output(Vec(hart_num, new ToCore))
+      val hpm = Option.when(supportHPM)(Vec(hart_num, new Hpm))
     })
 
     /**
@@ -117,6 +118,11 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
     encoderModVec.zip(funnelMod.io.packets).map{ case (encoder, packet) => packet := encoder.io.packet }
 
     io.extTrigOut := encoderModVec.map(_.io.extTrigOut.asUInt).reduce(_ | _).asBools
+
+    // hpm
+    io.hpm.foreach(iohpm => iohpm.zip(encoderModVec).map {case(io, encoder) =>
+      io.eventVec <> encoder.io.hpm.get.eventVec
+    })
 
     /**
      * control path:

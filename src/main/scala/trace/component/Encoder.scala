@@ -23,6 +23,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val extTrigOut = Output(Vec(extTrig_num, Bool()))
     val toCore = Output(new ToCore)
     val packet = Output(new Payload)
+    val hpm    = Option.when(supportHPM)(new Hpm)
   })
 
   val fromCore = io.fromCore
@@ -257,6 +258,26 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
       case _ =>
     }
   }
+
+  /**
+   * hpm
+   */
+  io.hpm.foreach(iovec => {
+    val addrVec = teHpmAddrVec.get
+    val eventVec = (teHpmEventHighVec.get).zip(teHpmEventLowVec.get).map { case (hi, lo) => hi.rdata ## lo.rdata }
+    val incVec = teHpmEventDataVec.get
+
+    (0 until hpmevent_num).map(i => {
+      iovec.eventVec(i).hpmaddr := addrVec(i).rdata
+      iovec.eventVec(i).hpmevent := Mux(iovec.eventVec(i).hpmaddr =/= 0.U, eventVec(i), 0.U)
+      incVec(i) match {
+        case m: HasHpmEventDataBundle =>
+          m.inc := iovec.eventVec(i).inc
+        case _ =>
+      }
+    })
+
+  })
 
   /**
    * encoder IO

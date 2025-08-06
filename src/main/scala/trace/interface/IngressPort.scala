@@ -98,3 +98,14 @@ object Dtype extends NamedUInt(4) {
   def AtomicMin            = 14.U
   def CondStFail           = 15.U
 }
+
+/**
+ * hpm
+ */
+class Hpm extends Bundle with TraceParameters {
+  val eventVec = Vec(hpmevent_num, new Bundle {
+    val hpmaddr = Output(UInt(5.W))
+    val hpmevent = Output(UInt(hpmevent_width.W))
+    val inc = Input(UInt(hpminc_width.W))
+  })
+}

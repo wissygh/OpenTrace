@@ -151,6 +151,31 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0SMatchHigh, j))
   )
 
+  /**
+   * custom hpm
+   */
+  val teHpmAddrVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
+    Module(new CSRModule(s"TeHpmAddr$i", new HpmAddrBundle))
+    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0Addr, i))
+  ))
+
+  val teHpmEventLowVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
+    Module(new CSRModule(s"TeHpmEventLow$i", new HpmEventLowBundle))
+    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventLow, i))
+  ))
+
+  val teHpmEventHighVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
+    Module(new CSRModule(s"TeHpmEventHigh$i", new HpmEventHighBundle))
+    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventHigh, i))
+  ))
+
+  val teHpmEventDataVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
+    Module(new CSRModule(s"TeHpmEventData$i", new HpmEventDataBundle) with HasHpmEventDataBundle {
+      reg.ALL := inc
+    })
+    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventData, i))
+  ))
+
   val filterMods: Seq[CSRModule[_]] = teFilterControlVec ++ teFilterMatchInstVec ++
     teFilterMatchEcauseLowVec ++ teFilterMatchEcauseHighVec ++
     teFilterMatchValueImpdefVec ++ teFilterMatchMaskImpdefVec ++
@@ -159,6 +184,8 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   val comptatorMods: Seq[CSRModule[_]] = teCompControlVec ++
     teCompPMatchLowVec ++ teCompPMatchHighVec ++
     teCompSMatchLowVec ++ teCompSMatchHighVec
+
+  val hpmMods: Seq[CSRModule[_]] = (if (supportHPM) (teHpmAddrVec.get ++ teHpmEventLowVec.get ++ teHpmEventHighVec.get ++ teHpmEventDataVec.get) else Seq())
 
   override val controlMods: Seq[CSRModule[_]] = Seq(
     teControl,
@@ -172,7 +199,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     tsCounterHigh,
     teTrigExtInControl,
     teTrigExtOutControl,
-  ) ++ filterMods ++ comptatorMods
+  ) ++ filterMods ++ comptatorMods ++ hpmMods
 
 }
 
@@ -461,6 +488,60 @@ object MatchModeField extends CSREnum with WARLApply {
   val PUntilS     = Value(3.U)
 }
 
+class HpmAddrBundle extends CSRBundle {
+  val Addr = HpmAddrField(4,  0, wNoFilter).withReset(HpmAddrField.Disable)
+}
+
+object HpmAddrField extends CSREnum with WARLApply {
+  val Disable = Value(0.U)
+
+  override def isLegal(enumeration: CSREnumType): Bool = (enumeration.asUInt >= 3.U) && (enumeration.asUInt <= 31.U)
+}
+
+// from xs mhpmevent
+class HpmeventBundle extends CSRBundle {
+  val OF      = RW(63).withReset(0.U)
+  val MINH    = RW(62).withReset(0.U)
+  val SINH    = RW(61).withReset(0.U)
+  val UINH    = RW(60).withReset(0.U)
+  val VSINH   = RW(59).withReset(0.U)
+  val VUINH   = RW(58).withReset(0.U)
+  val OPTYPE2 = OPTYPE(54, 50, wNoFilter).withReset(OPTYPE.OR)
+  val OPTYPE1 = OPTYPE(49, 45, wNoFilter).withReset(OPTYPE.OR)
+  val OPTYPE0 = OPTYPE(44, 40, wNoFilter).withReset(OPTYPE.OR)
+  val EVENT3  = RW(39, 30).withReset(0.U)
+  val EVENT2  = RW(29, 20).withReset(0.U)
+  val EVENT1  = RW(19, 10).withReset(0.U)
+  val EVENT0  = RW(9, 0).withReset(0.U)
+}
+
+class HpmEventLowBundle extends CSRBundle {
+  val EVENT3Low  = RW(31, 30).withReset(0.U)
+  val EVENT2     = RW(29, 20).withReset(0.U)
+  val EVENT1     = RW(19, 10).withReset(0.U)
+  val EVENT0     = RW(9, 0).withReset(0.U)
+}
+
+class HpmEventHighBundle extends CSRBundle {
+  val OPTYPE2    = OPTYPE(22, 18, wNoFilter).withReset(OPTYPE.OR)
+  val OPTYPE1    = OPTYPE(17, 13, wNoFilter).withReset(OPTYPE.OR)
+  val OPTYPE0    = OPTYPE(12, 8, wNoFilter).withReset(OPTYPE.OR)
+  val EVENT3High = RW(7, 0).withReset(0.U)
+}
+
+object OPTYPE extends CSREnum with WARLApply {
+  val OR = Value(0.U)
+  val AND = Value(1.U)
+  val XOR = Value(2.U)
+  val ADD = Value(4.U)
+
+  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(OR, AND, XOR, ADD)
+}
+
+class HpmEventDataBundle extends CSRBundle with TraceParameters {
+  val ALL = RO(5, 0).withReset(0.U)
+}
+
 /**
  * external io for reg module
  */
@@ -480,3 +561,6 @@ trait HasTsCountBundle { self: CSRModule[_] =>
   val timeCount = IO(Input(UInt(64.W)))
 }
 
+trait HasHpmEventDataBundle { self: CSRModule[_] =>
+  val inc = IO(Input(UInt(6.W)))
+}
