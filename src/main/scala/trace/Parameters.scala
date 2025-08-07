@@ -68,10 +68,14 @@ trait TraceParameters {
   /**
    * encoder parameters
    */
-  def hart_num = 1
+  def hart_num = 2
   def filter_num = 1
+  require(filter_num <= 16, "filter_num can not be greater 16, because " +
+    "the addres of trTeFilter is [0x400 ... 0x5ff].\n")
   def comparator_num = 1
-  require(comparator_num < 8, "comparator_num can not be greater 8, because width of trTeFilterControl.trTeFilterComp is 3.\n")
+  require(comparator_num <= 8, "comparator_num can not be greater 8, " +
+    "because width of trTeFilterControl.trTeFilterComp is 3 and " +
+    "the addres of trTeComp is [0x600 ... 0x6ff].\n")
   // ext trigger num
   def extTrig_num = 4
   def src_bits_p  = 8
