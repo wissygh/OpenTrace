@@ -13,6 +13,8 @@ import trace.interface.{FromCore, Payload, ToCore}
 import scala.collection.immutable.SeqMap
 
 class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
+
+  override def shouldBeInlined: Boolean = false
   lazy val module = new ComponentBaseImp(this)(baseAddr)
 }
 
