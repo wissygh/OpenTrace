@@ -1,14 +1,14 @@
 package bundles
 
-import chisel3._
-import chisel3.util.Mux1H
-import bundles.CSRDefines._
 import bundles.CSRBundles._
+import bundles.CSRDefines._
+import chisel3._
 import chisel3.experimental.BundleLiterals.AddBundleLiteralConstructor
+import chisel3.util.Mux1H
 
 class CSRModule[T <: CSRBundle](
-  val modName: String,
-  val bundle: T = new OneFieldBundle,
+    val modName: String,
+    val bundle:  T = new OneFieldBundle
 ) extends Module {
 
   override def desiredName: String = modName + "Module"
@@ -20,9 +20,9 @@ class CSRModule[T <: CSRBundle](
   // read data without mask
   val regOut = IO(Output(bundle))
 
-  protected val reg = (if (bundle.needReset) RegInit(bundle, bundle.init) else Reg(bundle))
+  protected val reg = if (bundle.needReset) RegInit(bundle, bundle.init) else Reg(bundle)
 
-  protected val wen = w.wen
+  protected val wen   = w.wen
   protected val wdata = w.wdataFields
 
   bundle.elements.foreach { case (str, field: CSREnumType) =>
@@ -35,7 +35,7 @@ class CSRModule[T <: CSRBundle](
       case RWType() =>
         field.addOtherUpdate(wen, wdata.elements(str).asInstanceOf[CSREnumType])
       case ROType(_) =>
-      case _ =>
+      case _         =>
     }
   }
 
@@ -44,38 +44,35 @@ class CSRModule[T <: CSRBundle](
   val rdataFields = IO(Output(bundle))
   rdataFields :|= regOut
 
-  rdata := rdataFields.asUInt
+  rdata  := rdataFields.asUInt
   regOut := reg
 
   private def wfnField(field: CSREnumType, str: String): Unit = {
     val wfield: CSREnumType = wdata.elements(str).asInstanceOf[CSREnumType]
 
-    when (wen && wfield.isLegal || field.otherUpdateSeq.map(_._1).fold(false.B)(_ || _)) {
+    when(wen && wfield.isLegal || field.otherUpdateSeq.map(_._1).fold(false.B)(_ || _)) {
       field := Mux1H(
         field.otherUpdateSeq.map { case (valid, data) =>
           valid -> data
-        } :+ (wen -> wdata.elements(str)),
+        } :+ (wen -> wdata.elements(str))
       )
     }.otherwise {
       field := field
     }
   }
 
-  private def wfn(reg: CSRBundle): Unit = {
+  private def wfn(reg: CSRBundle): Unit =
     reg.elements.foreach { case (str, field: CSREnumType) =>
       if (!field.isRef) {
         wfnField(field, str)
       }
     }
-  }
 
-  protected def reconnectReg(): Unit = {
+  protected def reconnectReg(): Unit =
     this.wfn(this.reg)
-  }
 
-  def dumpFields: String = {
+  def dumpFields: String =
     this.reg.getFields.map(_.dumpName).mkString("\n")
-  }
 
   var addr = 0
 
@@ -86,13 +83,12 @@ class CSRModule[T <: CSRBundle](
 }
 
 class CSRAddrWriteBundle[T <: CSRBundle](bundle: T) extends Bundle {
-  val wen = Bool()
+  val wen   = Bool()
   val wdata = UInt(32.W)
 
   def wdataFields: T = {
-    val wdataField = (Wire(bundle))
+    val wdataField = Wire(bundle)
     wdataField := wdata
     wdataField
   }
 }
-

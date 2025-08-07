@@ -8,8 +8,8 @@ class ATBBridge(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(bas
   override lazy val module = new ATBBridgeImp(this)(baseAddr)
 }
 
-class ATBBridgeImp(wrapper: ATBBridge)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
-  with ATBBridgeControl
-{
+class ATBBridgeImp(wrapper: ATBBridge)(baseAddr: Int)(implicit p: Parameters)
+    extends ComponentBaseImp(wrapper)(baseAddr)
+    with ATBBridgeControl {
   connectCtrlReg()
 }

@@ -1,14 +1,17 @@
 package trace.component
 
+import bundles.CSRAddrWriteBundle
+import bundles.CSRModule
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import bundles.{CSRAddrWriteBundle, CSRModule}
-import trace.{Control2BusRegBundle, TraceParameters}
-import trace.control._
-import trace.interface.{FromCore, Payload, ToCore}
-
 import scala.collection.immutable.SeqMap
+import trace.Control2BusRegBundle
+import trace.TraceParameters
+import trace.control._
+import trace.interface.FromCore
+import trace.interface.Payload
+import trace.interface.ToCore
 
 /**
  * Since the PIB supports many different modes, it is necessary to follow a particular programming
@@ -33,7 +36,6 @@ class PIB(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr)
 }
 
 class PIBImp(wrapper: PIB)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
-  with PIBControl
-{
+    with PIBControl {
   connectCtrlReg()
 }

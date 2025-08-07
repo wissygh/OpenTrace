@@ -1,9 +1,7 @@
 package bundles
 
-
-import chisel3._
 import bundles.CSRFunc._
-
+import chisel3._
 import scala.language.experimental.macros
 import scala.reflect.runtime.{universe => ru}
 
@@ -136,7 +134,6 @@ object CSRDefines {
 
   object CSRField64Bits extends CSREnum with CSRMacroApply
 
-
   object ReflectHelper {
     val mirror: ru.Mirror = ru.runtimeMirror(getClass.getClassLoader)
 
@@ -148,7 +145,7 @@ object CSRDefines {
         .info.member(ru.TermName(typeString)).asMethod
 
       val instanceMirror: ru.InstanceMirror = mirror.reflect(mirror.reflectModule(moduleSymbol).instance)
-      val methodMirror: ru.MethodMirror = instanceMirror.reflectMethod(methodSymbol)
+      val methodMirror:   ru.MethodMirror   = instanceMirror.reflectMethod(methodSymbol)
 
       methodMirror
     }
@@ -185,18 +182,18 @@ object CSRDefines {
   }
 
   object CSRRWField {
-    private def helper(msb: Int, lsb: Int) : CSREnumType = {
+    private def helper(msb: Int, lsb: Int): CSREnumType = {
       val methodMirror: ru.MethodMirror = ReflectHelper.getCSRFieldMethodMirror("RW", msb, lsb)
       methodMirror.apply(msb, lsb).asInstanceOf[CSREnumType]
     }
 
-    def apply(msb: Int, lsb: Int) : CSREnumType = this.helper(msb, lsb)
+    def apply(msb: Int, lsb: Int): CSREnumType = this.helper(msb, lsb)
 
     def apply(bit: Int): CSREnumType = this.helper(bit, bit)
   }
 
   object CSRWLRLField {
-    private def helper(msb: Int, lsb: Int) : CSREnumType = {
+    private def helper(msb: Int, lsb: Int): CSREnumType = {
       val methodMirror: ru.MethodMirror = ReflectHelper.getCSRFieldMethodMirror("WLRL", msb, lsb)
       methodMirror.apply(msb, lsb).asInstanceOf[CSREnumType]
     }

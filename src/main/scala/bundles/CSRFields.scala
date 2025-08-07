@@ -1,11 +1,9 @@
 package bundles
 
-
+import bundles.CSRFunc._
 import chisel3._
 import chisel3.util.Fill
-import bundles.CSRFunc._
 import scala.collection.mutable
-
 import scala.language.implicitConversions
 
 abstract class CSRRWType {
@@ -36,15 +34,15 @@ abstract class CSRRWType {
 }
 
 case class WARLType(
-  override val wfn: CSRWfnType,
-  override var rfn: CSRRfnType = null,
+    override val wfn: CSRWfnType,
+    override var rfn: CSRRfnType = null
 ) extends CSRRWType
 
 case class ROType(
-  override var rfn: CSRRfnType = null,
+    override var rfn: CSRRfnType = null
 ) extends CSRRWType {
-  override final val wfn: CSRWfnType = wNoEffect
-  var isHardWired = false
+  final override val wfn: CSRWfnType = wNoEffect
+  var isHardWired    = false
   var hardWiredValue = 0.U
 
   def setHardWired(value: UInt): Unit = {
@@ -54,13 +52,13 @@ case class ROType(
 }
 
 case class WLRLType(
-  override val wfn: CSRWfnType,
-  override var rfn: CSRRfnType,
+    override val wfn: CSRWfnType,
+    override var rfn: CSRRfnType
 ) extends CSRRWType
 
 case class RWType() extends CSRRWType {
-  override final val wfn: CSRWfnType = wNoFilter
-  override final var rfn: CSRRfnType = null
+  final override val wfn: CSRWfnType = wNoFilter
+  final override var rfn: CSRRfnType = null
 }
 
 trait CheckRef { self: CSRRWType =>
@@ -68,29 +66,29 @@ trait CheckRef { self: CSRRWType =>
 }
 
 case class RefWARLType(
-  override val ref: Option[CSREnumType],
-  override val wfn: CSRWfnType,
-  override var rfn: CSRRfnType = null,
+    override val ref: Option[CSREnumType],
+    override val wfn: CSRWfnType,
+    override var rfn: CSRRfnType = null
 ) extends CSRRWType with CheckRef
 
 case class RefROType(
-  override val ref: Option[CSREnumType],
-  override var rfn: CSRRfnType = null,
+    override val ref: Option[CSREnumType],
+    override var rfn: CSRRfnType = null
 ) extends CSRRWType with CheckRef {
-  override final val wfn: CSRWfnType = wNoEffect
+  final override val wfn: CSRWfnType = wNoEffect
 }
 
 case class RefWLRLType(
-  override val ref: Option[CSREnumType],
-  override val wfn: CSRWfnType,
-  override var rfn: CSRRfnType,
+    override val ref: Option[CSREnumType],
+    override val wfn: CSRWfnType,
+    override var rfn: CSRRfnType
 ) extends CSRRWType with CheckRef
 
 case class RefRWType(
-  override val ref: Option[CSREnumType],
+    override val ref: Option[CSREnumType]
 ) extends CSRRWType with CheckRef {
-  override final val wfn: CSRWfnType = wNoFilter
-  override final var rfn: CSRRfnType = null
+  final override val wfn: CSRWfnType = wNoFilter
+  final override var rfn: CSRRfnType = null
 }
 
 object CSRFunc {
@@ -120,13 +118,13 @@ object CSRFunc {
 }
 
 class CSREnumType(
-  val msb: Int,
-  val lsb: Int,
+    val msb: Int,
+    val lsb: Int
 )(
-  var rwType: CSRRWType,
-  var init: Data = null
+    var rwType: CSRRWType,
+    var init:   Data = null
 )(
-  override val factory: ChiselEnum
+    override val factory: ChiselEnum
 ) extends EnumType(factory) {
 
   var otherUpdateSeq: mutable.Seq[Tuple2[Bool, Data]] = mutable.Seq()
@@ -146,8 +144,8 @@ class CSREnumType(
   if (msb - lsb + 1 > this.getWidth)
     println(
       s"[CSRInfo] $this: " +
-      s"the setting range($msb, $lsb) of bitfield is widen than EnumType's width(${this.getWidth}), " +
-      s"the higher bits will be optimized"
+        s"the setting range($msb, $lsb) of bitfield is widen than EnumType's width(${this.getWidth}), " +
+        s"the higher bits will be optimized"
     )
 
   def isRef = this.rwType.isRef
@@ -182,7 +180,8 @@ class CSREnumType(
   // Check if reset with a enum value in factory.all
   protected def resetCheck[T <: EnumType](init: T): Unit = {
     resetCheckRWType
-    require(this.factory.all.contains(init),
+    require(
+      this.factory.all.contains(init),
       s"""
       | The value ${init.litValue} is NOT in ${factory.all}.
       | Please check if $init is the enum in the $factory")
@@ -193,7 +192,8 @@ class CSREnumType(
   // Check if reset with a enum value in factory.all
   protected def resetCheck(init: UInt): Unit = {
     resetCheckRWType
-    require(this.factory.all.exists(_.litValue == init.litValue),
+    require(
+      this.factory.all.exists(_.litValue == init.litValue),
       s"""
       |The value ${init.litValue} is not in ${factory.all}.
       |Please add reset value as the tail of (msb,lsb, HERE) or (bit, HERE), If you need reset field with the value NOT in enum set.
@@ -202,12 +202,11 @@ class CSREnumType(
     )
   }
 
-  protected def resetCheckRWType: Unit = {
+  protected def resetCheckRWType: Unit =
     rwType match {
       case ROType(rfn) => require(rfn == null)
-      case _ =>
+      case _           =>
     }
-  }
 
   def withReset[T <: EnumType](init: T): this.type = {
     resetCheck(init)
@@ -240,28 +239,24 @@ class CSREnumType(
     this
   }
 
-  def := (that: UInt): Unit = {
+  def :=(that: UInt): Unit =
     suppressEnumCastWarning {
       this := this.factory(that)
     }
-  }
 
-  def dumpName = {
+  def dumpName =
     s"${chisel3.reflect.DataMirror.queryNameGuess(this)} ${rwType} [$msb, $lsb] reset($init)"
-  }
 
-  def asBool: Bool = {
+  def asBool: Bool =
     this.asUInt.asBool
-  }
 
   private def setRwType(newType: CSRRWType): this.type = {
     this.rwType = newType
     this
   }
 
-  def setRO(rfn: CSRRfnType = null): this.type = {
+  def setRO(rfn: CSRRfnType = null): this.type =
     this.setRwType(ROType(rfn))
-  }
 
   def setHardWired(value: UInt): this.type = {
     require(this.isRO)
@@ -269,13 +264,11 @@ class CSREnumType(
     this
   }
 
-  def setRW(): this.type = {
+  def setRW(): this.type =
     this.setRwType(RWType())
-  }
 
-  def setWARL(wfn: CSRWfnType): this.type = {
+  def setWARL(wfn: CSRWfnType): this.type =
     this.setRwType(WARLType(wfn))
-  }
 
   def ||(that: Bool): Bool = {
     require(this.getWidth == 1, s"Only 1 bit field can use operator ||. The width of left operand is ${this.getWidth}")
@@ -304,18 +297,16 @@ class CSREnumType(
     !this.asBool
   }
 
-  def & (that: UInt): UInt = {
+  def &(that: UInt): UInt = {
     require(this.getWidth == that.getWidth || !that.widthKnown)
     this.asUInt & that
   }
 
-  def &> (that: Bool): UInt = {
+  def &>(that: Bool): UInt =
     this.asUInt & Fill(this.getWidth, that)
-  }
 
-  def |> (that: Bool): UInt = {
+  def |>(that: Bool): UInt =
     this.asUInt | Fill(this.getWidth, that)
-  }
 
   def addOtherUpdate(cond: Bool, value: CSREnumType): this.type = {
     this.otherUpdateSeq :+= (cond, value)
@@ -323,7 +314,8 @@ class CSREnumType(
   }
 
   // override cloneType to make ValidIO etc function return CSREnumType not EnumType
-  override def cloneType: this.type = factory.asInstanceOf[CSREnum].makeType.asInstanceOf[this.type].setRwType(this.rwType)
+  override def cloneType: this.type =
+    factory.asInstanceOf[CSREnum].makeType.asInstanceOf[this.type].setRwType(this.rwType)
 }
 
 class CSREnum extends ChiselEnum {
@@ -335,23 +327,20 @@ class CSREnum extends ChiselEnum {
 
   var msb, lsb: Int = 0
 
-  def makeType: CSREnumType = {
+  def makeType: CSREnumType =
     new CSREnumType(msb, lsb)(RWType())(this)
-  }
 
   /**
    * Used to allow 0.U.asTypeOf(CSREnumInstance) convertion
    */
-  def addMinValue: Unit = {
+  def addMinValue: Unit =
     Value(0.U)
-  }
 
   /**
    * A trick to expand the width of Enum to (msb - lsb + 1)
    */
-  def addMaxValue: Unit = {
+  def addMaxValue: Unit =
     Value(((BigInt(1) << (msb - lsb + 1)) - 1).U)
-  }
 
   /**
    *
@@ -413,7 +402,7 @@ trait CSRMacroApply { self: CSREnum =>
     .apply(WLRLType(wfn, rfn))(msb, lsb)(this)
 
   def RefRO(ref: CSREnumType, msb: Int, lsb: Int, rfn: CSRRfnType): CSREnumType = self
-    .apply(RefROType(Some(ref) ,rfn))(msb, lsb)(ref.factory)
+    .apply(RefROType(Some(ref), rfn))(msb, lsb)(ref.factory)
 
   def RefRO(ref: CSREnumType, msb: Int, lsb: Int): CSREnumType = self
     .apply(RefROType(Some(ref)))(msb, lsb)(ref.factory)
@@ -427,33 +416,28 @@ trait CSRMacroApply { self: CSREnum =>
 
 object CSREnumTypeImplicitCast {
   class BoolField(val value: Bool) {
-    def && (field: CSREnumType): Bool = {
+    def &&(field: CSREnumType): Bool =
       this.value && field.asBool
-    }
 
-    def || (field: CSREnumType): Bool = {
+    def ||(field: CSREnumType): Bool =
       this.value || field.asBool
-    }
 
     def &<(that: UInt): UInt = {
       require(that.widthKnown, "The width of the right operand should be known when using &< operator")
       Fill(that.getWidth, this.value) & that
     }
 
-    def &<(that: CSREnumType): UInt = {
+    def &<(that: CSREnumType): UInt =
       this &< that.asUInt
-    }
 
     def |<(that: UInt): UInt = {
       require(that.widthKnown, "The width of the right operand should be known when using |< operator")
       Fill(that.getWidth, this.value) | that
     }
 
-    def |<(that: CSREnumType): UInt = {
+    def |<(that: CSREnumType): UInt =
       this |< that.asUInt
-    }
   }
 
   implicit def BoolToBoolField(bool: Bool): BoolField = new BoolField(bool)
 }
-

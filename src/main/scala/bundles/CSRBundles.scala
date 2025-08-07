@@ -1,11 +1,11 @@
 package bundles
 
-import chisel3._
-import chisel3.util._
-import chisel3.experimental.BundleLiterals._
 import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => WARL, _}
 import bundles.CSRFunc._
+import chisel3._
+import chisel3.experimental.BundleLiterals._
 import chisel3.experimental.noPrefix
+import chisel3.util._
 
 object CSRBundles {
   class OneFieldBundle extends CSRBundle {

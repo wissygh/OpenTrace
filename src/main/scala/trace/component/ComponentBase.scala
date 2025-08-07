@@ -1,16 +1,18 @@
 package trace.component
 
-
+import bundles.CSRAddrWriteBundle
+import bundles.CSRModule
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy._
-import bundles.{CSRAddrWriteBundle, CSRModule}
-import trace.{Control2BusRegBundle, TraceParameters}
-import trace.control.ControlBase
-import trace.interface.{FromCore, Payload, ToCore}
-
+import org.chipsalliance.cde.config.Parameters
 import scala.collection.immutable.SeqMap
+import trace.Control2BusRegBundle
+import trace.TraceParameters
+import trace.control.ControlBase
+import trace.interface.FromCore
+import trace.interface.Payload
+import trace.interface.ToCore
 
 class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
 
@@ -19,8 +21,8 @@ class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule wi
 }
 
 class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parameters) extends LazyModuleImp(wrapper)
-  with ControlBase
-  with TraceParameters {
+    with ControlBase
+    with TraceParameters {
 
   val bus = IO(new Control2BusRegBundle)
 
@@ -31,7 +33,7 @@ class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parame
   def connectCtrlReg() = {
     // control write
     for ((id, (wBundle, _)) <- controlRWMap) {
-      wBundle.wen := bus.b2c.writeEn && bus.b2c.address === (((baseAddr & mask) + id)).U
+      wBundle.wen   := bus.b2c.writeEn && bus.b2c.address === ((baseAddr & mask) + id).U
       wBundle.wdata := bus.b2c.dataWrite
     }
     // control read
@@ -41,4 +43,3 @@ class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parame
     bus.c2b.error := false.B
   }
 }
-

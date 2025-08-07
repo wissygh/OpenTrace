@@ -130,7 +130,7 @@ trait OpenTraceModule extends ScalaModule {
   override def forkEnv = Map("PATH" -> envPATH)
 }
 
-object OpenTrace extends OpenTraceModule with HasChisel {
+object OpenTrace extends OpenTraceModule with HasChisel with ScalafmtModule{
 
   override def millSourcePath = pwd
 
