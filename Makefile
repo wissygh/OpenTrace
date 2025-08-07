@@ -19,3 +19,9 @@ bsp:
 
 idea:
 	mill -i mill.idea.GenIdea/idea
+
+check-format:
+	mill OpenTrace.checkFormat
+
+reformat:
+	mill OpenTrace.reformat

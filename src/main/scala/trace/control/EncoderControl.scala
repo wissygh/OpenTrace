@@ -1,38 +1,37 @@
 package trace.control
 
-import chisel3._
-import chisel3.util._
 import bundles._
+import bundles.CSRBundles._
 import bundles.CSRDefines._
 import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => WARL, _}
 import bundles.CSRFunc._
-import bundles.CSRBundles._
+import chisel3._
+import chisel3.util._
 import org.apache.commons.io.filefilter.IOFileFilter
-import trace.component.EncoderImp
 import trace.TraceParameters
+import trace.component.EncoderImp
 
 trait EncoderControl extends ControlBase { self: EncoderImp =>
 
-  val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle{
+  val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle {
     when(wen) {
-      reg.Enable      := wdata.Active && wdata.Enable
+      reg.Enable := wdata.Active && wdata.Enable
     }
 
-    when(wen && wdata.Enable.asBool){
+    when(wen && wdata.Enable.asBool) {
       reg.InstTracing := wdata.InstTracing
-    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool){
+    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
       reg.InstTracing := Mux1H(
         Seq(traceOn, traceOff),
         Seq(true.B, false.B)
       )
     }
 
-    when(wen && (wdata.Enable || wdata.InstStallOrOverflow)){
+    when(wen && (wdata.Enable || wdata.InstStallOrOverflow)) {
       reg.InstStallOrOverflow := false.B
-    }.elsewhen(stallOrOf){
+    }.elsewhen(stallOrOf) {
       reg.InstStallOrOverflow := stallOrOf
     }
-
 
     reg.Emptry := allEmitted
   })
@@ -41,18 +40,18 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   val teImpl = Module(new CSRModule("TeImpl", new TeImplBundle))
     .setAddr(CtrlReg.TeImpl)
 
-  val teInstFeatures = Module(new CSRModule("TeInstFeatures", new TeInstFeaturesBundle) with HasTeInstFeaturesBundle{
+  val teInstFeatures = Module(new CSRModule("TeInstFeatures", new TeInstFeaturesBundle) with HasTeInstFeaturesBundle {
     regOut.SrcID := id
   })
     .setAddr(CtrlReg.TeInstFeatures)
 
-  val teInstFilters = Module(new CSRModule("TeInstFilters", new TeInstFiltersBundle){})
+  val teInstFilters = Module(new CSRModule("TeInstFilters", new TeInstFiltersBundle) {})
     .setAddr(CtrlReg.TeInstFilters)
 
-  val teDataControl = Module(new CSRModule("TeDataControl", new TeDataControlBundle){})
+  val teDataControl = Module(new CSRModule("TeDataControl", new TeDataControlBundle) {})
     .setAddr(CtrlReg.TeDataControl)
 
-  val teDataFilters = Module(new CSRModule("TeDataFilters", new TeDataFiltersBundle){})
+  val teDataFilters = Module(new CSRModule("TeDataFilters", new TeDataFiltersBundle) {})
     .setAddr(CtrlReg.TeDataFilters)
 
   /**
@@ -66,7 +65,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   })
     .setAddr(CtrlReg.TsCounterLow)
 
-  val tsCounterHigh = Module(new CSRModule("TsCounterHigh", new OneROFieldBundle)with HasTsCountBundle{
+  val tsCounterHigh = Module(new CSRModule("TsCounterHigh", new OneROFieldBundle) with HasTsCountBundle {
     regOut.ALL := timeCount(63, 32)
   })
     .setAddr(CtrlReg.TsCounterHigh)
@@ -91,9 +90,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   )
 
   val teFilterMatchInstVec: Seq[CSRModule[_]] = (0 until filter_num).map(i =>
-    Module(new CSRModule(s"TeFilter$i" + s"MatchInst", new TeFilterMatchInstBundle){
-
-    })
+    Module(new CSRModule(s"TeFilter$i" + s"MatchInst", new TeFilterMatchInstBundle) {})
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchInst, i))
   )
 
@@ -121,7 +118,6 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     Module(new CSRModule(s"TeFilter$i" + s"MatchData", new TeFilterMatchDataBundle))
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeFilter0MatchData, i))
   )
-
 
   /**
    * Compatator
@@ -156,24 +152,24 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
    */
   val teHpmAddrVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
     Module(new CSRModule(s"TeHpmAddr$i", new HpmAddrBundle))
-    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0Addr, i))
+      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0Addr, i))
   ))
 
   val teHpmEventLowVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
     Module(new CSRModule(s"TeHpmEventLow$i", new HpmEventLowBundle))
-    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventLow, i))
+      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventLow, i))
   ))
 
   val teHpmEventHighVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
     Module(new CSRModule(s"TeHpmEventHigh$i", new HpmEventHighBundle))
-    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventHigh, i))
+      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventHigh, i))
   ))
 
   val teHpmEventDataVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
     Module(new CSRModule(s"TeHpmEventData$i", new HpmEventDataBundle) with HasHpmEventDataBundle {
       reg.ALL := inc
     })
-    .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventData, i))
+      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventData, i))
   ))
 
   val filterMods: Seq[CSRModule[_]] = teFilterControlVec ++ teFilterMatchInstVec ++
@@ -185,7 +181,9 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     teCompPMatchLowVec ++ teCompPMatchHighVec ++
     teCompSMatchLowVec ++ teCompSMatchHighVec
 
-  val hpmMods: Seq[CSRModule[_]] = (if (supportHPM) (teHpmAddrVec.get ++ teHpmEventLowVec.get ++ teHpmEventHighVec.get ++ teHpmEventDataVec.get) else Seq())
+  val hpmMods: Seq[CSRModule[_]] = if (supportHPM)
+    teHpmAddrVec.get ++ teHpmEventLowVec.get ++ teHpmEventHighVec.get ++ teHpmEventDataVec.get
+  else Seq()
 
   override val controlMods: Seq[CSRModule[_]] = Seq(
     teControl,
@@ -198,17 +196,16 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     tsCounterLow,
     tsCounterHigh,
     teTrigExtInControl,
-    teTrigExtOutControl,
+    teTrigExtOutControl
   ) ++ filterMods ++ comptatorMods ++ hpmMods
 
 }
-
 
 class TeControlBundle extends CSRBundle {
   val Active              = RW(0).withReset(0.U)
   val Enable              = RW(1).withReset(0.U)
   val InstTracing         = RW(2)
-  val Emptry              = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
+  val Emptry              = RO(3).withReset(1.U)  // Reads as 1 when all generated trace have been emitted.
   val InstMode            = InstModeField(6, 4, wNoFilter).withReset(InstModeField.BHT)
   val Context             = RW(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
@@ -216,8 +213,11 @@ class TeControlBundle extends CSRBundle {
   val InstStallEna        = RW(13).withReset(0.U) // 0: drop 1: stall
   val InhibitSrc          = RW(15).withReset(0.U)
   val InstSyncMode        = InstSyncModeField(17, 16, wNoFilter).withReset(InstSyncModeField.Cycles)
-  val InstSyncMax         = InstSyncMaxROField(23, 20).withReset(InstSyncMaxROField.Default) // counter >= 2^(InstSyncMax + 4), send sync package. todo: fix to rw
-  val Format              = FormatField(26, 24, wNoFilter).withReset(FormatField.Etrace)
+  val InstSyncMax =
+    InstSyncMaxROField(23, 20).withReset(
+      InstSyncMaxROField.Default
+    ) // counter >= 2^(InstSyncMax + 4), send sync package. todo: fix to rw
+  val Format = FormatField(26, 24, wNoFilter).withReset(FormatField.Etrace)
 }
 
 object InstModeField extends CSREnum with WARLApply {
@@ -236,12 +236,12 @@ object InstSyncModeField extends CSREnum with WARLApply {
 }
 
 object InstSyncMaxROField extends CSREnum with ROApply with TraceParameters {
-  val Default     = Value(syncmax_p.U)
+  val Default = Value(syncmax_p.U)
 }
 
 object FormatField extends CSREnum with WARLApply {
-  val Etrace  = Value(0.U)
-  val Ntrace  = Value(1.U)
+  val Etrace = Value(0.U)
+  val Ntrace = Value(1.U)
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Etrace, Ntrace)
 }
 
@@ -258,18 +258,18 @@ class TeImplBundle extends CSRBundle {
  */
 
 class TeInstFeaturesBundle extends CSRBundle {
-  val NoAddrDiff             = RW(0)
-  val NoTrapDiff             = RW(1)
-  val EnSiJump               = RW(2)
-  val EnImRet                = RW(3)
-  val EnBranchPred           = RW(4)
-  val EnJumpTargetCache      = RW(5)
-  val ImRetMode              = ImpRetModeField(7, 6, wNoFilter).withReset(ImpRetModeField.None)
-  val EnRepHistoty           = RW(8)
-  val EnAllJumps             = RW(9)
-  val ExtendAddrMSB          = RW(10)
-  val SrcID                  = RO(27, 16)
-  val SrcBits                = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
+  val NoAddrDiff        = RW(0)
+  val NoTrapDiff        = RW(1)
+  val EnSiJump          = RW(2)
+  val EnImRet           = RW(3)
+  val EnBranchPred      = RW(4)
+  val EnJumpTargetCache = RW(5)
+  val ImRetMode         = ImpRetModeField(7, 6, wNoFilter).withReset(ImpRetModeField.None)
+  val EnRepHistoty      = RW(8)
+  val EnAllJumps        = RW(9)
+  val ExtendAddrMSB     = RW(10)
+  val SrcID             = RO(27, 16)
+  val SrcBits           = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
 }
 
 object ImpRetModeField extends CSREnum with WARLApply {
@@ -280,17 +280,18 @@ object ImpRetModeField extends CSREnum with WARLApply {
 }
 
 object SrcBitsROField extends CSREnum with ROApply with TraceParameters {
-  val Default     = Value(src_bits_p.U)
+  val Default = Value(src_bits_p.U)
 }
 
-class TeInstFiltersBundle extends CSRBundle with  TraceParameters {
+class TeInstFiltersBundle extends CSRBundle with TraceParameters {
   override val len: Int = filter_num
-  val InstFilters     = FiltersIndexField(len - 1, 0, wNoFilter).withReset(FiltersIndexField.Index_1) // 1hot: bit_i -> filter_i
+  val InstFilters =
+    FiltersIndexField(len - 1, 0, wNoFilter).withReset(FiltersIndexField.Index_1) // 1hot: bit_i -> filter_i
 }
 
 object FiltersIndexField extends CSREnum with WARLApply {
-  val Index_1         = Value(1.U)
-  override def isLegal(enumeration: CSREnumType): Bool = (PopCount(enumeration.asUInt) === 1.U)
+  val Index_1 = Value(1.U)
+  override def isLegal(enumeration: CSREnumType): Bool = PopCount(enumeration.asUInt) === 1.U
 }
 
 /**
@@ -298,16 +299,16 @@ object FiltersIndexField extends CSREnum with WARLApply {
  */
 
 class TeDataControlBundle extends CSRBundle {
-  val DataImplemented    = RO(0).withReset(0.U)
-  val DataTracing        = RW(1)
-  val DataTrigEnable     = RW(2)
-  val DataStallOrOf      = RW(3)
-  val DataStallEna       = RW(4)
-  val DataDrop           = RW(5)
-  val DataDropEna        = RW(6)
-  val DataNoValue        = RW(16)
-  val DataNoAddr         = RW(17)
-  val DataAddrCompress   = DataAddrCompressField(19, 18, wNoFilter)
+  val DataImplemented  = RO(0).withReset(0.U)
+  val DataTracing      = RW(1)
+  val DataTrigEnable   = RW(2)
+  val DataStallOrOf    = RW(3)
+  val DataStallEna     = RW(4)
+  val DataDrop         = RW(5)
+  val DataDropEna      = RW(6)
+  val DataNoValue      = RW(16)
+  val DataNoAddr       = RW(17)
+  val DataAddrCompress = DataAddrCompressField(19, 18, wNoFilter)
 }
 
 object DataAddrCompressField extends CSREnum with WARLApply {
@@ -318,7 +319,10 @@ object DataAddrCompressField extends CSREnum with WARLApply {
 }
 
 class TeDataFiltersBundle extends CSRBundle {
-  val DataFilters    = FiltersIndexField(15, 0, wNoFilter).withReset(FiltersIndexField.Index_1) // same as  TeInstFilters; 1hot: bit_i -> filter_i
+  val DataFilters =
+    FiltersIndexField(15, 0, wNoFilter).withReset(
+      FiltersIndexField.Index_1
+    ) // same as  TeInstFilters; 1hot: bit_i -> filter_i
 }
 
 /**
@@ -326,39 +330,39 @@ class TeDataFiltersBundle extends CSRBundle {
  */
 
 class TeTrigExtInControlBundle extends CSRBundle {
-  val Action0         = TrigAction( 3,  0, wNoFilter).withReset(TrigAction.NoAction)
-  val Action1         = TrigAction( 7,  4, wNoFilter).withReset(TrigAction.NoAction)
-  val Action2         = TrigAction(11,  8, wNoFilter).withReset(TrigAction.NoAction)
-  val Action3         = TrigAction(15, 12, wNoFilter).withReset(TrigAction.NoAction)
-  val Action4         = TrigAction(19, 16, wNoFilter).withReset(TrigAction.NoAction)
-  val Action5         = TrigAction(23, 20, wNoFilter).withReset(TrigAction.NoAction)
-  val Action6         = TrigAction(27, 24, wNoFilter).withReset(TrigAction.NoAction)
-  val Action7         = TrigAction(31, 28, wNoFilter).withReset(TrigAction.NoAction)
+  val Action0 = TrigAction(3, 0, wNoFilter).withReset(TrigAction.NoAction)
+  val Action1 = TrigAction(7, 4, wNoFilter).withReset(TrigAction.NoAction)
+  val Action2 = TrigAction(11, 8, wNoFilter).withReset(TrigAction.NoAction)
+  val Action3 = TrigAction(15, 12, wNoFilter).withReset(TrigAction.NoAction)
+  val Action4 = TrigAction(19, 16, wNoFilter).withReset(TrigAction.NoAction)
+  val Action5 = TrigAction(23, 20, wNoFilter).withReset(TrigAction.NoAction)
+  val Action6 = TrigAction(27, 24, wNoFilter).withReset(TrigAction.NoAction)
+  val Action7 = TrigAction(31, 28, wNoFilter).withReset(TrigAction.NoAction)
 }
 
 class TeTrigExtOutControlBundle extends CSRBundle {
-  val Event0         = TrigEvent( 3,  0, wNoFilter).withReset(TrigEvent.Start)
-  val Event1         = TrigEvent( 7,  4, wNoFilter).withReset(TrigEvent.Start)
-  val Event2         = TrigEvent(11,  8, wNoFilter).withReset(TrigEvent.Start)
-  val Event3         = TrigEvent(15, 12, wNoFilter).withReset(TrigEvent.Start)
-  val Event4         = TrigEvent(19, 16, wNoFilter).withReset(TrigEvent.Start)
-  val Event5         = TrigEvent(23, 20, wNoFilter).withReset(TrigEvent.Start)
-  val Event6         = TrigEvent(27, 24, wNoFilter).withReset(TrigEvent.Start)
-  val Event7         = TrigEvent(31, 28, wNoFilter).withReset(TrigEvent.Start)
+  val Event0 = TrigEvent(3, 0, wNoFilter).withReset(TrigEvent.Start)
+  val Event1 = TrigEvent(7, 4, wNoFilter).withReset(TrigEvent.Start)
+  val Event2 = TrigEvent(11, 8, wNoFilter).withReset(TrigEvent.Start)
+  val Event3 = TrigEvent(15, 12, wNoFilter).withReset(TrigEvent.Start)
+  val Event4 = TrigEvent(19, 16, wNoFilter).withReset(TrigEvent.Start)
+  val Event5 = TrigEvent(23, 20, wNoFilter).withReset(TrigEvent.Start)
+  val Event6 = TrigEvent(27, 24, wNoFilter).withReset(TrigEvent.Start)
+  val Event7 = TrigEvent(31, 28, wNoFilter).withReset(TrigEvent.Start)
 }
 
 object TrigAction extends CSREnum with WARLApply {
-  val NoAction      = Value(0.U)
-  val TraceOn       = Value(2.U)
-  val TraceOff      = Value(3.U)
-  val TraceNotify   = Value(4.U)
+  val NoAction    = Value(0.U)
+  val TraceOn     = Value(2.U)
+  val TraceOff    = Value(3.U)
+  val TraceNotify = Value(4.U)
 
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(NoAction, TraceOn, TraceOff, TraceNotify)
 }
 
 object TrigEvent extends CSREnum with WARLApply {
-  val Start      = Value(0.U)
-  val Stop       = Value(2.U)
+  val Start = Value(0.U)
+  val Stop  = Value(2.U)
 
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Start, Stop)
 }
@@ -368,24 +372,24 @@ object TrigEvent extends CSREnum with WARLApply {
  */
 
 class TeFilterControlBundle extends CSRBundle {
-  val Enable           = RW(0).withReset(0.U) // set 1 after all is ready.
-  val MatchPrivilege   = RW(1).withReset(0.U) // TeFilterMatchInst.MatchChoicePrivilege; set 1 after all is ready.
-  val MatchEcause      = RW(2).withReset(0.U) // TeFilterMatchChoiceEcause
-  val MatchInterrupt   = RW(3).withReset(0.U) // TeFilterMatchInst.MatchValueInterrupt
-  val MatchComp1       = RW(4).withReset(0.U)
-  val Comp1            = CompField(7, 5, wNoFilter).withReset(CompField.Zero)
-  val MatchComp2       = RW(8).withReset(0.U)
-  val Comp2            = CompField(11, 9, wNoFilter).withReset(CompField.Zero)
-  val MatchComp3       = RW(12).withReset(0.U)
-  val Comp3            = CompField(15, 13, wNoFilter).withReset(CompField.Zero)
-  val MatchImpdef      = RW(16).withReset(0.U) // trTeFilterMatchValueImpdef & trTeFilterMatchMaskImpdef
-  val MatchDtype       = RW(24).withReset(0.U) // TeFilterMatchData.MatchChoiceDtype
-  val MatchDSize       = RW(25).withReset(0.U) // TeFilterMatchData.MatchChoiceDsize
+  val Enable         = RW(0).withReset(0.U)  // set 1 after all is ready.
+  val MatchPrivilege = RW(1).withReset(0.U)  // TeFilterMatchInst.MatchChoicePrivilege; set 1 after all is ready.
+  val MatchEcause    = RW(2).withReset(0.U)  // TeFilterMatchChoiceEcause
+  val MatchInterrupt = RW(3).withReset(0.U)  // TeFilterMatchInst.MatchValueInterrupt
+  val MatchComp1     = RW(4).withReset(0.U)
+  val Comp1          = CompField(7, 5, wNoFilter).withReset(CompField.Zero)
+  val MatchComp2     = RW(8).withReset(0.U)
+  val Comp2          = CompField(11, 9, wNoFilter).withReset(CompField.Zero)
+  val MatchComp3     = RW(12).withReset(0.U)
+  val Comp3          = CompField(15, 13, wNoFilter).withReset(CompField.Zero)
+  val MatchImpdef    = RW(16).withReset(0.U) // trTeFilterMatchValueImpdef & trTeFilterMatchMaskImpdef
+  val MatchDtype     = RW(24).withReset(0.U) // TeFilterMatchData.MatchChoiceDtype
+  val MatchDSize     = RW(25).withReset(0.U) // TeFilterMatchData.MatchChoiceDsize
 }
 
 class TeFilterMatchInstBundle extends CSRBundle {
-  val MatchChoicePrivilege  = MatchPriv(7, 0, wNoFilter).withReset(MatchPriv.HU)
-  val MatchValueInterrupt   = MatchExpInt(8, wNoFilter).withReset(MatchExpInt.Exception)
+  val MatchChoicePrivilege = MatchPriv(7, 0, wNoFilter).withReset(MatchPriv.HU)
+  val MatchValueInterrupt  = MatchExpInt(8, wNoFilter).withReset(MatchExpInt.Exception)
 }
 
 object MatchPriv extends CSREnum with WARLApply { // 1h, F**king riscv trace spec
@@ -399,97 +403,109 @@ object MatchPriv extends CSREnum with WARLApply { // 1h, F**king riscv trace spe
 }
 
 object MatchExpInt extends CSREnum with WARLApply {
-  val Exception     = Value(0.U)
-  val Interrupt     = Value(1.U)
+  val Exception = Value(0.U)
+  val Interrupt = Value(1.U)
 }
 
 object CompField extends CSREnum with WARLApply with TraceParameters {
-  val Zero     = Value(0.U)
+  val Zero = Value(0.U)
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.asUInt < comparator_num.U
 }
 
-
 class TeFilterMatchDataBundle extends CSRBundle {
-  val MatchChoiceDtype  = MatchDtype(15, 0, wNoFilter).withReset(MatchDtype.Load)
-  val MatchChoiceDsize  = MatchDsize(23, 16, wNoFilter).withReset(MatchDsize.B_1)
+  val MatchChoiceDtype = MatchDtype(15, 0, wNoFilter).withReset(MatchDtype.Load)
+  val MatchChoiceDsize = MatchDsize(23, 16, wNoFilter).withReset(MatchDsize.B_1)
 }
 
 object MatchDtype extends CSREnum with WARLApply { // 1h, F**king riscv trace spec
-  val Load                 = Value(1.U)
-  val Store                = Value(2.U)
+  val Load  = Value(1.U)
+  val Store = Value(2.U)
 
-  val CSRRW                = Value(16.U)
-  val CSRRS                = Value(32.U)
-  val CSRRC                = Value(64.U)
+  val CSRRW = Value(16.U)
+  val CSRRS = Value(32.U)
+  val CSRRC = Value(64.U)
 
-  val AtomicSwap           = Value(256.U)
-  val AtomicAdd            = Value(512.U)
-  val AtomicAND            = Value(1024.U)
-  val AtomicOR             = Value(2048.U)
-  val AtomicXOR            = Value(4096.U)
-  val AtomicMax            = Value(8192.U)
-  val AtomicMin            = Value(16384.U)
-  val CondStFail           = Value(32768.U)
-  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Load, Store, CSRRW, CSRRS, CSRRC, AtomicSwap,
-    AtomicAdd, AtomicAND, AtomicOR, AtomicXOR, AtomicMax, AtomicMin, CondStFail)
+  val AtomicSwap = Value(256.U)
+  val AtomicAdd  = Value(512.U)
+  val AtomicAND  = Value(1024.U)
+  val AtomicOR   = Value(2048.U)
+  val AtomicXOR  = Value(4096.U)
+  val AtomicMax  = Value(8192.U)
+  val AtomicMin  = Value(16384.U)
+  val CondStFail = Value(32768.U)
+  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(
+    Load,
+    Store,
+    CSRRW,
+    CSRRS,
+    CSRRC,
+    AtomicSwap,
+    AtomicAdd,
+    AtomicAND,
+    AtomicOR,
+    AtomicXOR,
+    AtomicMax,
+    AtomicMin,
+    CondStFail
+  )
 }
 
 object MatchDsize extends CSREnum with WARLApply {
-  val B_1                   = Value(1.U)
-  override def isLegal(enumeration: CSREnumType): Bool = (PopCount(enumeration.asUInt) === 1.U)
+  val B_1 = Value(1.U)
+  override def isLegal(enumeration: CSREnumType): Bool = PopCount(enumeration.asUInt) === 1.U
 }
 
 class TeCompControlBundle extends CSRBundle {
-  val PInput       = CompInputField(1,  0, wNoFilter).withReset(CompInputField.Iaddr)
-  val SInput       = CompInputField(3,  2, wNoFilter).withReset(CompInputField.Iaddr)
-  val PFunc        = CompPFuncField(6,  4, wNoFilter).withReset(CompPFuncField.Equal)
-  val SFunc        = CompSFuncField(10, 8, wNoFilter).withReset(CompSFuncField.Equal)
-  val MatchMode    = MatchModeField(13, 12, wNoFilter).withReset(MatchModeField.P)
-  val PNotify       = RW(14).withReset(0.U)
-  val SNotify       = RW(15).withReset(0.U)
+  val PInput    = CompInputField(1, 0, wNoFilter).withReset(CompInputField.Iaddr)
+  val SInput    = CompInputField(3, 2, wNoFilter).withReset(CompInputField.Iaddr)
+  val PFunc     = CompPFuncField(6, 4, wNoFilter).withReset(CompPFuncField.Equal)
+  val SFunc     = CompSFuncField(10, 8, wNoFilter).withReset(CompSFuncField.Equal)
+  val MatchMode = MatchModeField(13, 12, wNoFilter).withReset(MatchModeField.P)
+  val PNotify   = RW(14).withReset(0.U)
+  val SNotify   = RW(15).withReset(0.U)
 }
 
 object CompInputField extends CSREnum with WARLApply {
-  val Iaddr     = Value(0.U)
-  val Context   = Value(1.U)
-  val Tval      = Value(2.U)
-  val Daddr     = Value(3.U)
+  val Iaddr   = Value(0.U)
+  val Context = Value(1.U)
+  val Tval    = Value(2.U)
+  val Daddr   = Value(3.U)
 
-  def isIaddr(enumeration: CSREnumType): Bool = enumeration.isOneOf(Iaddr)
+  def isIaddr(enumeration:          CSREnumType): Bool = enumeration.isOneOf(Iaddr)
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Iaddr, Context, Tval)
 }
 
 object CompPFuncField extends CSREnum with WARLApply {
-  val Equal              = Value(0.U)
-  val NotEqual           = Value(1.U)
-  val LessThan           = Value(2.U)
-  val LessEqual          = Value(3.U)
-  val GreaterThan        = Value(4.U)
-  val GreaterEqual       = Value(5.U)
-  val AlwaysFalseLatch   = Value(6.U) // TODO
-  val AlwaysTrue         = Value(7.U)
-}
-
-object CompSFuncField extends CSREnum with WARLApply {
   val Equal            = Value(0.U)
   val NotEqual         = Value(1.U)
   val LessThan         = Value(2.U)
   val LessEqual        = Value(3.U)
   val GreaterThan      = Value(4.U)
   val GreaterEqual     = Value(5.U)
-  val AlwaysTrueMask   = Value(6.U) // TODO
+  val AlwaysFalseLatch = Value(6.U) // TODO
   val AlwaysTrue       = Value(7.U)
 }
 
+object CompSFuncField extends CSREnum with WARLApply {
+  val Equal          = Value(0.U)
+  val NotEqual       = Value(1.U)
+  val LessThan       = Value(2.U)
+  val LessEqual      = Value(3.U)
+  val GreaterThan    = Value(4.U)
+  val GreaterEqual   = Value(5.U)
+  val AlwaysTrueMask = Value(6.U) // TODO
+  val AlwaysTrue     = Value(7.U)
+}
+
 object MatchModeField extends CSREnum with WARLApply {
-  val P           = Value(0.U)
-  val PS          = Value(1.U)
-  val NonPS       = Value(2.U)
-  val PUntilS     = Value(3.U)
+  val P       = Value(0.U)
+  val PS      = Value(1.U)
+  val NonPS   = Value(2.U)
+  val PUntilS = Value(3.U)
 }
 
 class HpmAddrBundle extends CSRBundle {
-  val Addr = HpmAddrField(4,  0, wNoFilter).withReset(HpmAddrField.Disable)
+  val Addr = HpmAddrField(4, 0, wNoFilter).withReset(HpmAddrField.Disable)
 }
 
 object HpmAddrField extends CSREnum with WARLApply {
@@ -516,10 +532,10 @@ class HpmeventBundle extends CSRBundle {
 }
 
 class HpmEventLowBundle extends CSRBundle {
-  val EVENT3Low  = RW(31, 30).withReset(0.U)
-  val EVENT2     = RW(29, 20).withReset(0.U)
-  val EVENT1     = RW(19, 10).withReset(0.U)
-  val EVENT0     = RW(9, 0).withReset(0.U)
+  val EVENT3Low = RW(31, 30).withReset(0.U)
+  val EVENT2    = RW(29, 20).withReset(0.U)
+  val EVENT1    = RW(19, 10).withReset(0.U)
+  val EVENT0    = RW(9, 0).withReset(0.U)
 }
 
 class HpmEventHighBundle extends CSRBundle {
@@ -530,7 +546,7 @@ class HpmEventHighBundle extends CSRBundle {
 }
 
 object OPTYPE extends CSREnum with WARLApply {
-  val OR = Value(0.U)
+  val OR  = Value(0.U)
   val AND = Value(1.U)
   val XOR = Value(2.U)
   val ADD = Value(4.U)

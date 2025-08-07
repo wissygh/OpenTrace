@@ -7,10 +7,9 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import trace.control._
 
-
 class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
-  val buffer = LazyModule(new CircularBuffer)
+  val buffer          = LazyModule(new CircularBuffer)
   val ramIdentityNode = Option.when(ramIsSMEM)(TLIdentityNode())
   buffer.bufferNode.foreach(_ := ramIdentityNode.get)
 
@@ -18,45 +17,44 @@ class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr)
 }
 
 class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
-  with RAMControl
-{
+    with RAMControl {
 
   val bufferMod = wrapper.buffer.module
 
   /**
    * todo: some tmp signal which need to fix
    */
-  val traceWrite = WireInit(true.B) // todo： fix
-  val traceRead  = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
+  val traceWrite      = WireInit(true.B) // todo： fix
+  val traceRead       = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
   val bufferWriteData = Wire(UInt(32.W))
   bufferWriteData := ramControl.rdata // use ramControl to gen correct verilog, todo: fix to packets
   val bufferReadData = Wire(UInt(32.W))
   bufferReadData := 0.U
 
-  val wpReg = RegInit(0.U(62.W))
-  val rpReg = RegInit(0.U(62.W))
-  val ramWP = ramWPHigh.rdata ## ramWPLow.rdata
-  val ramRP = ramWPHigh.rdata ## ramWPLow.rdata
+  val wpReg    = RegInit(0.U(62.W))
+  val rpReg    = RegInit(0.U(62.W))
+  val ramWP    = ramWPHigh.rdata ## ramWPLow.rdata
+  val ramRP    = ramWPHigh.rdata ## ramWPLow.rdata
   val ramStart = ramStartHigh.rdata ## ramStartLow.regOut.Low.asUInt
   val ramLimit = ramLimitHigh.rdata ## ramLimitLow.regOut.Low.asUInt
 
-  when(ramWPLow.w.wen){
+  when(ramWPLow.w.wen) {
     wpReg := wpReg.head(32) ## ramWPLow.w.wdata.head(30)
-  }.elsewhen(ramWPHigh.w.wen){
+  }.elsewhen(ramWPHigh.w.wen) {
     wpReg := ramWPHigh.w.wdata ## wpReg.tail(32)
-  }.elsewhen(wpReg === ramLimit){
+  }.elsewhen(wpReg === ramLimit) {
     wpReg := ramStart
-  }.elsewhen(traceWrite){
+  }.elsewhen(traceWrite) {
     wpReg := wpReg + 1.U
   }
 
-  when(ramRPLow.w.wen){
+  when(ramRPLow.w.wen) {
     rpReg := rpReg.head(32) ## ramRPLow.w.wdata.head(30)
-  }.elsewhen(ramRPHigh.w.wen){
+  }.elsewhen(ramRPHigh.w.wen) {
     rpReg := ramRPHigh.w.wdata ## rpReg.tail(32)
-  }.elsewhen(rpReg === ramLimit){
+  }.elsewhen(rpReg === ramLimit) {
     rpReg := ramStart
-  }.elsewhen(traceRead){
+  }.elsewhen(traceRead) {
     rpReg := rpReg + 1.U
   }
 
@@ -66,7 +64,7 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
   controlMods.foreach { mod =>
     mod match {
       case m: HasWPBundle =>
-        m.wp := wpReg
+        m.wp   := wpReg
         m.wrap := (wpReg === ramLimit)
       case _ =>
     }
@@ -89,18 +87,17 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
     }
   }
 
-
   // for sram and smem, packets -> ram sink
-  bufferMod.write.en := traceWrite
-  bufferMod.write.ptr := ramWP
+  bufferMod.write.en   := traceWrite
+  bufferMod.write.ptr  := ramWP
   bufferMod.write.data := bufferWriteData
 
   // only for sram
-  bufferMod.read.foreach( rd => {
-    rd.en := traceRead
-    rd.ptr := ramRP
+  bufferMod.read.foreach { rd =>
+    rd.en          := traceRead
+    rd.ptr         := ramRP
     bufferReadData := rd.data
-  })
+  }
 
   connectCtrlReg()
 }

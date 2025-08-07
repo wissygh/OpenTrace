@@ -14,15 +14,16 @@ class PacketHeader extends Bundle {
 
 class NormalPacket extends PacketHeader with TraceParameters {
   // number of bytes: 1 + 1 + 8 + [1, 248]
-  val srcid = UInt(src_bits_p.W)
+  val srcid     = UInt(src_bits_p.W)
   val timestamp = UInt(time_width_p.W) // todo: fix
-  val payload   =  new Bundle {
-    val traceType = UInt(trace_type_width.W) // 0: Instruction 1: Data
+  val payload = new Bundle {
+    val traceType    = UInt(trace_type_width.W) // 0: Instruction 1: Data
     val tracePayload = UInt((payload_max_width - (src_bits_p % 8) - trace_type_width).W)
   }
 }
 
 class NullPacket extends PacketHeader {
+
   /**
    * length: 0
    * extend: 0 -> null.idle, 1 -> null.alignment

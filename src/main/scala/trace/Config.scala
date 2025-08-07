@@ -3,7 +3,6 @@ package trace
 import chisel3._
 import utils._
 
-
 /**
  * Optional and run-time configurable mode, 1h:
  *   Delta address mode

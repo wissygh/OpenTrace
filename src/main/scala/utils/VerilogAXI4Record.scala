@@ -17,50 +17,57 @@
 package utils
 
 import chisel3._
-import chisel3.util._
 import chisel3.experimental.dataview._
-import scala.collection.immutable._
+import chisel3.util._
 import freechips.rocketchip.amba.axi4._
+import scala.collection.immutable._
 
 class VerilogAXI4Record(val params: AXI4BundleParameters) extends Record {
   private val axi4Bundle = new AXI4Bundle(params)
-  private def traverseAndMap(data: (String, Data)): SeqMap[String, Data] = {
+  private def traverseAndMap(data: (String, Data)): SeqMap[String, Data] =
     data match {
       case (name: String, node: Bundle) => SeqMap.from(
-        node.elements.map(x => traverseAndMap(x)).flatten.map {
-          case (nodeName, node) => (s"${name.replace("bits", "")}${nodeName}", node)
-        }
-      )
+          node.elements.map(x => traverseAndMap(x)).flatten.map {
+            case (nodeName, node) => (s"${name.replace("bits", "")}${nodeName}", node)
+          }
+        )
       case (name: String, node: Data) => SeqMap(name -> node)
     }
-  }
   private val outputPattern = "^(aw|w|ar).*".r
-  private val elems = traverseAndMap("", axi4Bundle) map { case (name, node) => name match {
-    case outputPattern(_) => (name, Output(node))
-    case _: String        => (name, Input (node))
-  }} map { case (name, node) => name match {
-    case s"${_}ready" => (name, Flipped(node))
-    case _: String    => (name, node)
-  }}
+  private val elems = traverseAndMap("", axi4Bundle) map { case (name, node) =>
+    name match {
+      case outputPattern(_) => (name, Output(node))
+      case _: String => (name, Input(node))
+    }
+  } map { case (name, node) =>
+    name match {
+      case s"${_}ready" => (name, Flipped(node))
+      case _: String => (name, node)
+    }
+  }
   def elements: SeqMap[String, Data] = elems
 }
 
 object VerilogAXI4Record {
   private val elementsMap: Seq[(VerilogAXI4Record, AXI4Bundle) => (Data, Data)] = {
-    val names = (new VerilogAXI4Record(AXI4BundleParameters(1, 8, 1))).elements.map(_._1)
+    val names   = (new VerilogAXI4Record(AXI4BundleParameters(1, 8, 1))).elements.map(_._1)
     val pattern = "^(aw|w|b|ar|r)(.*)".r
-    names.map { name => { (verilog: VerilogAXI4Record, chisel: AXI4Bundle) => {
+    names.map { name => (verilog: VerilogAXI4Record, chisel: AXI4Bundle) =>
       val (channel: Record, signal: String) = name match {
         case pattern(prefix, signal) =>
           (chisel.elements(prefix).asInstanceOf[Record], signal)
         case _: String => require(false, "unexpected prefix"); null
       }
-      verilog.elements(name) -> channel.elements.applyOrElse(signal,
-        channel.elements("bits").asInstanceOf[Record].elements)
-    }}}.toSeq
+      verilog.elements(name) -> channel.elements.applyOrElse(
+        signal,
+        channel.elements("bits").asInstanceOf[Record].elements
+      )
+    }.toSeq
   }
   implicit val axi4View: DataView[VerilogAXI4Record, AXI4Bundle] = DataView[VerilogAXI4Record, AXI4Bundle](
-    vab => new AXI4Bundle(vab.params), elementsMap: _*
+    vab => new AXI4Bundle(vab.params),
+    elementsMap: _*
   )
-  implicit val axi4View2: DataView[AXI4Bundle, VerilogAXI4Record] = axi4View.invert(ab => new VerilogAXI4Record(ab.params))
+  implicit val axi4View2: DataView[AXI4Bundle, VerilogAXI4Record] =
+    axi4View.invert(ab => new VerilogAXI4Record(ab.params))
 }
