@@ -6,12 +6,15 @@ import trace.TraceParameters
 import utils._
 
 class FromCore extends Bundle with TraceParameters {
-  val priv    = Priv()
-  val time    = UInt(Xlen.W)
-  val context = UInt(Xlen.W)
-  val cause   = UInt(CauseWidth.W)
-  val tval    = UInt(TvalWidth.W)
-  val impdef  = UInt(ImpdefWidth.W)
+  val priv        = Priv()
+  val time        = UInt(Xlen.W)
+  val context     = UInt(Xlen.W)
+  val ctype       = UInt(2.W)
+  val cause       = UInt(CauseWidth.W)
+  val tval        = UInt(TvalWidth.W)
+  val impdef      = UInt(ImpdefWidth.W)
+  val halted      = Bool()
+  val hartIsReset = Bool()
   val trigger = new Bundle {
     val traceOn     = Bool()
     val traceOff    = Bool()
@@ -24,6 +27,7 @@ class FromCore extends Bundle with TraceParameters {
       val itype     = UInt(ItypeWidth.W)
       val iretire   = UInt(IretireWidthCompressed.W)
       val ilastsize = UInt(IlastsizeWidth.W)
+      val sijump    = Option.when(supportSijump)(Bool())
     })
   )
 }

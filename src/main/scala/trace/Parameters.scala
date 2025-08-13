@@ -26,6 +26,8 @@ trait TraceParameters {
   def IretireWidthCompressed = log2Up(RenameWidth * CommitWidth * 2 + 1)
   def IlastsizeWidth         = 1
 
+  def supportSijump = false
+
   /**
    * hpm custom design
    */

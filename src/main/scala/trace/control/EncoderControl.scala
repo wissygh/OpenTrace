@@ -206,7 +206,7 @@ class TeControlBundle extends CSRBundle {
   val Enable              = RW(1).withReset(0.U)
   val InstTracing         = RW(2)
   val Emptry              = RO(3).withReset(1.U)  // Reads as 1 when all generated trace have been emitted.
-  val InstMode            = InstModeField(6, 4, wNoFilter).withReset(InstModeField.BHT)
+  val InstMode            = InstModeField(6, 4, wNoFilter).withReset(InstModeField.BTM)
   val Context             = RW(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
@@ -222,10 +222,10 @@ class TeControlBundle extends CSRBundle {
 
 object InstModeField extends CSREnum with WARLApply {
   val DisableInstTrace = Value(0.U)
-  val Baseline         = Value(3.U)
-  val BHT              = Value(6.U)
+  val BTM              = Value(3.U) // branch taken trace
+  val HTM              = Value(6.U) // history trace message
 
-  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(DisableInstTrace, Baseline, BHT)
+  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(DisableInstTrace, BTM, HTM)
 }
 
 object InstSyncModeField extends CSREnum with WARLApply {
