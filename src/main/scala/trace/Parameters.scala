@@ -156,6 +156,17 @@ trait TraceParameters {
    */
   def payload_max_width = 248
   def trace_type_width  = 1
+
+  /**
+   * n-trace
+   */
+  val ntrace_max_src     = 12
+  val ntrace_max_icnt    = 22
+  val ntrace_max_addr    = 63
+  val ntrace_max_hist    = 32
+  val ntrace_max_tstamp  = 34
+  val ntrace_max_hrepeat = 18
+  val ntrace_max_bcnt    = 18
 }
 
 case class BusType(
