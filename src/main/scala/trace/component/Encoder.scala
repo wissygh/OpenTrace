@@ -29,11 +29,12 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   })
 
   val fromCore = io.fromCore
-  val (priv, cause, context, time, tval, impdef, trigger, blocks) =
+  val (priv, cause, scontext, hcontext, time, tval, impdef, trigger, blocks) =
     (
       fromCore.priv,
       fromCore.cause,
-      fromCore.context,
+      fromCore.scontext,
+      fromCore.hcontext,
       fromCore.time,
       fromCore.tval,
       fromCore.impdef,
@@ -88,7 +89,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   def matchFunc(isPfunc: Boolean)(compInput: UInt, CompPFunc: UInt, matchRegData: UInt): Bool = {
     val srcData = MuxLookup(compInput, block0.bits.iaddr)(Seq(
       CompInputField.Iaddr.asUInt   -> block0.bits.iaddr, // todo: check per block?
-      CompInputField.Context.asUInt -> context,
+      CompInputField.Context.asUInt -> scontext,
       CompInputField.Tval.asUInt    -> tval
       // CompInputField.Daddr.asUInt -> Daddr // todo: support data trace
     ))

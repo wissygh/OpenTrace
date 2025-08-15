@@ -4,6 +4,10 @@ import chisel3._
 import chisel3.util._
 import trace.TraceParameters
 
+/**
+ * E-Trace
+ */
+
 class PacketHeader extends Bundle {
   val header = new Bundle {
     val length = UInt(5.W)
