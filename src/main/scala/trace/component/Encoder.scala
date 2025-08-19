@@ -86,7 +86,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
   val compMatchVec = Wire(Vec(comparator_num, Bool()))
 
-  def matchFunc(isPfunc: Boolean)(compInput: UInt, CompPFunc: UInt, matchRegData: UInt): Bool = {
+  def matchFunc(isPfunc: Boolean)(compInput: UInt, CompFunc: UInt, matchRegData: UInt): Bool = {
     val srcData = MuxLookup(compInput, block0.bits.iaddr)(Seq(
       CompInputField.Iaddr.asUInt   -> block0.bits.iaddr, // todo: check per block?
       CompInputField.Context.asUInt -> scontext,
@@ -100,7 +100,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val gt = srcData > matchRegData
     val ge = srcData >= matchRegData
 
-    MuxLookup(CompPFunc, true.B)(Seq(
+    MuxLookup(CompFunc, true.B)(Seq(
       CompPFuncField.Equal.asUInt            -> eq,
       CompPFuncField.NotEqual.asUInt         -> ne,
       CompPFuncField.LessThan.asUInt         -> lt,
@@ -180,9 +180,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
 
     impdefMatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchImpdef.asBool,
-      (impdef & teFilterMatchMaskImpdefVec(i).rdata) === (teFilterMatchValueImpdefVec(
-        i
-      ).rdata & teFilterMatchMaskImpdefVec(i).rdata),
+      (impdef & teFilterMatchMaskImpdefVec(i).rdata) ===
+        (teFilterMatchValueImpdefVec(i).rdata & teFilterMatchMaskImpdefVec(i).rdata),
       true.B
     )
 
