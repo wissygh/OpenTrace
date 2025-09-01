@@ -80,11 +80,9 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) with RequireAsyncReset {
     val io = IO(new Bundle {
-      val fromCore   = Input(Vec(hart_num, new FromCore))
-      val extTrigIn  = Input(Vec(extTrig_num, Bool()))
-      val extTrigOut = Output(Vec(extTrig_num, Bool()))
-      val toCore     = Output(Vec(hart_num, new ToCore))
-      val hpm        = Option.when(supportHPM)(Vec(hart_num, new Hpm))
+      val fromCore = Input(Vec(hart_num, new FromCore))
+      val toCore   = Output(Vec(hart_num, new ToCore))
+      val hpm      = Option.when(supportHPM)(Vec(hart_num, new Hpm))
     })
 
     /**
@@ -115,14 +113,11 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
      */
     encoderModVec.zip(fromCore).zip(toCore).map {
       case ((encoder, ingressPort), toCore) => {
-        toCore               := encoder.io.toCore
-        encoder.io.fromCore  := ingressPort
-        encoder.io.extTrigIn := io.extTrigIn
+        toCore              := encoder.io.toCore
+        encoder.io.fromCore := ingressPort
       }
     }
     encoderModVec.zip(funnelMod.io.packets).map { case (encoder, packet) => packet := encoder.io.packet }
-
-    io.extTrigOut := encoderModVec.map(_.io.extTrigOut.asUInt).reduce(_ | _).asBools
 
     // hpm
     io.hpm.foreach(iohpm =>
