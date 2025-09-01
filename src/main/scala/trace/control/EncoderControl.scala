@@ -20,7 +20,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 
     when(wen && wdata.Enable.asBool) {
       reg.InstTracing := wdata.InstTracing
-    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
+    }.elsewhen((traceOn || traceOff) & triggerValid & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
       reg.InstTracing := Mux1H(
         Seq(traceOn, traceOff),
         Seq(true.B, false.B)
@@ -69,15 +69,6 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     regOut.ALL := timeCount(63, 32)
   })
     .setAddr(CtrlReg.TsCounterHigh)
-
-  /**
-   * trigger: Vendor-specific trace action is not supported
-   */
-  val teTrigExtInControl = Module(new CSRModule("TeTrigExtInControl", new TeTrigExtInControlBundle))
-    .setAddr(CtrlReg.TeTrigExtInControl)
-
-  val teTrigExtOutControl = Module(new CSRModule("TeTrigExtOutControl", new TeTrigExtOutControlBundle))
-    .setAddr(CtrlReg.TeTrigExtOutControl)
 
   /**
    * Filter:
@@ -194,9 +185,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     teDataFilters,
     tsControl,
     tsCounterLow,
-    tsCounterHigh,
-    teTrigExtInControl,
-    teTrigExtOutControl
+    tsCounterHigh
   ) ++ filterMods ++ comptatorMods ++ hpmMods
 
 }
@@ -323,32 +312,6 @@ class TeDataFiltersBundle extends CSRBundle {
     FiltersIndexField(15, 0, wNoFilter).withReset(
       FiltersIndexField.Index_1
     ) // same as  TeInstFilters; 1hot: bit_i -> filter_i
-}
-
-/**
- * trigger bundle, todo: parameteried according to [[extTrig_num]]
- */
-
-class TeTrigExtInControlBundle extends CSRBundle {
-  val Action0 = TrigAction(3, 0, wNoFilter).withReset(TrigAction.NoAction)
-  val Action1 = TrigAction(7, 4, wNoFilter).withReset(TrigAction.NoAction)
-  val Action2 = TrigAction(11, 8, wNoFilter).withReset(TrigAction.NoAction)
-  val Action3 = TrigAction(15, 12, wNoFilter).withReset(TrigAction.NoAction)
-  val Action4 = TrigAction(19, 16, wNoFilter).withReset(TrigAction.NoAction)
-  val Action5 = TrigAction(23, 20, wNoFilter).withReset(TrigAction.NoAction)
-  val Action6 = TrigAction(27, 24, wNoFilter).withReset(TrigAction.NoAction)
-  val Action7 = TrigAction(31, 28, wNoFilter).withReset(TrigAction.NoAction)
-}
-
-class TeTrigExtOutControlBundle extends CSRBundle {
-  val Event0 = TrigEvent(3, 0, wNoFilter).withReset(TrigEvent.Start)
-  val Event1 = TrigEvent(7, 4, wNoFilter).withReset(TrigEvent.Start)
-  val Event2 = TrigEvent(11, 8, wNoFilter).withReset(TrigEvent.Start)
-  val Event3 = TrigEvent(15, 12, wNoFilter).withReset(TrigEvent.Start)
-  val Event4 = TrigEvent(19, 16, wNoFilter).withReset(TrigEvent.Start)
-  val Event5 = TrigEvent(23, 20, wNoFilter).withReset(TrigEvent.Start)
-  val Event6 = TrigEvent(27, 24, wNoFilter).withReset(TrigEvent.Start)
-  val Event7 = TrigEvent(31, 28, wNoFilter).withReset(TrigEvent.Start)
 }
 
 object TrigAction extends CSREnum with WARLApply {
@@ -563,10 +526,11 @@ class HpmEventDataBundle extends CSRBundle with TraceParameters {
  */
 
 trait HasTeCtrlBundle { self: CSRModule[_] =>
-  val allEmitted = IO(Input(Bool()))
-  val traceOn    = IO(Input(Bool()))
-  val traceOff   = IO(Input(Bool()))
-  val stallOrOf  = IO(Input(Bool()))
+  val allEmitted   = IO(Input(Bool()))
+  val triggerValid = IO(Input(Bool()))
+  val traceOn      = IO(Input(Bool()))
+  val traceOff     = IO(Input(Bool()))
+  val stallOrOf    = IO(Input(Bool()))
 }
 
 trait HasTeInstFeaturesBundle { self: CSRModule[_] =>

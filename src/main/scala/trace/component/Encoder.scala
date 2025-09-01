@@ -20,12 +20,10 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
 class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with EncoderControl {
   val io = IO(new Bundle {
-    val fromCore   = Input(new FromCore)
-    val extTrigIn  = Input(Vec(extTrig_num, Bool()))
-    val extTrigOut = Output(Vec(extTrig_num, Bool()))
-    val toCore     = Output(new ToCore)
-    val packet     = Output(new Payload)
-    val hpm        = Option.when(supportHPM)(new Hpm)
+    val fromCore = Input(new FromCore)
+    val toCore   = Output(new ToCore)
+    val packet   = Output(new Payload)
+    val hpm      = Option.when(supportHPM)(new Hpm)
   })
 
   val fromCore = io.fromCore
@@ -48,32 +46,15 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val itypeIsExp   = block0.valid && Itype.isExp(block0.bits.itype)
   val runInDebug   = priv === Priv.D
 
-  /**
-   * trigger_begin: trigger Module & external trigger
-   */
-  // extTrigAction, todo: how to select when trigger module and ext Trigger all fire.
-  val trigVec = Wire(Vec(extTrig_num, UInt(4.W)))
-  trigVec.map(_ := 0.U)
-  val extTrigInAction = PriorityMux(io.extTrigIn, teTrigExtInControl.regOut.asUInt.asTypeOf(trigVec))
-  // extTrigEvent todo: start stop check
-  val instTracing = RegNext(teControl.regOut.InstTracing.asBool)
-  io.extTrigOut.zip(teTrigExtOutControl.regOut.asUInt.asTypeOf(trigVec)).map { case (trigOut, event) =>
-    trigOut := MuxLookup(event, false.B)(Seq(
-      TrigEvent.Start.asUInt -> (!instTracing && teControl.regOut.InstTracing.asBool), // todo: check per block?
-      TrigEvent.Stop.asUInt  -> (instTracing && !teControl.regOut.InstTracing.asBool)
-    ))
-  }
-
   // Trigger module
-  val triggerModEn = blocks.map(block => block.valid).reduce(_ | _) && (trigger.traceOn || trigger.traceOff)
-  val traceOn      = Mux(triggerModEn, trigger.traceOn, extTrigInAction === TrigAction.TraceOn.asUInt)
-  val traceOff     = Mux(triggerModEn, trigger.traceOff, extTrigInAction === TrigAction.TraceOff.asUInt)
+  val triggerModEn = blocks.map(block => block.valid).reduce(_ | _)
+  val traceOn      = trigger.traceOn
+  val traceOff     = trigger.traceOff
 
-  //
   val notifyVec = trigger.TraceNotify.zip(blocks.map(block => block.valid)).map {
     case (notify, valid) => notify && valid && teControl.regOut.InstTracing.asBool
   }
-  val notifyTrig         = notifyVec.reduce(_ | _) | extTrigInAction === TrigAction.TraceNotify.asUInt
+  val notifyTrig         = notifyVec.reduce(_ | _)
   val notifyCanGenPacket = notifyTrig & teControl.regOut.InstTracing.asBool // todo: fix trigger module's notify
 
   /**
@@ -273,10 +254,11 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     }
     mod match {
       case m: HasTeCtrlBundle => // todo fix
-        m.stallOrOf  := false.B
-        m.allEmitted := true.B
-        m.traceOn    := traceOn
-        m.traceOff   := traceOff
+        m.stallOrOf    := false.B
+        m.allEmitted   := true.B
+        m.triggerValid := triggerModEn
+        m.traceOn      := traceOn
+        m.traceOff     := traceOff
       case _ =>
     }
     mod match {
