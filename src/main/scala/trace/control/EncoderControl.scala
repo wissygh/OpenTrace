@@ -206,8 +206,8 @@ class TeControlBundle extends CSRBundle {
   val Enable              = RW(1).withReset(0.U)
   val InstTracing         = RW(2)
   val Emptry              = RO(3).withReset(1.U)  // Reads as 1 when all generated trace have been emitted.
-  val InstMode            = InstModeField(6, 4, wNoFilter).withReset(InstModeField.BTM)
-  val Context             = RW(9).withReset(0.U)
+  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.VendorDef)
+  val Context             = RO(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
   val InstStallEna        = RW(13).withReset(0.U) // 0: drop 1: stall
@@ -217,13 +217,14 @@ class TeControlBundle extends CSRBundle {
     InstSyncMaxROField(23, 20).withReset(
       InstSyncMaxROField.Default
     ) // counter >= 2^(InstSyncMax + 4), send sync package. todo: fix to rw
-  val Format = FormatField(26, 24, wNoFilter).withReset(FormatField.Etrace)
+  val Format = FormatROField(26, 24).withReset(FormatROField.Etrace)
 }
 
-object InstModeField extends CSREnum with WARLApply {
+object InstModeROField extends CSREnum with ROApply {
   val DisableInstTrace = Value(0.U)
   val BTM              = Value(3.U) // branch taken trace
   val HTM              = Value(6.U) // history trace message
+  val VendorDef        = Value(7.U)
 
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(DisableInstTrace, BTM, HTM)
 }
@@ -239,10 +240,9 @@ object InstSyncMaxROField extends CSREnum with ROApply with TraceParameters {
   val Default = Value(syncmax_p.U)
 }
 
-object FormatField extends CSREnum with WARLApply {
+object FormatROField extends CSREnum with ROApply {
   val Etrace = Value(0.U)
   val Ntrace = Value(1.U)
-  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(Etrace, Ntrace)
 }
 
 class TeImplBundle extends CSRBundle {
@@ -264,15 +264,15 @@ class TeInstFeaturesBundle extends CSRBundle {
   val EnImRet           = RW(3)
   val EnBranchPred      = RW(4)
   val EnJumpTargetCache = RW(5)
-  val ImRetMode         = ImpRetModeField(7, 6, wNoFilter).withReset(ImpRetModeField.None)
-  val EnRepHistoty      = RW(8)
-  val EnAllJumps        = RW(9)
-  val ExtendAddrMSB     = RW(10)
+  val ImRetMode         = ImpRetModeROField(7, 6).withReset(ImpRetModeROField.None)
+  val EnRepHistoty      = RO(8).withReset(0.U)
+  val EnAllJumps        = RO(9).withReset(0.U)
+  val ExtendAddrMSB     = RO(10).withReset(0.U)
   val SrcID             = RO(27, 16)
   val SrcBits           = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
 }
 
-object ImpRetModeField extends CSREnum with WARLApply {
+object ImpRetModeROField extends CSREnum with ROApply {
   val None     = Value(0.U)
   val Simple   = Value(1.U)
   val Partial  = Value(2.U)
