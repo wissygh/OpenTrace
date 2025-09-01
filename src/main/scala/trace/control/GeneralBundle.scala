@@ -21,8 +21,8 @@ object MinorVersion extends CSREnum with ROApply {
 }
 
 object MajorProtocol extends CSREnum with ROApply {
+  val EDefault = Value(0.U) // Must be 0 to indicate this version (2.0.x) of the E-Trace protocol
   val NDefault = Value(1.U)
-  val EDefault = Value(2.U)
 }
 object MinorProtocol extends CSREnum with ROApply {
   val Default = Value(0.U)

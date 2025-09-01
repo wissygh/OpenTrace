@@ -162,12 +162,11 @@ trait TraceParameters {
    */
   def payload_max_width = 248
   def trace_type_width  = 1
-  def S = src_bits_p/8
-  def T = ts_width_p/8
-  def P = payload_max_width/8
-  def maxPackets = 1 + S + T + 31
-  def maxNullSeq = maxPackets + 1
-
+  def S                 = src_bits_p / 8
+  def T                 = ts_width_p / 8
+  def P                 = payload_max_width / 8
+  def maxPackets        = 1 + S + T + 31
+  def maxNullSeq        = maxPackets + 1
 
   /**
    * n-trace
