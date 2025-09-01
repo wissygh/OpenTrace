@@ -17,7 +17,8 @@ class PacketHeader extends Bundle {
 }
 
 class NormalPacket extends PacketHeader with TraceParameters {
-  // number of bytes: 1 + 1 + 8 + [1, 248]
+  // number of bytes: 1 + src_bits_p/8 + T*header.extend + header.length((payload_width + src_bits_p%8)/8)
+  // number of bytes: 1 + 1 + 8 + [1, 31]
   val srcid     = UInt(src_bits_p.W)
   val timestamp = UInt(time_width_p.W) // todo: fix
   val payload = new Bundle {
@@ -33,6 +34,6 @@ class NullPacket extends PacketHeader {
    * extend: 0 -> null.idle, 1 -> null.alignment
    * sync:
    *    unframed: N null.idle + 1 null.alignment
-   *    framed  : N null.idle + 1 null.alignment
+   *    framed  : N null.idle + 1 null.idle/null.alignment -> (1 + 1 + 8 + 31 + 1) * 0.U(8.W)
    */
 }
