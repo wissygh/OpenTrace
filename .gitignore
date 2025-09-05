@@ -190,6 +190,8 @@ Session.vim
 *.iml
 
 .vscode/
+.bloop/
+.metals/
 
 ## Directory-based project format:
 .idea/
