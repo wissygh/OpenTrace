@@ -163,10 +163,17 @@ trait TraceParameters {
   def payload_max_width = 248
   def trace_type_width  = 1
   def S                 = src_bits_p / 8
-  def T                 = ts_width_p / 8
+  def T                 = (ts_width_p + 1) / 8
   def P                 = payload_max_width / 8
-  def maxPackets        = 1 + S + T + 31
+  def maxPackets        = 1 + S + T + 31 // 1 + 1 + 8 + 31
   def maxNullSeq        = maxPackets + 1
+
+  val encoderFifoDepth = maxPackets * 3
+  def atbBeats         = 4
+  def lg2Beats         = log2Ceil(atbBeats)
+
+  def maxTransNum   = maxPackets / atbBeats + (if (maxPackets % atbBeats == 0) 0 else 1)
+  def transCntWidth = log2Up(maxTransNum + 1) // 6
 
   /**
    * n-trace

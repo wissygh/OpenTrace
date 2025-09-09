@@ -83,6 +83,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
       val fromCore = Input(Vec(hart_num, new FromCore))
       val toCore   = Output(Vec(hart_num, new ToCore))
       val hpm      = Option.when(supportHPM)(Vec(hart_num, new Hpm))
+      val atbmVec  = Vec(hart_num, new ATBMaster)
     })
 
     /**
@@ -117,7 +118,8 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
         encoder.io.fromCore := ingressPort
       }
     }
-    encoderModVec.zip(funnelMod.io.packets).map { case (encoder, packet) => packet := encoder.io.packet }
+    // encoderModVec.zip(funnelMod.io.atbsVec).map { case (encoder, atbs) => atbs <> encoder.io.atbm }
+    encoderModVec.zip(io.atbmVec).map { case (encoder, ioatbm) => { ioatbm <> encoder.io.atbm } }
 
     // hpm
     io.hpm.foreach(iohpm =>

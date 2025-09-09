@@ -71,6 +71,10 @@ object Itype extends NamedUInt(4) {
 
   def isBranchType(itype: UInt) = itype === Branch
 
+  def isBranchTaken(itype: UInt) = itype === Taken
+
+  def isBranchNonTaken(itype: UInt) = itype === NonTaken
+
   // supportSijump
   def isUninferable(itype: UInt) =
     Seq(UninferableCall, UninferableTailCall, CoRoutineSwap, OtherUninferableJump).map(_ === itype).reduce(_ || _)

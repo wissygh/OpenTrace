@@ -9,16 +9,15 @@ import trace.TraceParameters
  */
 
 class PacketHeader extends Bundle {
-  val header = new Bundle {
-    val length = UInt(5.W)
-    val flow   = UInt(2.W)
-    val extend = Bool() // timestamp enable
-  }
+  val length = UInt(5.W)
+  val flow   = UInt(2.W)
+  val extend = Bool() // timestamp enable
 }
 
-class NormalPacket extends PacketHeader with TraceParameters {
+class NormalPacket extends Bundle with TraceParameters {
   // number of bytes: 1 + src_bits_p/8 + T*header.extend + header.length((payload_width + src_bits_p%8)/8)
   // number of bytes: 1 + 1 + 8 + [1, 31]
+  val header    = new PacketHeader
   val srcid     = UInt(src_bits_p.W)
   val timestamp = UInt(time_width_p.W) // todo: fix
   val payload = new Bundle {
@@ -36,4 +35,7 @@ class NullPacket extends PacketHeader {
    *    unframed: N null.idle + 1 null.alignment
    *    framed  : N null.idle + 1 null.idle/null.alignment -> (1 + 1 + 8 + 31 + 1) * 0.U(8.W)
    */
+  override val length = 0.U(5.W)
+  override val flow   = 0.U(2.W)
+  override val extend = false.B
 }

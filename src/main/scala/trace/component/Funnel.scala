@@ -9,6 +9,7 @@ import scala.collection.immutable.SeqMap
 import trace.Control2BusRegBundle
 import trace.TraceParameters
 import trace.control.FunnelControl
+import trace.interface._
 import trace.interface.FromCore
 import trace.interface.Payload
 import trace.interface.ToCore
@@ -22,8 +23,12 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
     with FunnelControl {
 
   val io = IO(new Bundle {
-    val packets = Input(Vec(hart_num, new Payload))
+    // val atbsVec = Vec(hart_num, new ATBSlave)
+    // val atbm    = new ATBMaster // todo fix width
   })
+  // todo round-robin arbiter
 
+  // todo: fifo
+  // io.atbsVec(0) <> io.atbm // todo fix
   connectCtrlReg()
 }
