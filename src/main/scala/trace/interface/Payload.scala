@@ -17,55 +17,62 @@ class Payload extends Bundle with TraceParameters {
  * 33: Support
  */
 class Format3 extends Payload {
-  val subformat = UInt(2.W)
+  override val format = 3.U(2.W)
+  val subformat       = UInt(2.W)
 }
 
 class Format30 extends Format3 {
-  val branch    = Bool()
-  val privilege = UInt(privilege_width_p.W)
-  val time      = Option.when(!notime_p)(UInt(time_width_p.W))
-  val context   = Option.when(!nocontext_p)(UInt(context_width_p.W))
-  val address   = UInt((iaddress_width_p - iaddress_lsb_p).W)
+  override val subformat = 0.U(2.W)
+  val branch             = Bool()
+  val privilege          = UInt(privilege_width_p.W)
+  val time               = Option.when(!notime_p)(UInt(time_width_p.W))
+  val context            = Option.when(!nocontext_p)(UInt(context_width_p.W))
+  val address            = UInt((iaddress_width_p - iaddress_lsb_p).W)
 }
 
 class Format31 extends Format3 {
-  val branch    = Bool()
-  val privilege = UInt(privilege_width_p.W)
-  val time      = Option.when(!notime_p)(UInt(time_width_p.W))
-  val context   = Option.when(!nocontext_p)(UInt(context_width_p.W))
-  val ecause    = UInt(ecause_width_p.W)
-  val interrupt = Bool()
-  val thaddr    = Bool()
-  val address   = UInt((iaddress_width_p - iaddress_lsb_p).W)
-  val tavl      = UInt(iaddress_width_p.W)
+  override val subformat = 1.U(2.W)
+  val branch             = Bool()
+  val privilege          = UInt(privilege_width_p.W)
+  val time               = Option.when(!notime_p)(UInt(time_width_p.W))
+  val context            = Option.when(!nocontext_p)(UInt(context_width_p.W))
+  val ecause             = UInt(ecause_width_p.W)
+  val interrupt          = Bool()
+  val thaddr             = Bool()
+  val address            = UInt((iaddress_width_p - iaddress_lsb_p).W)
+  val tavl               = UInt(iaddress_width_p.W)
 }
 
 class Format32 extends Format3 {
-  val privilege = UInt(privilege_width_p.W)
-  val time      = Option.when(!notime_p)(UInt(time_width_p.W))
-  val context   = Option.when(!nocontext_p)(UInt(context_width_p.W))
+  override val subformat = 2.U(2.W)
+  val privilege          = UInt(privilege_width_p.W)
+  val time               = Option.when(!notime_p)(UInt(time_width_p.W))
+  val context            = Option.when(!nocontext_p)(UInt(context_width_p.W))
 }
 
 class Format33 extends Format3 {
-  val ienable      = Bool()
-  val encoder_mode = UInt(encodermode_width_p.W) // should be zero.
-  val qual_status  = QualStatus
-  val ioption      = ConfigMode
-  val denable      = Bool()
-  val dloss        = Bool()
-  val doptions     = Doptions
+  override val subformat = 3.U(2.W)
+  val ienable            = Bool()
+  val encoder_mode       = UInt(encodermode_width_p.W) // should be zero.
+  val qual_status        = QualStatus
+  val ioption            = ConfigMode
+  val denable            = Bool()
+  val dloss              = Bool()
+  val doptions           = Doptions
 }
 
 class Format2 extends Payload {
-  val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
-  val notifyTrigger = Bool()
-  val updiscon      = Bool()
-  val irreport      = Bool()
-  val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
+  override val format = 2.U(2.W)
+  val address         = UInt((iaddress_width_p - iaddress_lsb_p).W)
+  val notifyTrigger   = Bool()
+  val updiscon        = Bool()
+  val irreport        = Bool()
+  val irdepth         = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
 }
 
 class Format1 extends Payload {
-  val branches = UInt(5.W)
+  override val format = 1.U(2.W)
+  val branches        = UInt(5.W)
 
   /**
    * The num of bits of branch_map is determined as followed:
@@ -86,7 +93,8 @@ class Format1 extends Payload {
 }
 
 class Format1NoAddress extends Payload {
-  val branches = UInt(5.W)
+  override val format = 1.U(2.W)
+  val branches        = UInt(5.W)
 
   /**
    * The num of bits of branch_map is determined as followed:
@@ -108,26 +116,30 @@ class Format1NoAddress extends Payload {
  */
 
 class Format0 extends Payload {
-  val subformat = UInt(f0s_width_p.W)
+  override val format = 0.U(2.W)
+  val subformat       = UInt(1.W)
 }
 class Format00NoAddress extends Format0 {
-  val branch_count = UInt(32.W)
-  val branch_fmt   = UInt(2.W) // 00 ; 01-11: cannot occur
+  override val subformat = 0.U(1.W)
+  val branch_count       = UInt(32.W)
+  val branch_fmt         = UInt(2.W) // 00 ; 01-11: cannot occur
 }
 
 class Format00Address extends Format0 {
-  val branch_count  = UInt(32.W)
-  val branch_fmt    = UInt(2.W) // 10: address; 11 address-fail; 00-01: cannot occur
-  val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
-  val notifyTrigger = Bool()
-  val updiscon      = Bool()
-  val irreport      = Bool()
-  val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
+  override val subformat = 0.U(1.W)
+  val branch_count       = UInt(32.W)
+  val branch_fmt         = UInt(2.W) // 10: address; 11 address-fail; 00-01: cannot occur
+  val address            = UInt((iaddress_width_p - iaddress_lsb_p).W)
+  val notifyTrigger      = Bool()
+  val updiscon           = Bool()
+  val irreport           = Bool()
+  val irdepth            = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
 }
 
 class Format01Branchmap extends Format0 {
-  val index    = UInt(cache_size_p.W)
-  val branches = UInt(5.W)
+  override val subformat = 1.U(1.W)
+  val index              = UInt(cache_size_p.W)
+  val branches           = UInt(5.W)
 
   /**
    * The num of bits of branch_map is determined as followed:
@@ -145,10 +157,11 @@ class Format01Branchmap extends Format0 {
 }
 
 class Format01Nobranchmap extends Format0 {
-  val index    = UInt(cache_size_p.W)
-  val branches = UInt(5.W)
-  val irreport = Bool()
-  val irdepth  = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
+  override val subformat = 1.U(1.W)
+  val index              = UInt(cache_size_p.W)
+  val branches           = UInt(5.W)
+  val irreport           = Bool()
+  val irdepth            = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
 }
 
 object QualStatus extends NamedUInt(2) {

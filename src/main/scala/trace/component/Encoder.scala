@@ -11,6 +11,8 @@ import trace.TraceParameters
 import trace.control
 import trace.control._
 import trace.interface._
+import utility.CircularQueuePtr
+import utility.HasCircularQueuePtrHelper
 
 class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
@@ -22,8 +24,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val io = IO(new Bundle {
     val fromCore = Input(new FromCore)
     val toCore   = Output(new ToCore)
-    val packet   = Output(new Payload)
     val hpm      = Option.when(supportHPM)(new Hpm)
+    val atbm     = new ATBMaster
   })
 
   val fromCore = io.fromCore
@@ -288,10 +290,21 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   }
 
   /**
+   * interface -> packetGen -> fifo -> atb
+   */
+  val packetGen = Module(new PacketGen)
+  val fifo      = Module(new Fifo)
+
+  packetGen.io.fromCore       := fromCore
+  packetGen.io.fromCtrl.srcid := teInstFeatures.regOut.SrcID.asUInt
+  fifo.io.packetEnq           := packetGen.io.packet
+  fifo.io.fromCtrl.srcid      := teInstFeatures.regOut.SrcID.asUInt
+  io.atbm <> fifo.io.atbm
+
+  /**
    * encoder IO
    */
   io.toCore.stall  := stallHart
   io.toCore.enable := instTraceEnable
-  io.packet.format := 0.U
   connectCtrlReg()
 }
