@@ -4,7 +4,9 @@ import chisel3._
 import chisel3.util._
 import firrtl2.Utils.True
 import freechips.rocketchip.diplomacy.AddressSet
+import freechips.rocketchip.diplomacy.BufferParams.default
 import shapeless.ops.nat.Pow
+import trace.component.FifoParam
 
 trait TraceParameters {
 
@@ -168,12 +170,10 @@ trait TraceParameters {
   def maxPackets        = 1 + S + T + 31 // 1 + 1 + 8 + 31
   def maxNullSeq        = maxPackets + 1
 
-  val encoderFifoDepth = maxPackets * 3
-  def atbBeats         = 4
-  def lg2Beats         = log2Ceil(atbBeats)
-
-  def maxTransNum   = maxPackets / atbBeats + (if (maxPackets % atbBeats == 0) 0 else 1)
-  def transCntWidth = log2Up(maxTransNum + 1) // 6
+  // atb
+  def atbIdWidth          = 7
+  def encoderAtbDataWidth = 32
+  def funnelAtbDataWidth  = 128
 
   /**
    * n-trace

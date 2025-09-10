@@ -25,7 +25,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val fromCore = Input(new FromCore)
     val toCore   = Output(new ToCore)
     val hpm      = Option.when(supportHPM)(new Hpm)
-    val atbm     = new ATBMaster
+    val atbm     = new ATBMaster(encoderAtbDataWidth)
   })
 
   val fromCore = io.fromCore
@@ -292,8 +292,15 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   /**
    * interface -> packetGen -> fifo -> atb
    */
+  val fifoParam = FifoParam(
+    isLeaf = true,
+    fifoDepth = maxPackets * 3,
+    enqDataBeats = maxPackets,
+    deqDataBeats = encoderAtbDataWidth / 8
+  )
+
   val packetGen = Module(new PacketGen)
-  val fifo      = Module(new Fifo)
+  val fifo      = Module(new Fifo(fifoParam))
 
   packetGen.io.fromCore       := fromCore
   packetGen.io.fromCtrl.srcid := teInstFeatures.regOut.SrcID.asUInt
