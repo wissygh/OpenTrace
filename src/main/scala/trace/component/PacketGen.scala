@@ -14,7 +14,7 @@ class PacketGen extends Module with TraceParameters {
   val io = IO(new Bundle {
     val fromCore = Input(new FromCore)
     val fromCtrl = Input(new CtrlInterface)
-    val packet   = Output(new PacketEnq)
+    val packet   = Output(Valid(new PacketEnq(maxPackets)))
   })
   val fromCore = io.fromCore
   val (priv, cause, scontext, hcontext, time, tval, impdef, trigger, blocks) =
@@ -35,6 +35,8 @@ class PacketGen extends Module with TraceParameters {
   /**
    * packet gen
    */
-  io.packet.len  := 9.U
-  io.packet.data := VecInit(Seq(9.U(8.W)) ++ Seq.fill(maxPackets - 1)(0.U(8.W)))
+
+  io.packet.valid     := true.B
+  io.packet.bits.len  := 9.U
+  io.packet.bits.data := VecInit(Seq(9.U(8.W)) ++ Seq.fill(maxPackets - 1)(0.U(8.W)))
 }
