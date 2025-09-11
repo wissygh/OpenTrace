@@ -112,7 +112,7 @@ trait TraceParameters {
   def ramLimitAddr   = 0x0
 
   // trace buffer
-  def buffer_num    = 2
+  def buffer_num    = 1024 // 64K bytes = 16K words
   def ramBaseAddr   = 0x00_4000_0000
   def ramMask       = (buffer_num << 2) - 1
   def ramAddressSet = AddressSet(ramBaseAddr, ramMask)

@@ -83,7 +83,6 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
       val fromCore = Input(Vec(hart_num, new FromCore))
       val toCore   = Output(Vec(hart_num, new ToCore))
       val hpm      = Option.when(supportHPM)(Vec(hart_num, new Hpm))
-      val atbm     = new ATBMaster(funnelAtbDataWidth)
     })
 
     /**
@@ -115,7 +114,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
       }
     }
     encoderModVec.zip(funnelMod.io.atbsVec).map { case (encoder, atbs) => atbs <> encoder.io.atbm }
-    io.atbm <> funnelMod.io.atbm
+    ramMod.io.atbs <> funnelMod.io.atbm
 
     // hpm
     io.hpm.foreach(iohpm =>

@@ -31,7 +31,7 @@ class CircularBufferImp(wrapper: CircularBuffer)(implicit p: Parameters) extends
   val write = IO(new Bundle {
     val en   = Input(Bool())
     val ptr  = Input(UInt(64.W))
-    val data = Input(UInt(32.W))
+    val data = Input(UInt(funnelAtbDataWidth.W))
   })
 
   val read = Option.when(!ramIsSMEM)(IO(new Bundle {
@@ -40,16 +40,23 @@ class CircularBufferImp(wrapper: CircularBuffer)(implicit p: Parameters) extends
     val data = Output(UInt(32.W))
   }))
 
-  val bufferVec = Reg(Vec(buffer_num, UInt(32.W)))
+  /**
+    * parameter
+    */
+  private val wordWidth    = 32
+  private val writeWidth   = funnelAtbDataWidth
+  private val writeBeats   = writeWidth / 8
+  private val writeStep    = funnelAtbDataWidth / wordWidth
+  private val lg2WriteStep = log2Up(writeStep)
 
-  bufferVec.zipWithIndex.map {
-    case (bf, idx) => {
-      bf := Mux(write.en && (write.ptr === (ramBaseAddr + idx).U), write.data, bf)
-    }
-  }
+  val bufferVec = VecInit((0 until (buffer_num / writeStep)).map { idx =>
+    RegEnable(write.data, write.en && ((write.ptr >> 2) === ((ramBaseAddr >> 2) + idx).U))
+  })
+
+  val bufferVecWire = bufferVec.asTypeOf(Vec(buffer_num, UInt(wordWidth.W)))
 
   read.foreach(rd =>
-    bufferVec.zipWithIndex.map {
+    bufferVecWire.zipWithIndex.map {
       case (bf, idx) => {
         rd.data := Mux(rd.en && (rd.ptr === (ramBaseAddr + idx).U), bf, 0.U)
       }
@@ -60,7 +67,7 @@ class CircularBufferImp(wrapper: CircularBuffer)(implicit p: Parameters) extends
     wrapper.ramBaseAddr -> RegFieldGroup(
       "trace",
       Some("trace circular buffer"),
-      bufferVec.map(reg => RegField.r(32, reg))
+      bufferVecWire.map(rdata => RegField.r(32, rdata))
     )
   ))
 }
