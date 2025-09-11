@@ -26,12 +26,27 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
     val atbsVec = Vec(hart_num, new ATBSlave(encoderAtbDataWidth))
     val atbm    = new ATBMaster(funnelAtbDataWidth) // todo fix width
   })
+
+  /**
+    * parameter
+    */
+  val fifoParam = FifoParam(
+    isLeaf = false,
+    fifoDepth = maxPackets * 6,
+    enqDataBeats = encoderAtbDataWidth / 8,
+    deqDataBeats = funnelAtbDataWidth / 8
+  )
+
+  /**
+    * module: [[fifo]]
+    */
   // todo round-robin arbiter
   // todo: first to arbitrate, then assert atbs.at.ready
   val resArb = VecInit(Seq.fill(hart_num)(true.B))
 
   // todo: fifo
   private val (atbsVec, atbm) = (io.atbsVec, io.atbm)
+  val fifo                    = Module(new Fifo(fifoParam))
 
   // src af
   atbsVec.foreach(atbs => atbs.af.valid := atbm.af.valid) // flush req
@@ -39,17 +54,10 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
   val flushCompleteReg  = RegNext(flushCompleteNext)
 
   // src at
-  atbsVec.zip(resArb).map { case (atbs, res) => atbs.at.ready := atbm.at.ready && res }
+  atbsVec.map(atbs => atbs.at.ready := fifo.io.packetEnq.ready)
   val atbsFire1H    = atbsVec.map(atbs => atbs.at.fire)
   val selectedSlave = Mux1H(atbsFire1H, atbsVec)
 
-  val fifoParam = FifoParam(
-    isLeaf = false,
-    fifoDepth = maxPackets * 6,
-    enqDataBeats = encoderAtbDataWidth / 8,
-    deqDataBeats = funnelAtbDataWidth / 8
-  )
-  val fifo = Module(new Fifo(fifoParam))
   fifo.io.packetEnq.valid     := selectedSlave.at.fire
   fifo.io.packetEnq.bits.data := selectedSlave.at.bits.data.asTypeOf(fifo.io.packetEnq.bits.data)
   fifo.io.packetEnq.bits.len  := selectedSlave.at.bits.bytes +& 1.U // true length

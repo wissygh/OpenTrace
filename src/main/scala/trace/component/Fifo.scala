@@ -30,7 +30,7 @@ class Fifo(param: FifoParam) extends Module
     with TraceParameters {
 
   val io = IO(new Bundle {
-    val packetEnq      = Flipped(Valid(new PacketEnq(param.enqDataBeats)))
+    val packetEnq      = Flipped(Decoupled(new PacketEnq(param.enqDataBeats)))
     val fromCtrl       = Input(new CtrlInterface)
     val sourceFlushAll = Option.when(!param.isLeaf)(Input(Bool()))
     val atbm           = new ATBMaster(param.deqDataBeats)
@@ -70,7 +70,7 @@ class Fifo(param: FifoParam) extends Module
   /**
    * enq
    */
-  enqPtrNext := enqPtr + Mux(packetEnq.valid, packetEnq.bits.len, 0.U)
+  enqPtrNext := enqPtr + Mux(packetEnq.fire, packetEnq.bits.len, 0.U)
   (0 until enqBeats).foreach(i => fifo((enqPtr + i.U).value) := packetEnq.bits.data(i))
 
   /**
@@ -121,18 +121,19 @@ class Fifo(param: FifoParam) extends Module
     deqData(i) := fifo(deqPtr.value + i.U)
   )
 
-  val entriesValidNum = distanceBetween(enqPtr, deqPtr) // todo fix
-  val fifoIsNotEmpty  = entriesValidNum > 0.U
+  val fifoIsEmpty = isEmpty(enqPtr, deqPtr)
+  val fifoIsFull  = isFull(enqPtr, deqPtr)
 
   /**
     * atb
     */
   // wait a cycle after a packet is transmitted, which is reasonable because funnel needs to arbitrate packets from different src
-  io.atbm.at.valid      := Mux(RegNext(counter === 0.U), false.B, fifoIsNotEmpty)
+  io.atbm.at.valid      := Mux(RegNext(counter === 0.U), false.B, !fifoIsEmpty)
   io.atbm.at.bits.data  := deqData.asUInt
   io.atbm.at.bits.bytes := deqNum - 1.U
   io.atbm.at.bits.id    := (io.fromCtrl.srcid + 1.U) & 0x7f.U // id 0 is reserved
-  io.atbm.af.ready := flushComplete // flush finish, slave will deassert flush.valid next cycle
+  io.atbm.af.ready   := flushComplete // flush finish, slave will deassert flush.valid next cycle
+  io.packetEnq.ready := !fifoIsFull && io.atbm.at.ready
 }
 
 class FifoPtr(entries: Int) extends CircularQueuePtr[FifoPtr](entries) {}
