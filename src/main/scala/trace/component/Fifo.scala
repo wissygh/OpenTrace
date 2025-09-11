@@ -98,7 +98,8 @@ class Fifo(param: FifoParam) extends Module
   val payloadLen  = header.length
   val timeStampEn = header.extend
 
-  val deqPacketLen  = Mux(payloadLen === 0.U, 1.U, 2.U + payloadLen + (timeStampEn << log2Ceil(time_width_p)).asUInt)
+  val deqPacketLen =
+    Mux(payloadLen === 0.U, 1.U, 2.U +& payloadLen +& (timeStampEn << log2Ceil(time_width_p / 8)).asUInt)
   val packetLenTail = deqPacketLen(deqLg2Beats - 1, 0)
   val align         = !packetLenTail.orR
 

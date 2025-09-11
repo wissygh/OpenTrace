@@ -53,7 +53,7 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
         val payloadLen  = header.length
         val timeStampEn = header.extend
         val deqPacketLen =
-          Mux(payloadLen === 0.U, 1.U, 2.U + payloadLen + (timeStampEn << log2Ceil(time_width_p)).asUInt)
+          Mux(payloadLen === 0.U, 1.U, 2.U +& payloadLen +& (timeStampEn << log2Ceil(time_width_p / 8)).asUInt)
         (deqPacketLen >> s.at.bits.bytes.getWidth) +& deqPacketLen(s.at.bits.bytes.getWidth - 1, 0).orR
       } // true length
 

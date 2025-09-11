@@ -9,9 +9,9 @@ import trace.TraceParameters
  */
 
 class PacketHeader extends Bundle {
-  val length = UInt(5.W)
-  val flow   = UInt(2.W)
   val extend = Bool() // timestamp enable
+  val flow   = UInt(2.W)
+  val length = UInt(5.W)
 }
 
 class NormalPacket extends Bundle with TraceParameters {
