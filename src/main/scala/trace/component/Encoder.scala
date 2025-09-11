@@ -304,8 +304,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
 
   packetGen.io.fromCore       := fromCore
   packetGen.io.fromCtrl.srcid := teInstFeatures.regOut.SrcID.asUInt
-  fifo.io.packetEnq           := packetGen.io.packet
   fifo.io.fromCtrl.srcid      := teInstFeatures.regOut.SrcID.asUInt
+  fifo.io.packetEnq <> packetGen.io.packet
   io.atbm <> fifo.io.atbm
 
   /**
