@@ -6,6 +6,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import trace.control._
+import trace.interface._
 
 class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
@@ -19,15 +20,30 @@ class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr)
 class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with RAMControl {
 
+  val io = IO(new Bundle {
+    val atbs = new ATBSlave(funnelAtbDataWidth)
+  })
+
   val bufferMod = wrapper.buffer.module
 
   /**
-   * todo: some tmp signal which need to fix
+    * parameter
+    */
+  private val wordWidth  = 32
+  private val writeWidth = funnelAtbDataWidth
+  private val writeBeats = writeWidth / 8
+  private val writeStep  = funnelAtbDataWidth / wordWidth
+
+  /**
+   * atb 2 ram
    */
-  val traceWrite      = WireInit(true.B) // todo： fix
-  val traceRead       = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
-  val bufferWriteData = Wire(UInt(32.W))
-  bufferWriteData := ramControl.rdata // use ramControl to gen correct verilog, todo: fix to packets
+  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
+  io.atbs.at.ready := true.B // todo: fix
+
+  val traceWrite      = io.atbs.at.fire
+  val bufferWriteData = io.atbs.at.bits.data
+
+  val traceRead      = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
   val bufferReadData = Wire(UInt(32.W))
   bufferReadData := 0.U
 
@@ -45,7 +61,7 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
   }.elsewhen(wpReg === ramLimit) {
     wpReg := ramStart
   }.elsewhen(traceWrite) {
-    wpReg := wpReg + 1.U
+    wpReg := wpReg + writeStep.U
   }
 
   when(ramRPLow.w.wen) {
