@@ -24,8 +24,8 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
     with FunnelControl {
 
   val io = IO(new Bundle {
-    val atbsVec = Vec(hart_num, new ATBSlave(encoderAtbDataWidth))
-    val atbm    = new ATBMaster(funnelAtbDataWidth) // todo fix width
+    val atbsVec = Vec(hart_num, new ATBSlave(encoderAtbDataBeats))
+    val atbm    = new ATBMaster(funnelAtbDataBeats) // todo fix width
   })
 
   /**
@@ -34,8 +34,8 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
   val fifoParam = FifoParam(
     isLeaf = false,
     fifoDepth = maxPackets * 6,
-    enqDataBeats = encoderAtbDataWidth / 8,
-    deqDataBeats = funnelAtbDataWidth / 8
+    enqDataBeats = encoderAtbDataBeats,
+    deqDataBeats = funnelAtbDataBeats
   )
 
   /**

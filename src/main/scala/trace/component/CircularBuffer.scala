@@ -11,22 +11,7 @@ import freechips.rocketchip.tilelink.TLRegisterNode
 import org.chipsalliance.cde.config.Parameters
 import trace.TraceParameters
 
-class CircularBuffer(implicit p: Parameters) extends LazyModule with TraceParameters {
-
-  val device = new SimpleDevice("ram", Seq("buffer")) {
-    override val alwaysExtended = true
-  }
-
-  val bufferNode = Option.when(ramIsSMEM)(TLRegisterNode(
-    address = Seq(ramAddressSet),
-    device = device,
-    beatBytes = ramBeatBytes
-  ))
-
-  lazy val module = new CircularBufferImp(this)
-}
-
-class CircularBufferImp(wrapper: CircularBuffer)(implicit p: Parameters) extends LazyModuleImp(wrapper)
+class CircularBuffer extends Module
     with TraceParameters {
   val write = IO(new Bundle {
     val en   = Input(Bool())
@@ -34,11 +19,10 @@ class CircularBufferImp(wrapper: CircularBuffer)(implicit p: Parameters) extends
     val data = Input(UInt(funnelAtbDataWidth.W))
   })
 
-  val read = Option.when(!ramIsSMEM)(IO(new Bundle {
-    val en   = Input(Bool())
+  val read = IO(new Bundle {
     val ptr  = Input(UInt(64.W))
     val data = Output(UInt(32.W))
-  }))
+  })
 
   /**
     * parameter
@@ -50,24 +34,12 @@ class CircularBufferImp(wrapper: CircularBuffer)(implicit p: Parameters) extends
   private val lg2WriteStep = log2Up(writeStep)
 
   val bufferVec = VecInit((0 until (buffer_num / writeStep)).map { idx =>
-    RegEnable(write.data, write.en && ((write.ptr >> 2) === ((ramBaseAddr >> 2) + idx).U))
+    RegEnable(write.data, write.en && ((write.ptr >> 2) === idx.U))
   })
 
   val bufferVecWire = bufferVec.asTypeOf(Vec(buffer_num, UInt(wordWidth.W)))
 
-  read.foreach(rd =>
-    bufferVecWire.zipWithIndex.map {
-      case (bf, idx) => {
-        rd.data := Mux(rd.en && (rd.ptr === (ramBaseAddr + idx).U), bf, 0.U)
-      }
-    }
-  )
-
-  wrapper.bufferNode.foreach(_.regmap(
-    wrapper.ramBaseAddr -> RegFieldGroup(
-      "trace",
-      Some("trace circular buffer"),
-      bufferVecWire.map(rdata => RegField.r(32, rdata))
-    )
-  ))
+  read.data := Mux1H(bufferVecWire.zipWithIndex.map { case (bf, idx) =>
+    (read.ptr === idx.U, bf)
+  })
 }

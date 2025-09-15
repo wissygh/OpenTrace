@@ -25,7 +25,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val fromCore = Input(new FromCore)
     val toCore   = Output(new ToCore)
     val hpm      = Option.when(supportHPM)(new Hpm)
-    val atbm     = new ATBMaster(encoderAtbDataWidth)
+    val atbm     = new ATBMaster(encoderAtbDataBeats)
   })
 
   val fromCore = io.fromCore
@@ -296,7 +296,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     isLeaf = true,
     fifoDepth = maxPackets * 3,
     enqDataBeats = maxPackets,
-    deqDataBeats = encoderAtbDataWidth / 8
+    deqDataBeats = funnelAtbDataBeats
   )
 
   val packetGen = Module(new PacketGen)
