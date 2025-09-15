@@ -4,6 +4,7 @@ import bundles._
 import chisel3._
 import chisel3.experimental.dataview._
 import chisel3.util._
+import freechips.rocketchip.amba.apb._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
@@ -57,15 +58,14 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
   /**
    * apb todo
    */
-  val apb = Option.when(busType.isAPB && !xs_socmisc)(AXI4MasterNode(Seq(AXI4MasterPortParameters(
-    Seq(AXI4MasterParameters("axi4", IdRange(0, 1)))
-  ))))
-  val apbnode = apb.map(axi4 =>
-    InModuleBody {
-      val axi4node = chisel3.IO(Flipped(new VerilogAXI4Record(axi4.out.head._1.params)))
-      axi4node.viewAs[AXI4Bundle] <> axi4.out.head._1
-      axi4node
-    }
+  val apbmaster =
+    Option.when(busType.isAPB)(APBMasterNode(Seq(APBMasterPortParameters(Seq(APBMasterParameters("traceAPBctrl"))))))
+
+  val apbmasternode = apbmaster.map(apb => InModuleBody(apb.makeIOs()))
+  apbmaster.foreach(
+    bus2Control.tlslavenode.get := TLBuffer() := TLFragmenter(tlSizeMin, tlSizeMax) := TLWidthWidget(
+      tlSizeMax
+    ) := APBToTL() := _
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) with RequireAsyncReset {
