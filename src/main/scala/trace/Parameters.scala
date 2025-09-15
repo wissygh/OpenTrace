@@ -103,20 +103,14 @@ trait TraceParameters {
    * RAM parameters
    * only support sram & fixed smem
    */
+  def buffer_num     = 256  // 256 * 32bit, for SRAM
   def supportSRAM    = true
   def supportSMEM    = true
   def ramIsSMEM      = true // true: SMEM false: SRAM
   def fixedSMEM      = true
   def fixedStartAddr = 0x0
-  def fixedLimitAddr = 0x0
-  def ramLimitAddr   = 0x0
-
-  // trace buffer
-  def buffer_num    = 1024 // 64K bytes = 16K words
-  def ramBaseAddr   = 0x00_4000_0000
-  def ramMask       = (buffer_num << 2) - 1
-  def ramAddressSet = AddressSet(ramBaseAddr, ramMask)
-  def ramBeatBytes  = 32 / 8
+  def fixedLimitAddr = buffer_num
+  def ramLimitAddr   = buffer_num
 
   /**
    * trace memory map address
@@ -174,6 +168,8 @@ trait TraceParameters {
   def atbIdWidth          = 7
   def encoderAtbDataWidth = 32
   def funnelAtbDataWidth  = 128
+  def encoderAtbDataBeats = encoderAtbDataWidth / 8
+  def funnelAtbDataBeats  = funnelAtbDataWidth / 8
 
   /**
    * n-trace

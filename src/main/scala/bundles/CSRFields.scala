@@ -371,6 +371,8 @@ trait RWApply { self: CSREnum =>
 trait ROApply { self: CSREnum =>
   def apply(msb: Int, lsb: Int): CSREnumType = self
     .apply(ROType())(msb, lsb)(this)
+
+  def apply(bit: Int): CSREnumType = apply(bit, bit)
 }
 
 trait WARLApply { self: CSREnum =>

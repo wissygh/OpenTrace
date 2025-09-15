@@ -8,23 +8,18 @@ import org.chipsalliance.cde.config.Parameters
 import trace.control._
 import trace.interface._
 
-class RAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
-
-  val buffer          = LazyModule(new CircularBuffer)
-  val ramIdentityNode = Option.when(ramIsSMEM)(TLIdentityNode())
-  buffer.bufferNode.foreach(_ := ramIdentityNode.get)
-
-  override lazy val module = new RAMImp(this)(baseAddr)
+class SRAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
+  override lazy val module = new SRAMImp(this)(baseAddr)
 }
 
-class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
-    with RAMControl {
+class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
+    with SRAMControl {
 
   val io = IO(new Bundle {
-    val atbs = new ATBSlave(funnelAtbDataWidth)
+    val atbs = new ATBSlave(funnelAtbDataBeats)
   })
 
-  val bufferMod = wrapper.buffer.module
+  val buffer = Module(new CircularBuffer)
 
   /**
     * parameter
@@ -45,7 +40,6 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
 
   val traceRead      = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
   val bufferReadData = Wire(UInt(32.W))
-  bufferReadData := 0.U
 
   val wpReg    = RegInit(0.U(62.W))
   val rpReg    = RegInit(0.U(62.W))
@@ -90,30 +84,18 @@ class RAMImp(wrapper: RAM)(baseAddr: Int)(implicit p: Parameters) extends Compon
       case _ =>
     }
     mod match {
-      case m: HasRAMTypeBundle =>
-        m.hasSRAM := ramImpl.regOut.HasSRAM.asBool
-        m.hasSMEM := ramImpl.regOut.HasSMEM.asBool
-        m.mode    := ramControl.regOut.Mode.asBool
-      case _ =>
-    }
-    mod match {
       case m: HasRAMRdataBundle =>
         m.readData := bufferReadData
       case _ =>
     }
   }
 
-  // for sram and smem, packets -> ram sink
-  bufferMod.write.en   := traceWrite
-  bufferMod.write.ptr  := ramWP
-  bufferMod.write.data := bufferWriteData
+  buffer.write.en   := traceWrite
+  buffer.write.ptr  := ramWP
+  buffer.write.data := bufferWriteData
 
-  // only for sram
-  bufferMod.read.foreach { rd =>
-    rd.en          := traceRead
-    rd.ptr         := ramRP
-    bufferReadData := rd.data
-  }
+  buffer.read.ptr := ramRP
+  bufferReadData  := buffer.read.data
 
   connectCtrlReg()
 }

@@ -23,7 +23,7 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
   val funnel     = LazyModule(new Funnel(funnelBaseAddr))
   val pib        = LazyModule(new PIB(pibBaseAddr))
   val atb        = LazyModule(new ATBBridge(atbbridgeBaseAddr))
-  val ram        = LazyModule(new RAM(ramSinkAddr))
+  val ram        = LazyModule(new SRAM(ramSinkAddr))
 
   /**
    * tilelink
@@ -39,16 +39,6 @@ class Trace(busType: BusType = BusType.TLbus, xs_socmisc: Boolean = false)(impli
 
   val ctrlnode = Option.when(busType.isTL && xs_socmisc)(TLIdentityNode())
   ctrlnode.foreach(bus2Control.tlslavenode.get := TLFragmenter(tlSizeMin, tlSizeMax) := TLWidthWidget(tlSizeMax) := _)
-
-  // for ram
-  val ramMaster = Option.when(ramIsSMEM)(TLClientNode(Seq(TLMasterPortParameters.v1(
-    Seq(TLMasterParameters.v1(
-      name = "tlram",
-      sourceId = IdRange(0, 1)
-    ))
-  ))))
-  val ramMasterNode = ramMaster.map(tl => InModuleBody(tl.makeIOs()))
-  ram.ramIdentityNode.foreach(_ := ramMaster.get)
 
   /**
    * axi todo
