@@ -31,7 +31,7 @@ class Control2BusRegBundle extends Bundle {
 class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) extends LazyModule with TraceParameters {
 
   def beatBytes = dataSize / 8
-  val tlslavenode = Option.when(busType.isTL)(TLManagerNode(Seq(TLSlavePortParameters.v1(
+  val tlslavenode = Option.when(busType.isTL || busType.isAPB)(TLManagerNode(Seq(TLSlavePortParameters.v1(
     Seq(TLManagerParameters(
       address = Seq(addressSet),
       regionType = RegionType.UNCACHED,
@@ -59,7 +59,7 @@ class Bus2Control(busType: BusType = BusType.TLbus)(implicit p: Parameters) exte
     /**
      * bus 2 trace control layer
      */
-    if (busType.isTL) {
+    if (busType.isTL || busType.isAPB) {
 
       val (tl, edge) = tlslavenode.get.in(0)
       val aChannel   = tl.a
