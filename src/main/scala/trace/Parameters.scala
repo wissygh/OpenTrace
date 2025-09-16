@@ -1,5 +1,6 @@
 package trace
 
+import cats.instances.string
 import chisel3._
 import chisel3.util._
 import firrtl2.Utils.True
@@ -128,24 +129,25 @@ trait TraceParameters {
   def ramsink_num   = 1
   def allComp_num   = encoder_num + funnel_num + atbbridge_num + pib_num + ramsink_num
 
-  def traceBaseAddr  = 0x00_2000_0000
-  def memStep        = 0x1_0000
-  def mask           = 0xff_ffff
-  def addressSet     = AddressSet(traceBaseAddr, mask)
-  def addrWidth      = 64
-  def dataSize       = 32  // Data-width which control slave support
-  def dataSizeMax    = 256 // Max data-width which bus req support.
-  def tlSizeMin      = dataSize / 8
-  def tlSizeMax      = dataSizeMax / 8
-  def addrWidthInner = mask.U.getWidth
+  def traceBaseAddr      = 0x00_2000_0000
+  def ctrlMemStep        = 0x1_0000
+  def ctrlMask           = 0xff_ffff
+  def ctrlAddressSet     = AddressSet(traceBaseAddr, ctrlMask)
+  def ctrlAddrWidth      = 64
+  def ctrlDataSize       = 32  // Data-width which control slave support
+  def ctrlBeatBytes      = ctrlDataSize / 8
+  def ctrlDataSizeMax    = 256 // Max data-width which bus req support.
+  def ctrlTLSizeMin      = ctrlDataSize / 8
+  def ctrlTLSizeMax      = ctrlDataSizeMax / 8
+  def ctrlAddrWidthInner = ctrlMask.U.getWidth
 
   def encoderBaseAddr   = traceBaseAddr
-  def funnelBaseAddr    = encoderBaseAddr + memStep * encoder_num
-  def atbbridgeBaseAddr = funnelBaseAddr + memStep * funnel_num
-  def pibBaseAddr       = atbbridgeBaseAddr + memStep * atbbridge_num
-  def ramSinkAddr       = pibBaseAddr + memStep * pib_num
+  def funnelBaseAddr    = encoderBaseAddr + ctrlMemStep * encoder_num
+  def atbbridgeBaseAddr = funnelBaseAddr + ctrlMemStep * funnel_num
+  def pibBaseAddr       = atbbridgeBaseAddr + ctrlMemStep * atbbridge_num
+  def ramSinkAddr       = pibBaseAddr + ctrlMemStep * pib_num
 
-  def srcId(addr: Int): Int = (addr & mask) >> log2Up(memStep)
+  def srcId(addr: Int): Int = (addr & ctrlMask) >> log2Up(ctrlMemStep)
 
   /**
    *
@@ -190,10 +192,16 @@ case class BusType(
   def isAXI   = bustype == 1
   def isAPB   = bustype == 2
   def isOther = bustype >= 3
+  def busName: String = bustype match {
+    case 0 => "tl"
+    case 1 => "axi"
+    case 2 => "apb"
+    case _: Int => "other"
+  }
 }
 
 object BusType {
-  def TLbus:  BusType = new BusType(0)
-  def AXIbus: BusType = new BusType(1)
-  def APBbus: BusType = new BusType(2)
+  def TL:  BusType = new BusType(0)
+  def AXI: BusType = new BusType(1)
+  def APB: BusType = new BusType(2)
 }

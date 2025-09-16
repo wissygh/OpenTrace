@@ -15,11 +15,11 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy.LazyModule
 
 object TraceMain extends App {
-  val path = """./build/rtl"""
   implicit val p: Parameters = Parameters.empty
-  val trace = LazyModule(new Trace(BusType.TLbus)(p))
-  val params = List(1)
-  for (i <- params) {
+  val ctrlBus = Seq(BusType.TL, BusType.AXI, BusType.APB)
+  ctrlBus.map{ bus => 
+    val path = """./build/rtl/""" + s"${bus.busName}"
+    val trace = LazyModule(new Trace(bus)(p))
     (new ChiselStage).execute(
       Array("--target-dir", path),
       Seq(

@@ -33,12 +33,12 @@ class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parame
   def connectCtrlReg() = {
     // control write
     for ((id, (wBundle, _)) <- controlRWMap) {
-      wBundle.wen   := bus.b2c.writeEn && bus.b2c.address === ((baseAddr & mask) + id).U
+      wBundle.wen   := bus.b2c.writeEn && bus.b2c.address === ((baseAddr & ctrlMask) + id).U
       wBundle.wdata := bus.b2c.dataWrite
     }
     // control read
     bus.c2b.dataRead := Mux1H(controlRWMap.map { case (id, (_, rdata)) =>
-      (bus.b2c.readEn && bus.b2c.address === ((baseAddr & mask) + id).U) -> rdata
+      (bus.b2c.readEn && bus.b2c.address === ((baseAddr & ctrlMask) + id).U) -> rdata
     })
     bus.c2b.error := false.B
   }
