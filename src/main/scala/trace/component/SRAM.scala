@@ -32,8 +32,6 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   /**
    * atb 2 ram
    */
-  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
-  io.atbs.at.ready := true.B // todo: fix
 
   val traceWrite      = io.atbs.at.fire
   val bufferWriteData = io.atbs.at.bits.data
@@ -68,6 +66,19 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
     rpReg := rpReg + 1.U
   }
 
+  val fifoIsEmpty = RegNext(traceRead && (rpReg + 1.U === wpReg))
+  val fifoIsFull  = RegNext(traceWrite && (wpReg + writeStep.U >= rpReg)) // todo: check
+
+  buffer.write.en   := traceWrite
+  buffer.write.ptr  := ramWP
+  buffer.write.data := bufferWriteData
+
+  buffer.read.ptr := ramRP
+  bufferReadData  := buffer.read.data
+
+  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
+  io.atbs.at.ready := !(ramControl.regOut.StopOnWrap.asBool && fifoIsFull) && ramControl.regOut.Enable.asBool
+
   /**
    * control reg io
    */
@@ -75,7 +86,7 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
     mod match {
       case m: HasWPBundle =>
         m.wp   := wpReg
-        m.wrap := (wpReg === ramLimit)
+        m.wrap := fifoIsFull // wrap around
       case _ =>
     }
     mod match {
@@ -88,14 +99,18 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
         m.readData := bufferReadData
       case _ =>
     }
+    mod match {
+      case m: HasRamCtrlBundle =>
+        m.ramWrapStop := ramControl.regOut.StopOnWrap.asBool && fifoIsFull
+      case _ =>
+    }
+    mod match {
+      case m: HasCtrlBundle =>
+        m.fifoIsEmpty := fifoIsEmpty
+        m.fifoIsFull  := fifoIsFull
+      case _ =>
+    }
   }
-
-  buffer.write.en   := traceWrite
-  buffer.write.ptr  := ramWP
-  buffer.write.data := bufferWriteData
-
-  buffer.read.ptr := ramRP
-  bufferReadData  := buffer.read.data
 
   connectCtrlReg()
 }

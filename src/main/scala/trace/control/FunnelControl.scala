@@ -13,7 +13,9 @@ import trace.component.FunnelImp
 
 trait FunnelControl extends ControlBase { self: FunnelImp =>
 
-  val funnelControl = Module(new CSRModule("FunnelControl", new FunnelControlBundle))
+  val funnelControl = Module(new CSRModule("FunnelControl", new FunnelControlBundle) with HasCtrlBundle {
+    reg.Emptry := fifoIsEmpty
+  })
     .setAddr(CtrlReg.FunnelControl)
 
   val funnelImpl = Module(new CSRModule("FunnelImpl", new FunnelImplBundle) {})

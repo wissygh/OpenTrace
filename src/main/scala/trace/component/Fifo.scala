@@ -22,7 +22,9 @@ class PacketEnq(enqDataBeats: Int) extends Bundle {
 }
 
 class CtrlInterface extends Bundle with TraceParameters {
-  val srcid = UInt(src_bits_p.W)
+  val srcid       = Input(UInt(src_bits_p.W))
+  val fifoIsEmpty = Output(Bool())
+  val fifoIsFull  = Output(Bool())
 }
 
 class Fifo(param: FifoParam) extends Module
@@ -31,7 +33,7 @@ class Fifo(param: FifoParam) extends Module
 
   val io = IO(new Bundle {
     val packetEnq      = Flipped(Decoupled(new PacketEnq(param.enqDataBeats)))
-    val fromCtrl       = Input(new CtrlInterface)
+    val ctrl           = new CtrlInterface
     val sourceFlushAll = Option.when(!param.isLeaf)(Input(Bool()))
     val atbm           = new ATBMaster(param.deqDataBeats)
   })
@@ -132,9 +134,11 @@ class Fifo(param: FifoParam) extends Module
   io.atbm.at.valid      := Mux(RegNext(counter === 0.U), false.B, !fifoIsEmpty)
   io.atbm.at.bits.data  := deqData.asUInt
   io.atbm.at.bits.bytes := deqNum - 1.U
-  io.atbm.at.bits.id    := (io.fromCtrl.srcid + 1.U) & 0x7f.U // id 0 is reserved
-  io.atbm.af.ready   := flushComplete // flush finish, slave will deassert flush.valid next cycle
-  io.packetEnq.ready := !fifoIsFull && io.atbm.at.ready
+  io.atbm.at.bits.id    := (io.ctrl.srcid + 1.U) & 0x7f.U // id 0 is reserved
+  io.atbm.af.ready      := flushComplete                  // flush finish, slave will deassert flush.valid next cycle
+  io.packetEnq.ready    := !fifoIsFull && io.atbm.at.ready
+  io.ctrl.fifoIsEmpty   := fifoIsEmpty
+  io.ctrl.fifoIsFull    := fifoIsFull
 }
 
 class FifoPtr(entries: Int) extends CircularQueuePtr[FifoPtr](entries) {}

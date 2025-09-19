@@ -242,33 +242,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   }
   val syncEn = syncOther || syncPeriodic
 
+  // todo：remove following two lines
   val stallHart       = teControl.regOut.InstStallOrOverflow.asBool && teControl.regOut.InstStallEna.asBool
   val instTraceEnable = teControl.regOut.InstTracing.asBool
-
-  /**
-   * control reg io
-   */
-  controlMods.foreach { mod =>
-    mod match {
-      case m: HasTeInstFeaturesBundle =>
-        m.id := srcId(baseAddr).U
-      case _ =>
-    }
-    mod match {
-      case m: HasTeCtrlBundle => // todo fix
-        m.stallOrOf    := false.B
-        m.allEmitted   := true.B
-        m.triggerValid := triggerModEn
-        m.traceOn      := traceOn
-        m.traceOff     := traceOff
-      case _ =>
-    }
-    mod match {
-      case m: HasTsCountBundle =>
-        m.timeCount := timeCount(ts_width_p + prescale_p - 1, prescale_p)
-      case _ =>
-    }
-  }
 
   /**
    * hpm
@@ -302,9 +278,10 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val packetGen = Module(new PacketGen)
   val fifo      = Module(new Fifo(fifoParam))
 
-  packetGen.io.fromCore       := fromCore
-  packetGen.io.fromCtrl.srcid := teInstFeatures.regOut.SrcID.asUInt
-  fifo.io.fromCtrl.srcid      := teInstFeatures.regOut.SrcID.asUInt
+  packetGen.io.fromCore         := fromCore
+  packetGen.io.fromCtrl.srcid   := teInstFeatures.regOut.SrcID.asUInt
+  packetGen.io.fromCtrl.tracing := teControl.regOut.InstTracing.asBool && teControl.regOut.Enable.asBool
+  fifo.io.ctrl.srcid            := teInstFeatures.regOut.SrcID.asUInt
   fifo.io.packetEnq <> packetGen.io.packet
   io.atbm <> fifo.io.atbm
 
@@ -313,5 +290,37 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
   io.toCore.stall  := stallHart
   io.toCore.enable := instTraceEnable
+
+  /**
+   * control reg io
+   */
+  val fifoIsFull  = fifo.io.ctrl.fifoIsFull
+  val fifoIsEmpty = fifo.io.ctrl.fifoIsEmpty
+  controlMods.foreach { mod =>
+    mod match {
+      case m: HasTeInstFeaturesBundle =>
+        m.id := srcId(baseAddr).U
+      case _ =>
+    }
+    mod match {
+      case m: HasTeCtrlBundle => // todo fix
+        m.triggerValid := triggerModEn
+        m.traceOn      := traceOn
+        m.traceOff     := traceOff
+      case _ =>
+    }
+    mod match {
+      case m: HasTsCountBundle =>
+        m.timeCount := timeCount(ts_width_p + prescale_p - 1, prescale_p)
+      case _ =>
+    }
+    mod match {
+      case m: HasCtrlBundle =>
+        m.fifoIsEmpty := fifoIsEmpty
+        m.fifoIsFull  := fifoIsFull
+      case _ =>
+    }
+  }
+
   connectCtrlReg()
 }
