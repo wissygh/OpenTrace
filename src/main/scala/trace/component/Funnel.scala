@@ -9,6 +9,7 @@ import org.chipsalliance.cde.config.Parameters
 import scala.collection.immutable.SeqMap
 import trace.Control2BusRegBundle
 import trace.TraceParameters
+import trace.control._
 import trace.control.FunnelControl
 import trace.interface._
 import trace.interface.FromCore
@@ -88,17 +89,31 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
 
   // src at
   val arbiterRes = arbiter(fifo.io.packetEnq.ready, atbsVec: _*).asBools
-  atbsVec.zip(arbiterRes).map { case (atbs, aRes) => atbs.at.ready := aRes }
+  atbsVec.zip(arbiterRes).map { case (atbs, aRes) => atbs.at.ready := aRes && funnelControl.regOut.Enable.asBool }
   val atbsFire1H    = atbsVec.map(atbs => atbs.at.fire)
   val selectedSlave = Mux1H(atbsFire1H, atbsVec)
 
   fifo.io.packetEnq.valid     := selectedSlave.at.fire
   fifo.io.packetEnq.bits.data := selectedSlave.at.bits.data.asTypeOf(fifo.io.packetEnq.bits.data)
   fifo.io.packetEnq.bits.len  := selectedSlave.at.bits.bytes +& 1.U // true length
-  fifo.io.fromCtrl.srcid      := selectedSlave.at.bits.id
+  fifo.io.ctrl.srcid          := selectedSlave.at.bits.id
   fifo.io.sourceFlushAll.foreach(_ := flushCompleteReg.asUInt.orR) // all slave complete flush
 
   io.atbm <> fifo.io.atbm
+
+  /**
+   * control reg io
+   */
+  val fifoIsEmpty = fifo.io.ctrl.fifoIsEmpty
+  val fifoIsFull  = fifo.io.ctrl.fifoIsFull
+  controlMods.foreach { mod =>
+    mod match {
+      case m: HasCtrlBundle =>
+        m.fifoIsEmpty := fifoIsEmpty
+        m.fifoIsFull  := fifoIsFull
+      case _ =>
+    }
+  }
 
   connectCtrlReg()
 }

@@ -90,3 +90,12 @@ trait HasWPBundle { self: CSRModule[_] =>
 trait HasRPBundle { self: CSRModule[_] =>
   val rp = IO(Input(UInt(62.W)))
 }
+
+trait HasRamCtrlBundle { self: CSRModule[_] =>
+  val ramWrapStop = IO(Input(Bool()))
+}
+
+trait HasCtrlBundle { self: CSRModule[_] =>
+  val fifoIsEmpty = IO(Input(Bool()))
+  val fifoIsFull  = IO(Input(Bool()))
+}

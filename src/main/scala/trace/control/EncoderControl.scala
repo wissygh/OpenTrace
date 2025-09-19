@@ -13,7 +13,7 @@ import trace.component.EncoderImp
 
 trait EncoderControl extends ControlBase { self: EncoderImp =>
 
-  val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle {
+  val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle with HasCtrlBundle {
     when(wen) {
       reg.Enable := wdata.Active && wdata.Enable
     }
@@ -29,11 +29,11 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 
     when(wen && (wdata.Enable || wdata.InstStallOrOverflow)) {
       reg.InstStallOrOverflow := false.B
-    }.elsewhen(stallOrOf) {
-      reg.InstStallOrOverflow := stallOrOf
+    }.elsewhen(fifoIsFull) {
+      reg.InstStallOrOverflow := fifoIsFull
     }
 
-    reg.Emptry := allEmitted
+    reg.Emptry := fifoIsEmpty
   })
     .setAddr(CtrlReg.TeControl)
 
@@ -526,11 +526,9 @@ class HpmEventDataBundle extends CSRBundle with TraceParameters {
  */
 
 trait HasTeCtrlBundle { self: CSRModule[_] =>
-  val allEmitted   = IO(Input(Bool()))
   val triggerValid = IO(Input(Bool()))
   val traceOn      = IO(Input(Bool()))
   val traceOff     = IO(Input(Bool()))
-  val stallOrOf    = IO(Input(Bool()))
 }
 
 trait HasTeInstFeaturesBundle { self: CSRModule[_] =>

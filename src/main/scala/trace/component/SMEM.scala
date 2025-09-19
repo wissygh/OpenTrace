@@ -71,8 +71,6 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   /**
    * atb 2 system memory
    */
-  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
-  io.atbs.at.ready := true.B // todo: fix
   val traceWrite      = io.atbs.at.fire
   val bufferWriteData = io.atbs.at.bits.data
 
@@ -80,6 +78,10 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   val ramWP    = ramWPHigh.rdata ## ramWPLow.rdata
   val ramStart = ramStartHigh.rdata ## ramStartLow.regOut.Low.asUInt
   val ramLimit = ramLimitHigh.rdata ## ramLimitLow.regOut.Low.asUInt
+
+  // todo: check
+  val fifoIsFull  = wpReg === ramLimit
+  val fifoIsEmpty = wpReg === ramStart
 
   when(ramWPLow.w.wen) {
     wpReg := wpReg.head(32) ## ramWPLow.w.wdata.head(30)
@@ -92,18 +94,6 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   }
 
   /**
-   * control reg io
-   */
-  controlMods.foreach { mod =>
-    mod match {
-      case m: HasWPBundle =>
-        m.wp   := wpReg
-        m.wrap := (wpReg === ramLimit)
-      case _ =>
-    }
-  }
-
-  /**
     * wtite request
     */
   val (tl, edge) = wrapper.tlMaster2SM.out(0)
@@ -113,6 +103,32 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   }.otherwise {
     tl.a.valid := false.B
     tl.a.bits  := 0.U.asTypeOf(tl.a.bits)
+  }
+
+  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
+  io.atbs.at.ready := !(ramControl.regOut.StopOnWrap.asBool && fifoIsFull) && ramControl.regOut.Enable.asBool
+
+  /**
+   * control reg io
+   */
+  controlMods.foreach { mod =>
+    mod match {
+      case m: HasWPBundle =>
+        m.wp   := wpReg
+        m.wrap := fifoIsFull
+      case _ =>
+    }
+    mod match {
+      case m: HasRamCtrlBundle =>
+        m.ramWrapStop := ramControl.regOut.StopOnWrap.asBool && fifoIsFull
+      case _ =>
+    }
+    mod match {
+      case m: HasCtrlBundle =>
+        m.fifoIsEmpty := fifoIsEmpty
+        m.fifoIsFull  := fifoIsFull
+      case _ =>
+    }
   }
 
   connectCtrlReg()
