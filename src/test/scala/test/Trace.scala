@@ -21,7 +21,10 @@ object TraceMain extends App {
     val path = """./build/rtl/""" + s"${bus.busName}"
     val trace = LazyModule(new Trace(bus)(p))
     (new ChiselStage).execute(
-      Array("--target-dir", path),
+      Array(
+        "--target-dir", path, 
+        "--split-verilog"
+      ),
       Seq(
         ChiselGeneratorAnnotation(() => trace.module),
         FirtoolOption("--disable-all-randomization"),
