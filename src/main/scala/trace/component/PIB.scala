@@ -10,7 +10,6 @@ import trace.Control2BusRegBundle
 import trace.TraceParameters
 import trace.control._
 import trace.interface.FromCore
-import trace.interface.Payload
 import trace.interface.ToCore
 
 /**
