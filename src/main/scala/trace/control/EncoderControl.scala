@@ -191,15 +191,15 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 }
 
 class TeControlBundle extends CSRBundle {
-  val Active              = RW(0).withReset(0.U)
-  val Enable              = RW(1).withReset(0.U)
-  val InstTracing         = RW(2)
-  val Emptry              = RO(3).withReset(1.U)  // Reads as 1 when all generated trace have been emitted.
-  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.VendorDef)
+  val Active      = RW(0).withReset(0.U)
+  val Enable      = RW(1).withReset(0.U)
+  val InstTracing = RW(2)
+  val Emptry      = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
+  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.HTM) // issues/240
   val Context             = RO(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
-  val InstStallEna        = RW(13).withReset(0.U) // 0: drop 1: stall
+  val InstStallEna        = RW(13).withReset(0.U)                                // 0: drop 1: stall
   val InhibitSrc          = RW(15).withReset(0.U)
   val InstSyncMode        = InstSyncModeField(17, 16, wNoFilter).withReset(InstSyncModeField.Cycles)
   val InstSyncMax =
@@ -253,7 +253,7 @@ class TeInstFeaturesBundle extends CSRBundle {
   val EnImRet           = RW(3)
   val EnBranchPred      = RW(4)
   val EnJumpTargetCache = RW(5)
-  val ImRetMode         = ImpRetModeROField(7, 6).withReset(ImpRetModeROField.None)
+  val ImRetMode         = ImpRetModeField(7, 6, wNoFilter).withReset(ImpRetModeField.None)
   val EnRepHistoty      = RO(8).withReset(0.U)
   val EnAllJumps        = RO(9).withReset(0.U)
   val ExtendAddrMSB     = RO(10).withReset(0.U)
@@ -261,7 +261,7 @@ class TeInstFeaturesBundle extends CSRBundle {
   val SrcBits           = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
 }
 
-object ImpRetModeROField extends CSREnum with ROApply {
+object ImpRetModeField extends CSREnum with WARLApply { // https://github.com/riscv-non-isa/riscv-trace-spec/issues/240
   val None     = Value(0.U)
   val Simple   = Value(1.U)
   val Partial  = Value(2.U)
