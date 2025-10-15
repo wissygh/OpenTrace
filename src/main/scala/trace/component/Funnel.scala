@@ -13,7 +13,6 @@ import trace.control._
 import trace.control.FunnelControl
 import trace.interface._
 import trace.interface.FromCore
-import trace.interface.Payload
 import trace.interface.ToCore
 
 class Funnel(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {

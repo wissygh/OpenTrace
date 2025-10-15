@@ -11,7 +11,6 @@ import trace.Control2BusRegBundle
 import trace.TraceParameters
 import trace.control.ControlBase
 import trace.interface.FromCore
-import trace.interface.Payload
 import trace.interface.ToCore
 
 class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
