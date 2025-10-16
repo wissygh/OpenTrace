@@ -62,8 +62,8 @@ class Format33 extends Bundle with TraceParameters {
 }
 
 class Format2 extends Bundle with TraceParameters {
-  val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
-  val irreport      = Bool()
+  // val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
+  // val irreport      = Bool()
   val updiscon      = Bool()
   val notifyTrigger = Bool()
   val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
@@ -71,8 +71,8 @@ class Format2 extends Bundle with TraceParameters {
 }
 
 class Format1 extends Bundle with TraceParameters {
-  val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
-  val irreport      = Bool()
+  // val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
+  // val irreport      = Bool()
   val updiscon      = Bool()
   val notifyTrigger = Bool()
   val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
