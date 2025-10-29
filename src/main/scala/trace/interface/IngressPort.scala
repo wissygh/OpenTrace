@@ -8,27 +8,25 @@ import utils._
 class FromCore extends Bundle with TraceParameters {
   val priv        = Priv()
   val time        = UInt(Xlen.W)
-  val hcontext    = UInt(14.W)
-  val scontext    = UInt(32.W)
+  val context     = UInt(32.W)
   val ctype       = UInt(2.W)
   val cause       = UInt(CauseWidth.W)
   val tval        = UInt(TvalWidth.W)
   val impdef      = UInt(ImpdefWidth.W)
-  val halted      = Bool()
   val hartIsReset = Bool()
   val trigger = new Bundle {
-    val traceOn     = Bool()
-    val traceOff    = Bool()
-    val TraceNotify = Vec(BlockNum, Bool())
+    val traceOn  = Bool()
+    val traceOff = Bool()
   }
   val blocks = Vec(
     BlockNum,
     ValidIO(new Bundle {
-      val iaddr     = UInt(IaddrWidth.W)
-      val itype     = UInt(ItypeWidth.W)
-      val iretire   = UInt(IretireWidthCompressed.W)
-      val ilastsize = UInt(IlastsizeWidth.W)
-      val sijump    = Option.when(supportSijump)(Bool())
+      val iaddr      = UInt(IaddrWidth.W)
+      val itype      = UInt(ItypeWidth.W)
+      val iretire    = UInt(IretireWidthCompressed.W)
+      val ilastsize  = UInt(IlastsizeWidth.W)
+      val sijump     = Option.when(supportSijump)(Bool())
+      val trigNotify = Bool()
     })
   )
 }
@@ -36,6 +34,25 @@ class FromCore extends Bundle with TraceParameters {
 class ToCore extends Bundle {
   val enable = Bool()
   val stall  = Bool()
+}
+
+class BlockBufferEntry extends Bundle with TraceParameters {
+  // side band signals
+  val priv        = Priv()
+  val time        = UInt(Xlen.W)
+  val context     = UInt(32.W)
+  val ctype       = UInt(2.W)
+  val cause       = UInt(CauseWidth.W)
+  val tval        = UInt(TvalWidth.W)
+  val impdef      = UInt(ImpdefWidth.W)
+  val hartIsReset = Bool()
+  val trigger     = UInt(2.W) // 0: None, 1: traceOn, 2: traceOff, 3: notify don't support notify when trace on/off cycle
+  // group signals of a block
+  val valid     = Bool()
+  val iaddr      = UInt(IaddrWidth.W)
+  val itype      = UInt(ItypeWidth.W)
+  val iretire    = UInt(IretireWidthCompressed.W)
+  val ilastsize  = UInt(IlastsizeWidth.W)
 }
 
 object Itype extends NamedUInt(4) {
@@ -92,6 +109,13 @@ object Priv extends NamedUInt(3) {
   def D  = 4.U
   def VU = 5.U
   def VS = 6.U
+}
+
+object TriggerAction extends NamedUInt(2) {
+  def None = 0.U
+  def TraceOn = 1.U
+  def TraceOff = 2.U
+  def Notify = 3.U
 }
 
 object Dtype extends NamedUInt(4) {

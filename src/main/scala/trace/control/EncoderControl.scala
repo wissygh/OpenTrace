@@ -20,7 +20,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 
     when(wen && wdata.Enable.asBool) {
       reg.InstTracing := wdata.InstTracing
-    }.elsewhen((traceOn || traceOff) & triggerValid & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
+    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
       reg.InstTracing := Mux1H(
         Seq(traceOn, traceOff),
         Seq(true.B, false.B)
@@ -526,7 +526,6 @@ class HpmEventDataBundle extends CSRBundle with TraceParameters {
  */
 
 trait HasTeCtrlBundle { self: CSRModule[_] =>
-  val triggerValid = IO(Input(Bool()))
   val traceOn      = IO(Input(Bool()))
   val traceOff     = IO(Input(Bool()))
 }

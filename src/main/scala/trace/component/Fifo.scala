@@ -1,6 +1,5 @@
 package trace.component
 
-import cats.syntax.validated
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
