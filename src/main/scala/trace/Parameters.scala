@@ -1,15 +1,16 @@
 package trace
 
-import cats.instances.string
 import chisel3._
 import chisel3.util._
-import firrtl2.Utils.True
 import freechips.rocketchip.diplomacy.AddressSet
-import freechips.rocketchip.diplomacy.BufferParams.default
-import shapeless.ops.nat.Pow
 import trace.component.FifoParam
 
 trait TraceParameters {
+
+  /**
+    * soc
+    */
+  def test_xsEmu = true
 
   /**
    * Core's Parameters (from XS)
@@ -19,22 +20,20 @@ trait TraceParameters {
   def Xlen        = 64
 
   def BlockNum               = 3
-  def CauseWidth             = 8 // todo: fix in harts, because int/exp in itype
+  def CauseWidth             = 8      // todo: fix in harts, because int/exp in itype
   def TvalWidth              = 50
   def PrivWidth              = 3
   def ImpdefWidth            = 32
-  def IaddrWidth             = 50
+  def IaddrWidth             = 50 - 1 // ingore lsb from core
   def ItypeWidth             = 4
   def IretireWidthInPipe     = log2Up(RenameWidth * 2 + 1)
   def IretireWidthCompressed = log2Up(RenameWidth * CommitWidth * 2 + 1)
   def IlastsizeWidth         = 1
 
-  def supportSijump = false
-
   /**
    * hpm custom design
    */
-  def supportHPM     = true
+  def supportHPM     = false
   def hpmevent_num   = 2 // max is 8
   def hpmevent_width = 55
   def hpminc_width   = 6
@@ -42,16 +41,16 @@ trait TraceParameters {
   /**
    * Trace's Parameters
    */
-  def privilege_width_p   = 3
-  def notime_p            = true
-  def time_width_p        = Xlen
-  def nocontext_p         = true
-  def context_width_p     = Xlen
-  def ecause_width_p      = Xlen
-  def iaddress_width_p    = IaddrWidth
-  def iaddress_lsb_p      = 1
-  def encodermode_width_p = 1 // Branch trace is the only mode.
-  def ioptions_width_p    = 6
+  def privilege_width_p    = 3
+  def notime_p             = false
+  def time_width_p         = Xlen
+  def packet_header_time_p = 0
+  def nocontext_p          = false
+  def context_width_p      = 14
+  def ecause_width_p       = 8
+  def iaddress_width_p     = IaddrWidth
+  def iaddress_lsb_p       = 1
+  def encodermode_width_p  = 1 // Branch trace is the only mode.
 
   def return_stack_size_p = 8 // todo: fix
   def call_counter_size_p = 8 // todo: fix
@@ -64,6 +63,9 @@ trait TraceParameters {
   def synccounter_width_p = syncmax_p + 4
   def countmax_p          = math.pow(2, syncmax_p + 4).toInt
 
+  // support packet
+  def ioptions_width_p = 6
+
   /**
    * Trace's Parameters Data trace
    */
@@ -73,7 +75,7 @@ trait TraceParameters {
   /**
    * encoder parameters
    */
-  def hart_num   = 2
+  def hart_num   = 1
   def filter_num = 1
   require(
     filter_num <= 16,
@@ -90,6 +92,9 @@ trait TraceParameters {
   // ext trigger num
   def extTrig_num = 4
   def src_bits_p  = 8
+
+  // block buffer parameters
+  def block_buffer_depth_p = 16 // in entries
 
   /**
    * timestamp parameters
@@ -150,18 +155,25 @@ trait TraceParameters {
   def srcId(addr: Int): Int = (addr & ctrlMask) >> log2Up(ctrlMemStep)
 
   /**
-   *
+   * static run-time config
    */
   def supportEtrace = true
   def supportNtrace = !supportEtrace
+
+  def supportFullAddr   = false
+  def supportJumpCache  = false
+  def supportBranchPred = false
+  def supportImExp      = true
+  def supportImRet      = false
+  def supportSijump     = false
 
   /**
    * etrace interface parameter
    */
   def payload_max_width = 248
-  def trace_type_width  = 1
+  def trace_type_width  = 0              // only support instruction trace now
   def S                 = src_bits_p / 8
-  def T                 = (ts_width_p + 1) / 8
+  def T                 = packet_header_time_p / 8
   def P                 = payload_max_width / 8
   def maxPackets        = 1 + S + T + 31 // 1 + 1 + 8 + 31
   def maxNullSeq        = maxPackets + 1

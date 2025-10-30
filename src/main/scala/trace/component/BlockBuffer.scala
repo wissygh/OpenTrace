@@ -1,0 +1,113 @@
+package trace.component
+
+import chisel3._
+import chisel3.util._
+import org.chipsalliance.cde.config.Parameters
+import trace.TraceParameters
+import trace.control._
+import trace.interface._
+import utility.CircularQueuePtr
+import utility.HasCircularQueuePtrHelper
+import utils.Compress
+import utils.Lzc
+
+class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHelper {
+
+  val io = IO(new Bundle {
+    val fromCore     = Input(new FromCore)
+    val bufferIsFull = Output(Bool())
+    val deqEntry     = Output(new BlockBufferEntry)
+  })
+
+  // trace compress: Nxt -> Cur
+  val inValidVec         = VecInit(io.fromCore.blocks.map(_.valid))
+  val inTypeIsNotNoneVec = VecInit(io.fromCore.blocks.map(block => Itype.isNotNone(block.bits.itype)))
+  val needPcVec          = Wire(Vec(BlockNum, Bool()))
+  for (i <- 0 until BlockNum) { // todo: tail of fifo
+    val rightHasValid = if (i == BlockNum - 1) false.B else inValidVec.asUInt(BlockNum - 1, i + 1).orR
+    needPcVec(i) := inValidVec(i) & (inTypeIsNotNoneVec(i) || !rightHasValid)
+  }
+
+  val blocksCompressed = WireInit(io.fromCore.blocks)
+  val enq              = WireInit(io.fromCore)
+  for (i <- 1 until BlockNum) {
+    when(!needPcVec(i - 1)) {
+      // itype, ilastsize, sijump is belong to block which need pc.
+      blocksCompressed(i).bits.iretire := blocksCompressed(i - 1).bits.iretire +& io.fromCore.blocks(
+        i
+      ).bits.iretire // todo：fix width
+      blocksCompressed(i).bits.trigNotify := blocksCompressed(i - 1).bits.trigNotify | io.fromCore.blocks(
+        i
+      ).bits.trigNotify
+      blocksCompressed(i).bits.iaddr := blocksCompressed(i - 1).bits.iaddr
+    }
+  }
+  enq.priv        := io.fromCore.priv
+  enq.time        := io.fromCore.time
+  enq.context     := io.fromCore.context
+  enq.ctype       := io.fromCore.ctype
+  enq.cause       := io.fromCore.cause
+  enq.tval        := io.fromCore.tval
+  enq.impdef      := io.fromCore.impdef
+  enq.hartIsReset := io.fromCore.hartIsReset
+  enq.trigger     := io.fromCore.trigger
+  enq.blocks      := blocksCompressed
+  Compress.compress(needPcVec, io.fromCore.blocks, enq.blocks)
+
+  val fifo = Reg(Vec(block_buffer_depth_p, new BlockBufferEntry))
+  require(block_buffer_depth_p > 0, "Fifo depth must be > 0")
+  val enqPtr     = RegInit(BlockPtr(block_buffer_depth_p, false.B, 0.U))
+  val deqPtr     = RegInit(BlockPtr(block_buffer_depth_p, false.B, 0.U))
+  val enqPtrNext = WireInit(enqPtr)
+  val deqPtrNext = WireInit(deqPtr)
+  enqPtr := enqPtrNext
+  deqPtr := deqPtrNext
+
+  enqPtrNext := enqPtr + PopCount(needPcVec.asUInt)
+  deqPtrNext := deqPtr + 1.U
+  val fifoIsEmpty        = isEmpty(enqPtr, deqPtr)
+  val fifoIsFullNxtCycle = isFull(enqPtrNext, deqPtrNext) // todo: lost
+
+  // enqueue
+  for (i <- 0 until BlockNum) {
+    when(enq.blocks(i).valid) {
+      fifo(enqPtr.value + i.U) := {
+        val entry = Wire(new BlockBufferEntry)
+        entry.priv        := enq.priv
+        entry.time        := enq.time
+        entry.context     := enq.context
+        entry.ctype       := enq.ctype
+        entry.cause       := enq.cause
+        entry.tval        := enq.tval
+        entry.impdef      := enq.impdef
+        entry.hartIsReset := enq.hartIsReset
+        entry.trigger := Mux(
+          enq.trigger.traceOn,
+          1.U,
+          Mux(enq.trigger.traceOff, 2.U, Mux(enq.blocks(i).bits.trigNotify, 3.U, 0.U))
+        )
+        entry.valid     := true.B
+        entry.iaddr     := enq.blocks(i).bits.iaddr
+        entry.itype     := enq.blocks(i).bits.itype
+        entry.iretire   := enq.blocks(i).bits.iretire
+        entry.ilastsize := enq.blocks(i).bits.ilastsize
+        entry
+      }
+    }
+  }
+
+  // dequeue
+  io.deqEntry     := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
+  io.bufferIsFull := fifoIsFullNxtCycle
+}
+
+class BlockPtr(entries: Int) extends CircularQueuePtr[BlockPtr](entries) {}
+
+object BlockPtr {
+  def apply(entries: Int, f: Bool, v: UInt): BlockPtr = {
+    val ptr = Wire(new BlockPtr(entries))
+    ptr.flag  := f
+    ptr.value := v
+    ptr
+  }
+}
