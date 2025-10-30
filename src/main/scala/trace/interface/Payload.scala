@@ -66,16 +66,16 @@ class Format2 extends Bundle with TraceParameters {
   // val irreport      = Bool()
   val updiscon      = Bool()
   val notifyTrigger = Bool()
-  val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
+  val diffAddress   = UInt((iaddress_width_p - iaddress_lsb_p).W)
   val format        = UInt(2.W)
 }
 
-class Format1 extends Bundle with TraceParameters {
+class Format1WithAddr extends Bundle with TraceParameters {
   // val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
   // val irreport      = Bool()
   val updiscon      = Bool()
   val notifyTrigger = Bool()
-  val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
+  val diffAddress   = UInt((iaddress_width_p - iaddress_lsb_p).W)
 
   /**
    * The num of bits of branch_map is determined as followed:
@@ -92,7 +92,7 @@ class Format1 extends Bundle with TraceParameters {
   val format     = UInt(2.W)
 }
 
-class Format1NoAddress extends Bundle with TraceParameters {
+class Format1NoAddr extends Bundle with TraceParameters {
 
   /**
    * The num of bits of branch_map is determined as followed:

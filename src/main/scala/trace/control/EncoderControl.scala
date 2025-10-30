@@ -7,7 +7,6 @@ import bundles.CSRDefines.{CSRROField => RO, CSRRWField => RW, CSRWARLField => W
 import bundles.CSRFunc._
 import chisel3._
 import chisel3.util._
-import org.apache.commons.io.filefilter.IOFileFilter
 import trace.TraceParameters
 import trace.component.EncoderImp
 
@@ -20,7 +19,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 
     when(wen && wdata.Enable.asBool) {
       reg.InstTracing := wdata.InstTracing
-    }.elsewhen((traceOn || traceOff) & triggerValid & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
+    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
       reg.InstTracing := Mux1H(
         Seq(traceOn, traceOff),
         Seq(true.B, false.B)
@@ -190,10 +189,10 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 
 }
 
-class TeControlBundle extends CSRBundle {
+class TeControlBundle extends CSRBundle with TraceParameters {
   val Active      = RW(0).withReset(0.U)
   val Enable      = RW(1).withReset(0.U)
-  val InstTracing = RW(2)
+  val InstTracing = if (test_xsEmu) RW(2).withReset(1.U) else RW(2)
   val Emptry      = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
   val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.HTM) // issues/240
   val Context             = RO(9).withReset(0.U)
@@ -275,12 +274,12 @@ object SrcBitsROField extends CSREnum with ROApply with TraceParameters {
 class TeInstFiltersBundle extends CSRBundle with TraceParameters {
   override val len: Int = filter_num
   val InstFilters =
-    FiltersIndexField(len - 1, 0, wNoFilter).withReset(FiltersIndexField.Index_1) // 1hot: bit_i -> filter_i
+    FiltersIndexField(len - 1, 0, wNoFilter).withReset(FiltersIndexField.None) // 1hot: bit_i -> filter_i
 }
 
 object FiltersIndexField extends CSREnum with WARLApply {
-  val Index_1 = Value(1.U)
-  override def isLegal(enumeration: CSREnumType): Bool = PopCount(enumeration.asUInt) === 1.U
+  val None = Value(0.U)
+  override def isLegal(enumeration: CSREnumType): Bool = PopCount(enumeration.asUInt) <= 1.U
 }
 
 /**
@@ -310,7 +309,7 @@ object DataAddrCompressField extends CSREnum with WARLApply {
 class TeDataFiltersBundle extends CSRBundle {
   val DataFilters =
     FiltersIndexField(15, 0, wNoFilter).withReset(
-      FiltersIndexField.Index_1
+      FiltersIndexField.None
     ) // same as  TeInstFilters; 1hot: bit_i -> filter_i
 }
 
@@ -526,9 +525,8 @@ class HpmEventDataBundle extends CSRBundle with TraceParameters {
  */
 
 trait HasTeCtrlBundle { self: CSRModule[_] =>
-  val triggerValid = IO(Input(Bool()))
-  val traceOn      = IO(Input(Bool()))
-  val traceOff     = IO(Input(Bool()))
+  val traceOn  = IO(Input(Bool()))
+  val traceOff = IO(Input(Bool()))
 }
 
 trait HasTeInstFeaturesBundle { self: CSRModule[_] =>

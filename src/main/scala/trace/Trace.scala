@@ -16,6 +16,12 @@ import trace.control._
 import trace.interface._
 import utils._
 
+class TraceTopIO extends Bundle with TraceParameters {
+  val fromCore = Input(Vec(hart_num, new FromCore))
+  val toCore   = Output(Vec(hart_num, new ToCore))
+  val hpm      = Option.when(supportHPM)(Vec(hart_num, new Hpm))
+}
+
 class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit p: Parameters) extends LazyModule
     with TraceParameters {
   val bus2Control = LazyModule(new Bus2Control)
@@ -102,11 +108,7 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyModuleImp(wrapper) with RequireAsyncReset {
-    val io = IO(new Bundle {
-      val fromCore = Input(Vec(hart_num, new FromCore))
-      val toCore   = Output(Vec(hart_num, new ToCore))
-      val hpm      = Option.when(supportHPM)(Vec(hart_num, new Hpm))
-    })
+    val io = IO(new TraceTopIO)
 
     /**
      * io
