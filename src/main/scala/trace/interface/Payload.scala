@@ -14,7 +14,7 @@ import utils.NamedUInt
  */
 class Format30 extends Bundle with TraceParameters {
   val address   = UInt((iaddress_width_p - iaddress_lsb_p).W)
-  val context   = Option.when(!nocontext_p)(UInt(context_width_p.W))
+  val context   = Option.when(!nocontext_p)(UInt(contextWidth.W))
   val time      = Option.when(!notime_p)(UInt(time_width_p.W))
   val privilege = UInt(privilege_width_p.W)
   val branch    = Bool()
@@ -28,7 +28,7 @@ class Format31 extends Bundle with TraceParameters {
   val thaddr    = Bool()
   val interrupt = Bool()
   val ecause    = UInt(ecause_width_p.W)
-  val context   = Option.when(!nocontext_p)(UInt(context_width_p.W))
+  val context   = Option.when(!nocontext_p)(UInt(contextWidth.W))
   val time      = Option.when(!notime_p)(UInt(time_width_p.W))
   val privilege = UInt(privilege_width_p.W)
   val branch    = Bool()
@@ -37,7 +37,7 @@ class Format31 extends Bundle with TraceParameters {
 }
 
 class Format32 extends Bundle with TraceParameters {
-  val context   = Option.when(!nocontext_p)(UInt(context_width_p.W))
+  val context   = Option.when(!nocontext_p)(UInt(contextWidth.W))
   val time      = Option.when(!notime_p)(UInt(time_width_p.W))
   val privilege = UInt(privilege_width_p.W)
   val subformat = UInt(2.W)

@@ -80,10 +80,11 @@ class PacketGen extends Module with TraceParameters {
   private val curIsBrh    = Itype.isBranchType(curBlock.itype)
   private val curNotify   = curBlock.trigger === TriggerAction.Notify
 
-  val resyncCnt = RegInit(0.U(5.W)) // todo: fix 根据mode来计数以及设置
+  val resyncCnt = RegInit(0.U(20.W))                       // InstSyncMax is 15
+  val syncMax   = 1.U << (teCtrl.InstSyncMax.asUInt + 4.U) // only support packet mode
   val resync =
     (!preQualified && curQualified) || prePriv =/= curPriv || (curBlock.ctype === Ctype.AsyncDiscontinuity) ||
-      (resyncCnt > teCtrl.InstSyncMax.asUInt)
+      (resyncCnt > syncMax)
   val excpReported  = RegInit(false.B)
   val lastFullAdder = RegInit(0.U(iaddress_width_p.W))
 
@@ -91,42 +92,14 @@ class PacketGen extends Module with TraceParameters {
   private val brhMap = RegInit(0.U(31.W)) // each bit represents the outcome of a branch, fifo
   private val brhCnt = RegInit(0.U(5.W))  // number of branch instructions stored in branchMap
 
+  private val enqBrhMap   = nextIsBrh && nextQualified
   private val issueBrhMap = false.B         // todo: fix
   private val nextCmtIsOf = brhCnt === 31.U // if overflow issue else store into brhMap
-  brhCnt := Mux(issueBrhMap || nextCmtIsOf, nextIsBrh, brhCnt + nextIsBrh)
-  brhMap := Mux(issueBrhMap || nextCmtIsOf, nextIsBrh, (nextIsTaken << brhCnt) | brhMap)
+  brhCnt := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, brhCnt + enqBrhMap)
+  brhMap := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, (nextIsTaken << brhCnt) | brhMap)
 
   dontTouch(brhCnt)
   dontTouch(brhMap)
-
-  when(curQualified && curBlock.valid && nextBlock.valid) {
-    when(resync) {
-      resyncCnt := 0.U
-    }.otherwise {
-      when(brhCnt > 0.U) {
-        resyncCnt := resyncCnt + 1.U
-      }
-    }
-  }
-
-  /**
-    * resync state machine
-    */
-  val s1 :: s2 :: s3 :: Nil = Enum(3)
-  val state                 = RegInit(s1)
-  switch(state) {
-    is(s1) {
-      when(resyncCnt >= teCtrl.InstSyncMax.asUInt) {
-        state := s2
-      }
-    }
-    is(s2) {
-      state := s3
-    }
-    is(s3) {
-      state := s1
-    }
-  }
 
   /**
    * Format3 Payload
@@ -169,9 +142,13 @@ class PacketGen extends Module with TraceParameters {
         f31.interrupt := preIsInt
         f31.thaddr    := false.B
         f31.address   := curBlock.iaddr
-        f31.tval      := Mux(preIsInt, 0.U, preTval) // only for exception, omitted for int
-        payload       := extend(f31.asUInt)
-        excpReported  := true.B
+        f31.tval := Mux(
+          preIsInt,
+          Fill(iaddress_width_p, curBlock.iaddr.head(1)),
+          preTval
+        ) // only for exception, omitted for int
+        payload      := extend(f31.asUInt)
+        excpReported := true.B
       }.otherwise {
         when(excpReported) {
           val f30 = Wire(new Format30)
@@ -198,8 +175,12 @@ class PacketGen extends Module with TraceParameters {
           f31.interrupt := preIsInt
           f31.thaddr    := true.B
           f31.address   := curBlock.iaddr
-          f31.tval      := Mux(preIsInt, 0.U, preTval) // only for exception, omitted for int
-          payload       := extend(f31.asUInt)
+          f31.tval := Mux(
+            preIsInt,
+            Fill(iaddress_width_p, curBlock.iaddr.head(1)),
+            preTval
+          ) // only for exception, omitted for int
+          payload := extend(f31.asUInt)
         }
       }
       resyncCnt := 0.U
@@ -216,6 +197,7 @@ class PacketGen extends Module with TraceParameters {
         f30.context.foreach(_ := curContext)
         f30.address := curBlock.iaddr
         payload     := extend(f30.asUInt)
+        resyncCnt   := 0.U
       }.otherwise {
         when(preIsUpdiscon) {
           when(curIsTrap) {
@@ -230,11 +212,16 @@ class PacketGen extends Module with TraceParameters {
             f31.interrupt := curIsInt
             f31.thaddr    := false.B
             f31.address   := curBlock.iaddr
-            f31.tval      := Mux(curIsInt, 0.U, curTval) // only for exception, omitted for int
-            payload       := extend(f31.asUInt)
-            excpReported  := true.B
+            f31.tval := Mux(
+              curIsInt,
+              Fill(iaddress_width_p, curBlock.iaddr.head(1)),
+              curTval
+            ) // only for exception, omitted for int
+            payload      := extend(f31.asUInt)
+            excpReported := true.B
+            resyncCnt    := 0.U
           }.otherwise { // report address. todo: may be need notify, to gen diff address. notify or updiscon?
-            // updiscon, need to report, 顺便把branch_map丢出去
+            // updiscon, need to report
             when(brhCnt === 0.U) {
               val f2 = Wire(new Format2)
               f2.format        := 2.U
@@ -252,9 +239,10 @@ class PacketGen extends Module with TraceParameters {
               f1.updiscon      := !f1.notifyTrigger
               payload          := extend(f1.asUInt)
             }
+            resyncCnt := resyncCnt + 1.U
           }
         }.otherwise {
-          when(resyncCnt === teCtrl.InstSyncMax.asUInt && brhCnt > 0.U || curNotify) { // todo: fix notify
+          when(resyncCnt === syncMax && brhCnt > 0.U || curNotify) { // todo: fix notify
             when(brhCnt > 0.U && curNotify) {
               val f1 = Wire(new Format1WithAddr)
               f1.format        := 1.U
@@ -264,12 +252,14 @@ class PacketGen extends Module with TraceParameters {
               f1.notifyTrigger := !f1.diffAddress.head(1).asBool                           // todo: fix
               f1.updiscon      := f1.notifyTrigger
               payload          := extend(f1.asUInt)
+              resyncCnt        := resyncCnt + 1.U
             }.elsewhen(brhCnt > 0.U && !curNotify) {
               val f1 = Wire(new Format1NoAddr)
               f1.format     := 1.U
               f1.branches   := brhCnt
               f1.branch_map := brhMap
               payload       := extend(f1.asUInt)
+              resyncCnt     := resyncCnt + 1.U
             }.elsewhen(brhCnt === 0.U && curNotify) {
               val f2 = Wire(new Format2)
               f2.format        := 2.U
@@ -277,6 +267,7 @@ class PacketGen extends Module with TraceParameters {
               f2.notifyTrigger := !f2.diffAddress.head(1).asBool                           // todo: fix
               f2.updiscon      := f2.notifyTrigger
               payload          := extend(f2.asUInt)
+              resyncCnt        := resyncCnt + 1.U
             }
           }.otherwise {
             when(
@@ -288,6 +279,7 @@ class PacketGen extends Module with TraceParameters {
                 f1.branches   := brhCnt
                 f1.branch_map := brhMap
                 payload       := extend(f1.asUInt)
+                resyncCnt     := resyncCnt + 1.U
               }
             }.otherwise {
               when(nextCmtIsOf) { // only branch map
@@ -296,6 +288,7 @@ class PacketGen extends Module with TraceParameters {
                 f1.branches   := brhCnt
                 f1.branch_map := brhMap
                 payload       := extend(f1.asUInt)
+                resyncCnt     := resyncCnt + 1.U
               }.elsewhen(curBlock.ctype === Ctype.Imprecisely) {
                 val f32 = Wire(new Format32)
                 f32.format    := 3.U
@@ -303,10 +296,12 @@ class PacketGen extends Module with TraceParameters {
                 f32.privilege := curPriv
                 f32.time.foreach(_ := curTime)
                 f32.context.foreach(_ := curContext)
-                payload := extend(f32.asUInt)
+                payload   := extend(f32.asUInt)
+                resyncCnt := resyncCnt + 1.U
               }
             }
           }
+
         }
       }
     }
@@ -346,13 +341,17 @@ class PacketGen extends Module with TraceParameters {
     f33.dloss    := false.B
     f33.doptions := 0.U
 
-    payload := extend(Mux(qual_stausEnVec.asUInt.orR, f33.asUInt, 0.U))
+    val supportEn = qual_stausEnVec.asUInt.orR
+    payload   := extend(Mux(supportEn, f33.asUInt, 0.U))
+    resyncCnt := Mux(supportEn, 0.U, resyncCnt)
   }
 
   // wrap payload into packet
-  val packet     = Wire(new NormalPacket)
-  val pos        = (payload_max_width + 1).U - Lzc(Mux(payload.head(1).asBool, ~payload, payload))
-  val payloadLen = (pos >> 3) + pos(2, 0).orR
+  val packet      = Wire(new NormalPacket)
+  val lzcIn       = Mux(payload.head(1).asBool, ~payload, payload)
+  val lzc         = Lzc(lzcIn, false)
+  val packetWidth = Mux(lzcIn.orR, (payload_max_width + 1).U - lzc.io.out, 0.U)
+  val payloadLen  = (packetWidth >> 3) + packetWidth(2, 0).orR
 
   packet.header.extend        := false.B
   packet.header.flow          := 0.U
@@ -362,10 +361,34 @@ class PacketGen extends Module with TraceParameters {
   packet.payload.traceType    := 0.U // instruction trace
   packet.payload.tracePayload := payload
 
+  dontTouch(packet)
+  dontTouch(lzc.io.out)
+  dontTouch(lzc.io.isZero)
+  dontTouch(packetWidth)
+  dontTouch(payloadLen)
+  dontTouch(curBlock)
+  dontTouch(preBlock)
+
+  val f30_debug        = payload.asTypeOf(new Format30)
+  val f31_debug        = payload.asTypeOf(new Format31)
+  val f32_debug        = payload.asTypeOf(new Format32)
+  val f33_debug        = payload.asTypeOf(new Format33)
+  val f2_debug         = payload.asTypeOf(new Format2)
+  val f1NoAddr_debug   = payload.asTypeOf(new Format1NoAddr)
+  val f1WithAddr_debug = payload.asTypeOf(new Format1WithAddr)
+
+  dontTouch(f30_debug)
+  dontTouch(f31_debug)
+  dontTouch(f32_debug)
+  dontTouch(f33_debug)
+  dontTouch(f2_debug)
+  dontTouch(f1NoAddr_debug)
+  dontTouch(f1WithAddr_debug)
+
   /**
    * packet gen todo: delete
    */
-  io.packet.valid     := payloadLen =/= 0.U && teCtrl.InstTracing.asBool && teCtrl.Enable.asBool
-  io.packet.bits.len  := payloadLen + 2.U // payLoad + srcid + header
+  io.packet.valid     := payloadLen =/= 0.U && teCtrl.InstTracing.asBool // todo: add teCtrl.Enable.asBool
+  io.packet.bits.len  := payloadLen + 2.U                                // payLoad + srcid + header
   io.packet.bits.data := packet.asUInt.asTypeOf(io.packet.bits.data)
 }
