@@ -194,17 +194,17 @@ class TeControlBundle extends CSRBundle with TraceParameters {
   val Enable      = RW(1).withReset(0.U)
   val InstTracing = if (test_xsEmu) RW(2).withReset(1.U) else RW(2)
   val Emptry      = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
-  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.HTM) // issues/240
+  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.HTM)               // issues/240
   val Context             = RO(9).withReset(0.U)
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
-  val InstStallEna        = RW(13).withReset(0.U)                                // 0: drop 1: stall
+  val InstStallEna        = RW(13).withReset(0.U)                                              // 0: drop 1: stall
   val InhibitSrc          = RW(15).withReset(0.U)
-  val InstSyncMode        = InstSyncModeField(17, 16, wNoFilter).withReset(InstSyncModeField.Cycles)
+  val InstSyncMode        = InstSyncModeROField(17, 16).withReset(InstSyncModeROField.Packets) // only support Packets
   val InstSyncMax =
-    InstSyncMaxROField(23, 20).withReset(
-      InstSyncMaxROField.Default
-    ) // counter >= 2^(InstSyncMax + 4), send sync package. todo: fix to rw
+    InstSyncMaxField(23, 20, wNoFilter).withReset(
+      InstSyncMaxField.Default
+    ) // counter >= 2^(InstSyncMax + 4), send sync package.
   val Format = FormatROField(26, 24).withReset(FormatROField.Etrace)
 }
 
@@ -217,15 +217,15 @@ object InstModeROField extends CSREnum with ROApply {
   override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(DisableInstTrace, BTM, HTM)
 }
 
-object InstSyncModeField extends CSREnum with WARLApply {
+object InstSyncModeROField extends CSREnum with ROApply {
   val Off          = Value(0.U)
   val Packets      = Value(1.U)
   val Cycles       = Value(2.U)
   val InstHalfWord = Value(3.U)
 }
 
-object InstSyncMaxROField extends CSREnum with ROApply with TraceParameters {
-  val Default = Value(syncmax_p.U)
+object InstSyncMaxField extends CSREnum with WARLApply with TraceParameters {
+  val Default = Value(2.U)
 }
 
 object FormatROField extends CSREnum with ROApply {

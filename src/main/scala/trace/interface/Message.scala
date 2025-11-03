@@ -8,6 +8,16 @@ import utils.NamedUInt
  * N-trace
  */
 
+trait NType {
+  val ntrace_max_src     = 12
+  val ntrace_max_icnt    = 22
+  val ntrace_max_addr    = 63
+  val ntrace_max_hist    = 32
+  val ntrace_max_tstamp  = 34
+  val ntrace_max_hrepeat = 18
+  val ntrace_max_bcnt    = 18
+}
+
 class Message extends Bundle {
   val tcode = Vec(1, UInt(8.W)) // 6
   val src   = Vec(2, UInt(8.W))
