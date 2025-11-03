@@ -20,11 +20,11 @@ trait TraceParameters {
   def Xlen        = 64
 
   def BlockNum               = 3
-  def CauseWidth             = 8      // todo: fix in harts, because int/exp in itype
+  def CauseWidth             = 8  // todo: fix in harts, because int/exp in itype
   def TvalWidth              = 50
   def PrivWidth              = 3
   def ImpdefWidth            = 32
-  def IaddrWidth             = 50 - 1 // ingore lsb from core
+  def IaddrWidth             = 50 // todo: ingore lsb from core
   def ItypeWidth             = 4
   def IretireWidthInPipe     = log2Up(RenameWidth * 2 + 1)
   def IretireWidthCompressed = log2Up(RenameWidth * CommitWidth * 2 + 1)

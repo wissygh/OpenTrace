@@ -52,7 +52,10 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   enq.hartIsReset := io.fromCore.hartIsReset
   enq.trigger     := io.fromCore.trigger
   enq.blocks      := blocksCompressed
-  Compress.compress(needPcVec, io.fromCore.blocks, enq.blocks)
+  Compress.compress(needPcVec, blocksCompressed, enq.blocks)
+
+  dontTouch(needPcVec)
+  dontTouch(enq.blocks)
 
   val fifo = Reg(Vec(block_buffer_depth_p, new BlockBufferEntry))
   require(block_buffer_depth_p > 0, "Fifo depth must be > 0")
@@ -63,10 +66,10 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   enqPtr := enqPtrNext
   deqPtr := deqPtrNext
 
-  enqPtrNext := enqPtr + PopCount(needPcVec.asUInt)
-  deqPtrNext := deqPtr + 1.U
   val fifoIsEmpty        = isEmpty(enqPtr, deqPtr)
   val fifoIsFullNxtCycle = isFull(enqPtrNext, deqPtrNext) // todo: lost
+  enqPtrNext := enqPtr + PopCount(needPcVec.asUInt)
+  deqPtrNext := deqPtr + !isEmpty(enqPtr, deqPtr).asUInt
 
   // enqueue
   for (i <- 0 until BlockNum) {

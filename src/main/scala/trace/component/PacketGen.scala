@@ -91,10 +91,11 @@ class PacketGen extends Module with TraceParameters {
   private val brhMap = RegInit(0.U(31.W)) // each bit represents the outcome of a branch, fifo
   private val brhCnt = RegInit(0.U(5.W))  // number of branch instructions stored in branchMap
 
+  private val enqBrhMap = nextIsBrh && nextQualified
   private val issueBrhMap = false.B         // todo: fix
   private val nextCmtIsOf = brhCnt === 31.U // if overflow issue else store into brhMap
-  brhCnt := Mux(issueBrhMap || nextCmtIsOf, nextIsBrh, brhCnt + nextIsBrh)
-  brhMap := Mux(issueBrhMap || nextCmtIsOf, nextIsBrh, (nextIsTaken << brhCnt) | brhMap)
+  brhCnt := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, brhCnt + enqBrhMap)
+  brhMap := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, (nextIsTaken << brhCnt) | brhMap)
 
   dontTouch(brhCnt)
   dontTouch(brhMap)
@@ -362,10 +363,12 @@ class PacketGen extends Module with TraceParameters {
   packet.payload.traceType    := 0.U // instruction trace
   packet.payload.tracePayload := payload
 
+  dontTouch(packet)
+
   /**
    * packet gen todo: delete
    */
-  io.packet.valid     := payloadLen =/= 0.U && teCtrl.InstTracing.asBool && teCtrl.Enable.asBool
+  io.packet.valid     := payloadLen =/= 0.U && teCtrl.InstTracing.asBool // todo: add teCtrl.Enable.asBool
   io.packet.bits.len  := payloadLen + 2.U // payLoad + srcid + header
   io.packet.bits.data := packet.asUInt.asTypeOf(io.packet.bits.data)
 }
