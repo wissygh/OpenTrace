@@ -94,7 +94,9 @@ object Itype extends NamedUInt(4) {
 
   // supportSijump
   def isUninferable(itype: UInt) =
-    Seq(UninferableCall, UninferableTailCall, CoRoutineSwap, OtherUninferableJump).map(_ === itype).reduce(_ || _)
+    Seq(UninferableCall, UninferableTailCall, CoRoutineSwap, FunctionReturn, OtherUninferableJump).map(
+      _ === itype
+    ).reduce(_ || _)
 }
 
 object Ilastsize extends NamedUInt(1) {

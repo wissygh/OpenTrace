@@ -238,17 +238,6 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   /**
    * packets
    */
-  val syncOther    = WireInit(false.B)
-  val syncPeriodic = WireInit(false.B)
-  val syncCount    = RegInit(0.U(synccounter_width_p.W))
-  when(syncOther || teControl.w.wen && (teControl.w.wdataFields.InstSyncMode =/= teControl.regOut.InstSyncMode)) {
-    syncCount := 0.U
-  }.elsewhen(countEn) {
-    val tmpSyncCount = syncCount +& 1.U
-    syncPeriodic := tmpSyncCount.head(1)
-    syncCount    := tmpSyncCount.tail(1)
-  }
-  val syncEn = syncOther || syncPeriodic
 
   // todo：remove following two lines
   val stallHart       = teControl.regOut.InstStallOrOverflow.asBool && teControl.regOut.InstStallEna.asBool
