@@ -8,7 +8,7 @@ import utils._
 class FromCore extends Bundle with TraceParameters {
   val priv        = Priv()
   val time        = UInt(Xlen.W)
-  val context     = UInt(32.W)
+  val context     = UInt(contextWidth.W)
   val ctype       = UInt(2.W)
   val cause       = UInt(CauseWidth.W)
   val tval        = UInt(TvalWidth.W)

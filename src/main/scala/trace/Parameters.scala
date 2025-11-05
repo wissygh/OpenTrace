@@ -23,6 +23,7 @@ trait TraceParameters {
   def CauseWidth             = 8  // todo: fix in harts, because int/exp in itype
   def TvalWidth              = 50
   def PrivWidth              = 3
+  def contextWidth           = 32
   def ImpdefWidth            = 32
   def IaddrWidth             = 50 // todo: ingore lsb from core
   def ItypeWidth             = 4
@@ -46,7 +47,6 @@ trait TraceParameters {
   def time_width_p         = Xlen
   def packet_header_time_p = 0
   def nocontext_p          = false
-  def context_width_p      = 14
   def ecause_width_p       = 8
   def iaddress_width_p     = IaddrWidth
   def iaddress_lsb_p       = 1
@@ -180,16 +180,6 @@ trait TraceParameters {
   def encoderAtbDataBeats = encoderAtbDataWidth / 8
   def funnelAtbDataBeats  = funnelAtbDataWidth / 8
 
-  /**
-   * n-trace
-   */
-  val ntrace_max_src     = 12
-  val ntrace_max_icnt    = 22
-  val ntrace_max_addr    = 63
-  val ntrace_max_hist    = 32
-  val ntrace_max_tstamp  = 34
-  val ntrace_max_hrepeat = 18
-  val ntrace_max_bcnt    = 18
 }
 
 case class BusType(
