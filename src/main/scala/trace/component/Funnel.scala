@@ -34,8 +34,8 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
   val fifoParam = FifoParam(
     isLeaf = false,
     fifoDepth = maxPackets * 6,
-    enqDataBeats = encoderAtbDataBeats,
-    deqDataBeats = funnelAtbDataBeats
+    enqDataBytes = encoderAtbDataBeats,
+    deqDataBytes = funnelAtbDataBeats
   )
 
   /**
@@ -45,7 +45,7 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
     if (sources.isEmpty) {
       0.U
     } else if (sources.size == 1) {
-      1.U
+      sinkReady
     } else {
       // need to track the number of beats for each source
       val beatsIn = sources.map { s =>
@@ -88,7 +88,9 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
 
   // src at
   val arbiterRes = arbiter(fifo.io.packetEnq.ready, atbsVec: _*).asBools
-  atbsVec.zip(arbiterRes).map { case (atbs, aRes) => atbs.at.ready := aRes && funnelControl.regOut.Enable.asBool }
+  atbsVec.zip(arbiterRes).map { case (atbs, aRes) =>
+    atbs.at.ready := aRes
+  } // todo: add funnelControl.regOut.Enable.asBool
   val atbsFire1H    = atbsVec.map(atbs => atbs.at.fire)
   val selectedSlave = Mux1H(atbsFire1H, atbsVec)
 
