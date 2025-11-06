@@ -34,8 +34,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val fifoParam = FifoParam(
     isLeaf = true,
     fifoDepth = maxPackets * 3,
-    enqDataBeats = maxPackets,
-    deqDataBeats = encoderAtbDataBeats
+    enqDataBytes = maxPackets,
+    deqDataBytes = encoderAtbDataBeats
   )
 
   val blockBuffer = Module(new BlockBuffer)

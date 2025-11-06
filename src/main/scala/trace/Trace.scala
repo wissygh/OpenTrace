@@ -152,12 +152,12 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
      * control path:
      *  write:
      *                   [bus write req]           [req/wtrite data]
-     *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]]
+     *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]] [[pib]] [[atb]] [[ram]]
      *
      *  read:
      *                   [bus read req]               [read req]
-     *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]]
-     *             \---- [bus read req] <----------- [read data] <-------/
+     *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]] [[pib]] [[atb]] [[ram]]
+     *             \---- [bus read resp] <----------- [read data] <-------/
      */
     val components: Seq[ComponentBaseImp] = encoderModVec.toSeq ++ Seq(funnelMod, pibMod, atbMod, ramMod)
     components.map(comp => comp.bus.b2c := bus2ctrl.io.b2c)
