@@ -7,13 +7,15 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import trace.control._
 import trace.interface._
+import utility.HasCircularQueuePtrHelper
 
 class SRAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
   override lazy val module = new SRAMImp(this)(baseAddr)
 }
 
 class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
-    with SRAMControl {
+    with SRAMControl
+    with HasCircularQueuePtrHelper {
 
   val io = IO(new Bundle {
     val atbs = new ATBSlave(funnelAtbDataBeats)
@@ -39,41 +41,36 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   val traceRead      = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
   val bufferReadData = Wire(UInt(32.W))
 
-  val wpReg    = RegInit(0.U(62.W))
-  val rpReg    = RegInit(0.U(62.W))
-  val ramWP    = ramWPHigh.rdata ## ramWPLow.rdata
-  val ramRP    = ramWPHigh.rdata ## ramWPLow.rdata
-  val ramStart = ramStartHigh.rdata ## ramStartLow.regOut.Low.asUInt
-  val ramLimit = ramLimitHigh.rdata ## ramLimitLow.regOut.Low.asUInt
+  val wpReg = RegInit(FifoPtr(buffer_num, false.B, 0.U))
+  val rpReg = RegInit(FifoPtr(buffer_num, false.B, 0.U))
+
+  dontTouch(wpReg)
+  dontTouch(rpReg)
 
   when(ramWPLow.w.wen) {
-    wpReg := wpReg.head(32) ## ramWPLow.w.wdata.head(30)
+    wpReg.value := ramWPHigh.rdata ## ramWPLow.w.wdata.head(30)
   }.elsewhen(ramWPHigh.w.wen) {
-    wpReg := ramWPHigh.w.wdata ## wpReg.tail(32)
-  }.elsewhen(wpReg === ramLimit) {
-    wpReg := ramStart
+    wpReg.value := ramWPHigh.w.wdata ## ramWPLow.rdata.head(30)
   }.elsewhen(traceWrite) {
     wpReg := wpReg + writeStep.U
   }
 
   when(ramRPLow.w.wen) {
-    rpReg := rpReg.head(32) ## ramRPLow.w.wdata.head(30)
+    rpReg.value := ramRPHigh.rdata ## ramRPLow.w.wdata.head(30)
   }.elsewhen(ramRPHigh.w.wen) {
-    rpReg := ramRPHigh.w.wdata ## rpReg.tail(32)
-  }.elsewhen(rpReg === ramLimit) {
-    rpReg := ramStart
+    rpReg.value := ramRPHigh.w.wdata ## ramRPLow.rdata.head(30)
   }.elsewhen(traceRead) {
     rpReg := rpReg + 1.U
   }
 
-  val fifoIsEmpty = RegNext(traceRead && (rpReg + 1.U === wpReg))
-  val fifoIsFull  = RegNext(traceWrite && (wpReg + writeStep.U >= rpReg)) // todo: check
+  val fifoIsEmpty = isEmpty(wpReg, rpReg)
+  val fifoIsFull  = isFull(wpReg, rpReg) // todo: fix
 
   buffer.write.en   := traceWrite
-  buffer.write.ptr  := ramWP
+  buffer.write.ptr  := wpReg.value
   buffer.write.data := bufferWriteData
 
-  buffer.read.ptr := ramRP
+  buffer.read.ptr := rpReg.value
   bufferReadData  := buffer.read.data
 
   io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
@@ -85,13 +82,13 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   controlMods.foreach { mod =>
     mod match {
       case m: HasWPBundle =>
-        m.wp   := wpReg
+        m.wp   := wpReg.value
         m.wrap := fifoIsFull // wrap around
       case _ =>
     }
     mod match {
       case m: HasRPBundle =>
-        m.rp := rpReg
+        m.rp := rpReg.value
       case _ =>
     }
     mod match {

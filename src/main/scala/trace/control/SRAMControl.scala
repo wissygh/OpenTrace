@@ -59,8 +59,8 @@ trait SRAMControl extends ControlBase { self: SRAMImp =>
 
   val ramWPLow = Module(new CSRModule("RAMWPLow", new RAMPointerBundle)
     with HasWPBundle {
-    when(wen && !wdata.Wrap.asBool) {
-      reg.Wrap := false.B
+    when(wen) {
+      reg.Wrap := wdata.Wrap.asBool
     }.elsewhen(wrap) { // wraps
       reg.Wrap := true.B
     }
