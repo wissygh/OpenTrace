@@ -138,8 +138,8 @@ class Fifo(param: FifoParam) extends Module
   )
 
   val fifoValidLen = distanceBetween(enqPtr, deqPtr)
-  val fifoIsEmpty = isEmpty(enqPtr, deqPtr)
-  val fifoIsFull  = isFull(enqPtr, deqPtr)
+  val fifoIsEmpty  = isEmpty(enqPtr, deqPtr)
+  val fifoIsFull   = isFull(enqPtr, deqPtr)
 
   /**
     * atb

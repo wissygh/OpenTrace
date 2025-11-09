@@ -77,7 +77,7 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   bufferReadData  := buffer.read.data
 
   io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
-  io.atbs.at.ready := !(ramControl.regOut.StopOnWrap.asBool && fifoIsFull) //todo: add ramControl.regOut.Enable.asBool 
+  io.atbs.at.ready := !(ramControl.regOut.StopOnWrap.asBool && fifoIsFull) // todo: add ramControl.regOut.Enable.asBool
 
   /**
    * control reg io
