@@ -15,12 +15,12 @@ class CircularBuffer extends Module
     with TraceParameters {
   val write = IO(new Bundle {
     val en   = Input(Bool())
-    val ptr  = Input(UInt(64.W))
+    val ptr  = Input(UInt(buffer_ptr_width.W))
     val data = Input(UInt(funnelAtbDataWidth.W))
   })
 
   val read = IO(new Bundle {
-    val ptr  = Input(UInt(64.W))
+    val ptr  = Input(UInt(buffer_ptr_width.W))
     val data = Output(UInt(32.W))
   })
 
@@ -34,7 +34,7 @@ class CircularBuffer extends Module
   private val lg2WriteStep = log2Up(writeStep)
 
   val bufferVec = VecInit((0 until (buffer_num / writeStep)).map { idx =>
-    RegEnable(write.data, write.en && ((write.ptr >> 2) === idx.U))
+    RegEnable(write.data, write.en && (write.ptr === idx.U))
   })
 
   val bufferVecWire = bufferVec.asTypeOf(Vec(buffer_num, UInt(wordWidth.W)))
