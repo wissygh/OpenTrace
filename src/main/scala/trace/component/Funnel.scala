@@ -29,17 +29,8 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
   })
 
   /**
-    * parameter
-    */
-  val fifoParam = FifoParam(
-    isLeaf = false,
-    fifoDepth = maxPackets * 6,
-    enqDataBytes = encoderAtbDataBeats,
-    deqDataBytes = funnelAtbDataBeats
-  )
-
-  /**
     * aribiter
+    * todo: support FunnelDisInput, pipe a cycle
     */
   def arbiter[T <: Data](sinkReady: Bool, sources: ATBSlave*): UInt =
     if (sources.isEmpty) {
@@ -79,7 +70,6 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
     * module: [[fifo]]
     */
   private val (atbsVec, atbm) = (io.atbsVec, io.atbm)
-  val fifo                    = Module(new Fifo(fifoParam))
 
   // src af
   atbsVec.foreach(atbs => atbs.af.valid := atbm.af.valid) // flush req
@@ -87,26 +77,22 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
   val flushCompleteReg  = RegNext(flushCompleteNext)
 
   // src at
-  val arbiterRes = arbiter(fifo.io.packetEnq.ready, atbsVec: _*).asBools
+  val arbiterRes = arbiter(io.atbm.at.ready, atbsVec: _*).asBools
   atbsVec.zip(arbiterRes).map { case (atbs, aRes) =>
     atbs.at.ready := aRes
   } // todo: add funnelControl.regOut.Enable.asBool
   val atbsFire1H    = atbsVec.map(atbs => atbs.at.fire)
   val selectedSlave = Mux1H(atbsFire1H, atbsVec)
 
-  fifo.io.packetEnq.valid     := selectedSlave.at.fire
-  fifo.io.packetEnq.bits.data := selectedSlave.at.bits.data.asTypeOf(fifo.io.packetEnq.bits.data)
-  fifo.io.packetEnq.bits.len  := selectedSlave.at.bits.bytes +& 1.U // true length
-  fifo.io.ctrl.srcid          := selectedSlave.at.bits.id
-  fifo.io.sourceFlushAll.foreach(_ := flushCompleteReg.asUInt.orR) // all slave complete flush
-
-  io.atbm <> fifo.io.atbm
+  selectedSlave.af <> io.atbm.af
+  io.atbm.at.valid := selectedSlave.at.valid
+  io.atbm.at.bits  := selectedSlave.at.bits
 
   /**
    * control reg io
    */
-  val fifoIsEmpty = fifo.io.ctrl.fifoIsEmpty
-  val fifoIsFull  = fifo.io.ctrl.fifoIsFull
+  val fifoIsEmpty = false.B // todo: fix
+  val fifoIsFull  = false.B
   controlMods.foreach { mod =>
     mod match {
       case m: HasCtrlBundle =>

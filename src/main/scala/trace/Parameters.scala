@@ -176,7 +176,7 @@ trait TraceParameters {
   // atb
   def atbIdWidth          = 7
   def encoderAtbDataWidth = 32
-  def funnelAtbDataWidth  = 128
+  def funnelAtbDataWidth  = 32
   def encoderAtbDataBeats = encoderAtbDataWidth / 8
   def funnelAtbDataBeats  = funnelAtbDataWidth / 8
 
