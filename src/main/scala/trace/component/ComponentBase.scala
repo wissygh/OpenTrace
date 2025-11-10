@@ -3,6 +3,7 @@ package trace.component
 import bundles.CSRAddrWriteBundle
 import bundles.CSRModule
 import chisel3._
+import chisel3.experimental.hierarchy.public
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
@@ -22,6 +23,8 @@ class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule wi
 class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parameters) extends LazyModuleImp(wrapper)
     with ControlBase
     with TraceParameters {
+
+  val compBaseAddress = baseAddr
 
   val bus = IO(new Control2BusRegBundle)
 

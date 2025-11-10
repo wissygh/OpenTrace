@@ -163,6 +163,21 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
     components.map(comp => comp.bus.b2c := bus2ctrl.io.b2c)
     bus2ctrl.io.c2b.error    := components.map(_.bus.c2b.error).reduce(_ | _)
     bus2ctrl.io.c2b.dataRead := components.map(_.bus.c2b.dataRead).reduce(_ | _)
+
+    /**
+     * write components.control.active
+     * 1. reset: write 0
+     * 2. release: write 1
+     * 3. write other
+    */
+    components.map { comp =>
+      val active = RegEnable(
+        comp.bus.b2c.dataWrite(0),
+        false.B,
+        comp.bus.b2c.address === (comp.compBaseAddress & ctrlMask).U && comp.bus.b2c.writeEn
+      )
+      comp.reset := (!active).asAsyncReset
+    }
   }
 
   lazy val module = new TraceImp(this)

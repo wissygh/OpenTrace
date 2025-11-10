@@ -14,6 +14,7 @@ import trace.component.PIBImp
 trait PIBControl extends ControlBase { self: PIBImp =>
 
   val PIBControl = Module(new CSRModule("PIBControl", new PIBControlBundle) {
+    regOut.Active := !reset.asBool
     when(wen && wdata.ClkCenter.asBool && PIBModeField.isParallel(wdata.Mode)) {
       reg.ClkCenter := true.B
     }
@@ -30,8 +31,8 @@ trait PIBControl extends ControlBase { self: PIBImp =>
 }
 
 class PIBControlBundle extends CSRBundle {
-  val Active    = RW(0)
-  val Enable    = RW(1)
+  val Active    = RW(0).withReset(0.U)
+  val Enable    = RW(1).withReset(0.U)
   val Emptry    = RO(3)
   val Mode      = PIBModeField(7, 4, wNoFilter).withReset(PIBModeField.Off)
   val ClkCenter = RW(8)

@@ -13,8 +13,9 @@ import trace.component.EncoderImp
 trait EncoderControl extends ControlBase { self: EncoderImp =>
 
   val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle with HasCtrlBundle {
+    regOut.Active := !reset.asBool
     when(wen) {
-      reg.Enable := wdata.Active && wdata.Enable
+      reg.Enable := wdata.Enable
     }
 
     when(wen && wdata.Enable.asBool) {
