@@ -78,8 +78,8 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters) extends 
 
   // src at
   val arbiterRes = arbiter(io.atbm.at.ready, atbsVec: _*).asBools
-  atbsVec.zip(arbiterRes).map { case (atbs, aRes) =>
-    atbs.at.ready := aRes
+  atbsVec.zip(arbiterRes).zip(funnelDisInput.regOut.DisInput.asUInt.asBools).map { case ((atbs, aRes), dis) =>
+    atbs.at.ready := aRes && !dis
   } // todo: add funnelControl.regOut.Enable.asBool
   val atbsFire1H    = atbsVec.map(atbs => atbs.at.fire)
   val selectedSlave = Mux1H(atbsFire1H, atbsVec)
