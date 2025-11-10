@@ -12,7 +12,9 @@ import trace.component.ATBBridgeImp
 
 trait ATBBridgeControl extends ControlBase { self: ATBBridgeImp =>
 
-  val ATBControl = Module(new CSRModule("ATBBridgeControl", new ATBControlBundle))
+  val ATBControl = Module(new CSRModule("ATBBridgeControl", new ATBControlBundle){
+    regOut.Active := !reset.asBool
+  })
     .setAddr(CtrlReg.ATBBridgeControl)
 
   val ATBImpl = Module(new CSRModule("ATBBridgeImpl", new ATBImplBundle) {})
@@ -25,8 +27,8 @@ trait ATBBridgeControl extends ControlBase { self: ATBBridgeImp =>
 }
 
 class ATBControlBundle extends CSRBundle {
-  val Active = RW(0)
-  val Enable = RW(1)
+  val Active = RW(0).withReset(0.U)
+  val Enable = RW(1).withReset(0.U)
   val Emptry = RO(3)
   val ID     = IDField(14, 8, wNoFilter).withReset(IDField.Default)
 }

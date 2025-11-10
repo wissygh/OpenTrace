@@ -25,6 +25,7 @@ import trace.component.SMEMImp
 trait SMEMControl extends ControlBase { self: SMEMImp =>
 
   val ramControl = Module(new CSRModule("RAMControl", new RAMControlBundle) with HasRamCtrlBundle with HasCtrlBundle {
+    regOut.Active := !reset.asBool
     when(wen) {
       reg.Enable := wdata.Enable
     }.elsewhen(ramWrapStop) {

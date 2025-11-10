@@ -25,6 +25,7 @@ import trace.component.SRAMImp
 trait SRAMControl extends ControlBase { self: SRAMImp =>
 
   val ramControl = Module(new CSRModule("RAMControl", new RAMControlBundle) with HasRamCtrlBundle with HasCtrlBundle {
+    regOut.Active := !reset.asBool
     when(wen) {
       reg.Enable := wdata.Enable
     }.elsewhen(ramWrapStop) {

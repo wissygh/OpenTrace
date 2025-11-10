@@ -41,8 +41,8 @@ object TrcompTypeField extends CSREnum with ROApply {
   */
 
 class RAMControlBundle extends CSRBundle with TraceParameters {
-  val Active     = RW(0)
-  val Enable     = RW(1)
+  val Active     = RW(0).withReset(0.U)
+  val Enable     = RW(1).withReset(0.U)
   val Emptry     = RO(3)
   val Mode       = RAMModeROField(4).withReset(if (supportSRAM) RAMModeROField.SRAM else RAMModeROField.SMEM)
   val StopOnWrap = RW(8)
