@@ -12,7 +12,7 @@ import trace.component.ATBBridgeImp
 
 trait ATBBridgeControl extends ControlBase { self: ATBBridgeImp =>
 
-  val ATBControl = Module(new CSRModule("ATBBridgeControl", new ATBControlBundle){
+  val ATBControl = Module(new CSRModule("ATBBridgeControl", new ATBControlBundle) {
     regOut.Active := !reset.asBool
   })
     .setAddr(CtrlReg.ATBBridgeControl)

@@ -33,7 +33,7 @@ trait PIBControl extends ControlBase { self: PIBImp =>
 class PIBControlBundle extends CSRBundle {
   val Active    = RW(0).withReset(0.U)
   val Enable    = RW(1).withReset(0.U)
-  val Emptry    = RO(3)
+  val Emptry    = RO(3).withReset(1.U)
   val Mode      = PIBModeField(7, 4, wNoFilter).withReset(PIBModeField.Off)
   val ClkCenter = RW(8)
   val Calibrate = RW(9)

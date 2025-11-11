@@ -52,7 +52,7 @@ trait SMEMControl extends ControlBase { self: SMEMImp =>
 
   val ramWPLow = Module(new CSRModule("RAMWPLow", new RAMPointerBundle)
     with HasWPBundle {
-    when(wen && !wdata.Wrap.asBool) {
+    when(wen) {
       reg.Wrap := false.B
     }.elsewhen(wrap) { // wraps
       reg.Wrap := true.B
