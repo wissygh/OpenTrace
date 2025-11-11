@@ -240,7 +240,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
 
   // todo：remove following two lines
-  val stallHart       = teControl.regOut.InstStallOrOverflow.asBool && teControl.regOut.InstStallEna.asBool
+  val stallHart       = fifoIsFull && teControl.regOut.InstStallEna.asBool
   val instTraceEnable = teControl.regOut.InstTracing.asBool
 
   /**

@@ -104,15 +104,12 @@ trait TraceParameters {
    * RAM parameters
    * only support sram & fixed smem
    */
-  def buffer_num       = 256  // 256 * 32bit, for SRAM
+  def buffer_num       = 256 // 256 * 32bit, for SRAM
   def buffer_ptr_width = log2Up(buffer_num)
   def supportSRAM      = true
-  def supportSMEM      = true
-  def ramIsSMEM        = true // true: SMEM false: SRAM
-  def fixedSMEM        = true
   def fixedStartAddr   = 0x0
-  def fixedLimitAddr   = buffer_num
-  def ramLimitAddr     = buffer_num
+  def fixedLimitAddr   = (buffer_num - 1) << 2
+  def ramLimitAddr     = (buffer_num - 1) << 2
 
   /**
    * trace memory map address

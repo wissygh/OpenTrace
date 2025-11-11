@@ -41,30 +41,32 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   val traceRead      = bus.b2c.readEn && (bus.b2c.address === ramData.addr.U)
   val bufferReadData = Wire(UInt(32.W))
 
-  val wpReg = RegInit(FifoPtr(buffer_num, false.B, 0.U))
-  val rpReg = RegInit(FifoPtr(buffer_num, false.B, 0.U))
+  val wpReg  = RegInit(FifoPtr(buffer_num, false.B, 0.U))
+  val rpReg  = RegInit(FifoPtr(buffer_num, false.B, 0.U))
+  val wpNext = WireInit(wpReg)
+  val rpNext = WireInit(rpReg)
 
   dontTouch(wpReg)
   dontTouch(rpReg)
 
   when(ramWPLow.w.wen) {
-    wpReg.value := ramWPHigh.rdata ## ramWPLow.w.wdata.head(30)
+    wpNext.value := ramWPHigh.rdata ## ramWPLow.w.wdata.head(30)
   }.elsewhen(ramWPHigh.w.wen) {
-    wpReg.value := ramWPHigh.w.wdata ## ramWPLow.rdata.head(30)
+    wpNext.value := ramWPHigh.w.wdata ## ramWPLow.rdata.head(30)
   }.elsewhen(traceWrite) {
-    wpReg := wpReg + writeStep.U
+    wpNext := wpReg + writeStep.U
   }
 
   when(ramRPLow.w.wen) {
-    rpReg.value := ramRPHigh.rdata ## ramRPLow.w.wdata.head(30)
+    rpNext.value := ramRPHigh.rdata ## ramRPLow.w.wdata.head(30)
   }.elsewhen(ramRPHigh.w.wen) {
-    rpReg.value := ramRPHigh.w.wdata ## ramRPLow.rdata.head(30)
+    rpNext.value := ramRPHigh.w.wdata ## ramRPLow.rdata.head(30)
   }.elsewhen(traceRead) {
-    rpReg := rpReg + 1.U
+    rpNext := rpReg + 1.U
   }
 
   val fifoIsEmpty = isEmpty(wpReg, rpReg)
-  val fifoIsFull  = isFull(wpReg, rpReg) // todo: fix
+  val fifoIsFull  = isFull(wpNext, rpNext) && traceWrite
 
   buffer.write.en   := traceWrite
   buffer.write.ptr  := wpReg.value
@@ -73,8 +75,8 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   buffer.read.ptr := rpReg.value
   bufferReadData  := buffer.read.data
 
-  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
-  io.atbs.at.ready := !(ramControl.regOut.StopOnWrap.asBool && fifoIsFull) // todo: add ramControl.regOut.Enable.asBool
+  io.atbs.af.valid := false.B                         // todo: fix
+  io.atbs.at.ready := ramControl.regOut.Enable.asBool // todo: fix
 
   /**
    * control reg io

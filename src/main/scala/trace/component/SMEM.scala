@@ -99,7 +99,7 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   val (tl, edge) = wrapper.tlMaster2SM.out(0)
   when(traceWrite && (ramControl.regOut.Enable.asBool && ramControl.regOut.Active.asBool)) {
     tl.a.valid := true.B
-    tl.a.bits  := edge.Put(0.U, wpReg, io.atbs.at.bits.bytes, io.atbs.at.bits.data)._2
+    tl.a.bits  := edge.Put(0.U, wpReg << 2, io.atbs.at.bits.bytes, io.atbs.at.bits.data)._2
   }.otherwise {
     tl.a.valid := false.B
     tl.a.bits  := 0.U.asTypeOf(tl.a.bits)

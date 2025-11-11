@@ -15,7 +15,7 @@ trait FunnelControl extends ControlBase { self: FunnelImp =>
 
   val funnelControl = Module(new CSRModule("FunnelControl", new FunnelControlBundle) with HasCtrlBundle {
     regOut.Active := !reset.asBool
-    reg.Emptry := fifoIsEmpty
+    reg.Emptry    := fifoIsEmpty
   })
     .setAddr(CtrlReg.FunnelControl)
 
@@ -51,7 +51,7 @@ trait FunnelControl extends ControlBase { self: FunnelImp =>
 class FunnelControlBundle extends CSRBundle {
   val Active = RW(0).withReset(0.U)
   val Enable = RW(1).withReset(0.U)
-  val Emptry = RO(3)
+  val Emptry = RO(3).withReset(1.U)
 }
 
 class FunnelImplBundle extends CSRBundle {
