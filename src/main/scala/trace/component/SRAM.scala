@@ -75,7 +75,6 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   buffer.read.ptr := rpReg.value
   bufferReadData  := buffer.read.data
 
-  io.atbs.af.valid := false.B                         // todo: fix
   io.atbs.at.ready := ramControl.regOut.Enable.asBool // todo: fix
 
   /**

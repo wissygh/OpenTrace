@@ -7,6 +7,7 @@ import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
 import utils._
 
@@ -28,11 +29,19 @@ class Control2BusRegBundle extends Bundle {
   val c2b = Output(new Control2BusBundle)
 }
 
-class Bus2Control(implicit p: Parameters) extends LazyModule with TraceParameters {
+class CtrlSource(implicit p: Parameters) extends LazyModule with TraceParameters {
+  val sourceNode = TLAsyncCrossingSource()
 
+  class CtrlSourceImp(wrapper: CtrlSource)(implicit p: Parameters) extends LazyModuleImp(wrapper)
+      with RequireAsyncReset {}
+
+  lazy val module = new CtrlSourceImp(this)
+}
+
+class Bus2Control(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
   val tlslavenode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     Seq(TLManagerParameters(
-      address = Seq(ctrlAddressSet),
+      address = Seq(AddressSet(baseAddr, 0xffff)),
       regionType = RegionType.UNCACHED,
       supportsGet = TransferSizes(1, ctrlBeatBytes),
       supportsPutFull = TransferSizes(1, ctrlBeatBytes),

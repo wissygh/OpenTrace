@@ -52,7 +52,6 @@ class Fifo(param: FifoParam) extends Module
     * io
     */
   val packetEnq = io.packetEnq
-  val flush     = io.atbm.af
   val trans     = io.atbm.at
 
   /**
@@ -78,21 +77,6 @@ class Fifo(param: FifoParam) extends Module
    */
   enqPtrNext := enqPtr + Mux(packetEnq.fire, packetEnq.bits.len, 0.U)
   (0 until enqBytes).foreach(i => fifo((enqPtr + i.U).value) := packetEnq.bits.data(i))
-
-  /**
-    * Flush
-    * Encoder is leaf. Funnel is root.
-    */
-  val flushStart = if (param.isLeaf) flush.valid && !RegNext(flush.valid) else io.sourceFlushAll.get
-  val flushPtr =
-    RegEnable(enqPtrNext, flushStart) // flush data in buffer before flush request(including flush req cycle)
-  val flushState    = RegInit(false.B)
-  val flushComplete = flushState && (deqPtr === flushPtr)
-  when(flushStart) {
-    flushState := true.B
-  }.elsewhen(flushComplete) {
-    flushState := false.B
-  }
 
   /**
    * deq
@@ -149,7 +133,6 @@ class Fifo(param: FifoParam) extends Module
   io.atbm.at.bits.data  := deqData.asUInt
   io.atbm.at.bits.bytes := deqNum - 1.U
   io.atbm.at.bits.id    := (io.ctrl.srcid + 1.U) & 0x7f.U // id 0 is reserved
-  io.atbm.af.ready      := flushComplete                  // flush finish, slave will deassert flush.valid next cycle
   io.packetEnq.ready    := !fifoIsFull                    // todo: Full is not only encough.
   io.ctrl.fifoIsEmpty   := fifoIsEmpty
   io.ctrl.fifoIsFull    := fifoIsFull

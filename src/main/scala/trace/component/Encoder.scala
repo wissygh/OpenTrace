@@ -4,6 +4,7 @@ import bundles.CSRAddrWriteBundle
 import bundles.CSRModule
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
 import scala.util.matching.Regex.Match
 import trace.Control2BusRegBundle
@@ -24,7 +25,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val fromCore = Input(new FromCore)
     val toCore   = Output(new ToCore)
     val hpm      = Option.when(supportHPM)(new Hpm)
-    val atbm     = new ATBMaster(encoderAtbDataBeats)
+    val asyncAtbm = new AsyncBundle(new ATData(encoderAtbDataBeats), compAsyncBridge)
   })
 
   /**
@@ -240,7 +241,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
 
   // todo：remove following two lines
-  val stallHart       = fifoIsFull && teControl.regOut.InstStallEna.asBool
+  val stallHart       = fifo.io.ctrl.fifoIsFull && teControl.regOut.InstStallEna.asBool
   val instTraceEnable = teControl.regOut.InstTracing.asBool
 
   /**
@@ -274,7 +275,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut.asUInt
   fifo.io.ctrl.srcid                      := teInstFeatures.regOut.SrcID.asUInt
   fifo.io.packetEnq <> packetGen.io.packet
-  io.atbm <> fifo.io.atbm
+  // io.atbm <> fifo.io.atbm
+  io.asyncAtbm <> ToAsyncBundle(fifo.io.atbm.at, compAsyncBridge)
 
   /**
    * encoder IO

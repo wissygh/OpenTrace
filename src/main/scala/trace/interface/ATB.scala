@@ -19,13 +19,13 @@ class ATData(dataBeats: Int) extends Bundle with TraceParameters {
 class ATBMaster(dataBeats: Int) extends Bundle {
   // val global  = Input(new ATGlobal)
   val at = DecoupledIO(new ATData(dataBeats))
-  val af = Flipped(DecoupledIO(new Bundle {}))
+  // val af = Flipped(DecoupledIO(new Bundle {}))
   // val syncReq = Input(Bool())
 }
 
 class ATBSlave(dataBeats: Int) extends Bundle {
   // val global  = Input(new ATGlobal)
   val at = Flipped(DecoupledIO(new ATData(dataBeats)))
-  val af = DecoupledIO(new Bundle {})
+  // val af = DecoupledIO(new Bundle {})
   // val syncReq = Output(Bool())
 }

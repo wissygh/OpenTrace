@@ -3,6 +3,7 @@ package trace
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy.AddressSet
+import freechips.rocketchip.util._
 import trace.component.FifoParam
 
 trait TraceParameters {
@@ -177,6 +178,10 @@ trait TraceParameters {
   def funnelAtbDataWidth  = 32
   def encoderAtbDataBeats = encoderAtbDataWidth / 8
   def funnelAtbDataBeats  = funnelAtbDataWidth / 8
+
+  // asyncBridge
+  val ctrlAsyncBridge = AsyncQueueParams.singleton(safe = false) // AsyncQueueParams(depth = 1, sync = 3, safe = false)
+  val compAsyncBridge = AsyncQueueParams(depth = 16, sync = 3, safe = false)
 
 }
 

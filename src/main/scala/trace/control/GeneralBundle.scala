@@ -47,7 +47,7 @@ class RAMControlBundle extends CSRBundle with TraceParameters {
   val Mode       = RAMModeROField(4).withReset(if (supportSRAM) RAMModeROField.SRAM else RAMModeROField.SMEM)
   val StopOnWrap = RW(8)
   val MemFormat  = MemFormatField(10, 9, wNoFilter).withReset(MemFormatField.PlainBytes) // todo: fix
-  val AsyncFreq  = RW(14, 12) // todo: fix
+  val AsyncFreq  = RW(14, 12)                                                            // todo: fix
 }
 
 object RAMModeROField extends CSREnum with ROApply {
