@@ -105,7 +105,6 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
     tl.a.bits  := 0.U.asTypeOf(tl.a.bits)
   }
 
-  io.atbs.af.valid := !RegNext(RegNext(io.atbs.af.valid) && io.atbs.af.fire)
   io.atbs.at.ready := !(ramControl.regOut.StopOnWrap.asBool && fifoIsFull) && ramControl.regOut.Enable.asBool
 
   /**

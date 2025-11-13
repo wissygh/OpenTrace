@@ -5,9 +5,14 @@ import bundles.CSRModule
 import chisel3._
 import chisel3.experimental.hierarchy.public
 import chisel3.util._
+import freechips.rocketchip.amba.axi4._
+import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tilelink._
+import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
 import scala.collection.immutable.SeqMap
+import trace.Bus2Control
 import trace.Control2BusRegBundle
 import trace.TraceParameters
 import trace.control.ControlBase
@@ -17,16 +22,22 @@ import trace.interface.ToCore
 class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
 
   override def shouldBeInlined: Boolean = false
+  val sink     = LazyModule(new TLAsyncCrossingSink(ctrlAsyncBridge))
+  val bus2Ctrl = LazyModule(new Bus2Control(baseAddr))
+
+  bus2Ctrl.tlslavenode := sink.node
+
   lazy val module = new ComponentBaseImp(this)(baseAddr)
 }
 
 class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parameters) extends LazyModuleImp(wrapper)
+    with RequireAsyncReset
     with ControlBase
     with TraceParameters {
 
   val compBaseAddress = baseAddr
 
-  val bus = IO(new Control2BusRegBundle)
+  val bus = wrapper.bus2Ctrl.module.io
 
   /**
    * bus 2 control reg
