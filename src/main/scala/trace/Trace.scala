@@ -38,7 +38,8 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
   val ram        = LazyModule(new SRAM(ramSinkAddr))
   val components: Seq[ComponentBase] = encoderVec.toSeq ++ Seq(funnel, pib, atb, ram)
 
-  val ctrlSources = (0 until components.length).map(i => LazyModule(new CtrlSource))
+  val ctrlSources: Seq[CtrlAsyncSource] = (0 until components.length).map(i => LazyModule(new CtrlAsyncSource)).toSeq
+  val ctrlSinks:   Seq[CtrlAsyncSink]   = components.map(comp => LazyModule(new CtrlAsyncSink(comp.compBaseAddress)))
 
   /**
    * control path:
@@ -51,10 +52,8 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
    *  bus(axi/tl/apb) ----------------> [[bus2ctrl]] ----------------> all component: [[encoderVec]] [[funnel]] [[pib]] [[atb]] [[ram]]
    *             \---- [bus read resp] <----------- [read data] <-------/
    */
-
-  components.zip(ctrlSources).map { case (comp, source) => comp.sink.node := source.sourceNode }
   val tlXbar = LazyModule(new TLXbar())
-  ctrlSources.map(_.sourceNode := tlXbar.node)
+  ctrlSinks.zip(ctrlSources).map { case (sink, source) => sink.sinkNode := source.sourceNode := tlXbar.node }
 
   /**
    * tilelink ctrl
@@ -140,14 +139,20 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
     /**
      * module: [[bus2ctrl]] [[encoderVec]] [[funnel]] [[pib]] [[atb]] [[ram]]
      */
+    val encoderModVec = encoderVec.map(_.module)
+    val funnelMod     = funnel.module
+    val pibMod        = pib.module
+    val atbMod        = atb.module
+    val ramMod        = ram.module
+
     val ctrlSourceMods = ctrlSources.map(_.module)
-    val encoderModVec  = encoderVec.map(_.module)
-    val funnelMod      = funnel.module
-    val pibMod         = pib.module
-    val atbMod         = atb.module
-    val ramMod         = ram.module
+    val ctrlSinkMods   = ctrlSinks.map(_.module)
+    val compMods:         Seq[ComponentBaseImp] = components.map(_.module)
+    val comp_traceDomain: Seq[ComponentBaseImp] = Seq(funnelMod, pibMod, atbMod, ramMod)
 
     encoderModVec.map(encoder => dontTouch(encoder.io))
+
+    compMods.zip(ctrlSinkMods).map { case (comp, sink) => comp.bus <> sink.io.bus }
 
     /**
      * data path(message stream):
@@ -172,31 +177,22 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
     )
 
     /**
-     * write components.control.active
-     * 1. reset: write 0
-     * 2. release: write 1
-     * 3. write other
-    */
-    // components.map { comp =>
-    //   val active = RegEnable(
-    //     comp.module.bus.b2c.dataWrite(0),
-    //     false.B,
-    //     comp.module.bus.b2c.address === (comp.module.compBaseAddress & ctrlMask).U && comp.module.bus.b2c.writeEn
-    //   )
-    //   comp.module.reset := (!active).asAsyncReset
-    // }
-
-    /**
     * clock & reset
     */
     ctrlSourceMods.map(_.clock := io.clock_ctrl)
     ctrlSourceMods.map(_.reset := io.reset_ctrl)
 
-    encoderModVec.foreach(_.clock := io.clock_core)
-    encoderModVec.foreach(_.reset := io.reset_core)
-    val comp_traceDomain: Seq[ComponentBaseImp] = Seq(funnelMod, pibMod, atbMod, ramMod)
-    comp_traceDomain.foreach(_.clock := io.clock_trace)
-    comp_traceDomain.foreach(_.reset := io.reset_trace)
+    ctrlSinkMods.take(hart_num).map(_.clock := io.clock_core)
+    ctrlSinkMods.drop(hart_num).map(_.clock := io.clock_trace)
+    ctrlSinkMods.take(hart_num).map(_.reset := io.reset_core)
+    ctrlSinkMods.drop(hart_num).map(_.reset := io.reset_trace)
+
+    compMods.zip(ctrlSinkMods).map {
+      case (comp, sink) => {
+        comp.clock := sink.clock
+        comp.reset := (!sink.io.active).asAsyncReset
+      }
+    }
   }
 
   lazy val module = new TraceImp(this)

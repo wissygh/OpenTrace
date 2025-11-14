@@ -22,9 +22,9 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
 class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with EncoderControl {
   val io = IO(new Bundle {
-    val fromCore = Input(new FromCore)
-    val toCore   = Output(new ToCore)
-    val hpm      = Option.when(supportHPM)(new Hpm)
+    val fromCore  = Input(new FromCore)
+    val toCore    = Output(new ToCore)
+    val hpm       = Option.when(supportHPM)(new Hpm)
     val asyncAtbm = new AsyncBundle(new ATData(encoderAtbDataBeats), compAsyncBridge)
   })
 

@@ -12,7 +12,6 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
 import scala.collection.immutable.SeqMap
-import trace.Bus2Control
 import trace.Control2BusRegBundle
 import trace.TraceParameters
 import trace.control.ControlBase
@@ -22,12 +21,9 @@ import trace.interface.ToCore
 class ComponentBase(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
 
   override def shouldBeInlined: Boolean = false
-  val sink     = LazyModule(new TLAsyncCrossingSink(ctrlAsyncBridge))
-  val bus2Ctrl = LazyModule(new Bus2Control(baseAddr))
 
-  bus2Ctrl.tlslavenode := sink.node
-
-  lazy val module = new ComponentBaseImp(this)(baseAddr)
+  val compBaseAddress = baseAddr
+  lazy val module     = new ComponentBaseImp(this)(baseAddr)
 }
 
 class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parameters) extends LazyModuleImp(wrapper)
@@ -37,7 +33,7 @@ class ComponentBaseImp(wrapper: ComponentBase)(baseAddr: Int)(implicit p: Parame
 
   val compBaseAddress = baseAddr
 
-  val bus = wrapper.bus2Ctrl.module.io
+  val bus = IO(new Control2BusRegBundle)
 
   /**
    * bus 2 control reg
