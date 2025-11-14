@@ -11,7 +11,7 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
 import utils._
 
-class Bus2ControlBundle extends Bundle with TraceParameters {
+class CtrlAsyncSinkBundle extends Bundle with TraceParameters {
   val address   = UInt(ctrlAddrWidthInner.W)
   val dataWrite = UInt(ctrlDataSize.W)
   //  val dataSize   = UInt(2.W) // 0->32bits, 1->64bits, 2->128bits, 3->256bits todo: support 256 bit mem access
@@ -25,20 +25,21 @@ class Control2BusBundle extends Bundle with TraceParameters {
 }
 
 class Control2BusRegBundle extends Bundle {
-  val b2c = Input(new Bus2ControlBundle)
+  val b2c = Input(new CtrlAsyncSinkBundle)
   val c2b = Output(new Control2BusBundle)
 }
 
-class CtrlSource(implicit p: Parameters) extends LazyModule with TraceParameters {
+class CtrlAsyncSource(implicit p: Parameters) extends LazyModule with TraceParameters {
   val sourceNode = TLAsyncCrossingSource()
 
-  class CtrlSourceImp(wrapper: CtrlSource)(implicit p: Parameters) extends LazyModuleImp(wrapper)
+  class CtrlAsyncSourceImp(wrapper: CtrlAsyncSource)(implicit p: Parameters) extends LazyModuleImp(wrapper)
       with RequireAsyncReset {}
 
-  lazy val module = new CtrlSourceImp(this)
+  lazy val module = new CtrlAsyncSourceImp(this)
 }
 
-class Bus2Control(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
+class CtrlAsyncSink(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
+  val sinkNode = TLAsyncCrossingSink(ctrlAsyncBridge)
   val tlslavenode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     Seq(TLManagerParameters(
       address = Seq(AddressSet(baseAddr, 0xffff)),
@@ -49,9 +50,13 @@ class Bus2Control(baseAddr: Int)(implicit p: Parameters) extends LazyModule with
     )),
     ctrlBeatBytes
   )))
+  tlslavenode := sinkNode
 
-  class Bus2ControlImp(wrapper: Bus2Control)(implicit p: Parameters) extends LazyModuleImp(wrapper) {
-    val io = IO(Flipped(new Control2BusRegBundle))
+  class CtrlAsyncSinkImp(wrapper: CtrlAsyncSink)(implicit p: Parameters) extends LazyModuleImp(wrapper) {
+    val io = IO(new Bundle {
+      val bus    = Flipped(new Control2BusRegBundle)
+      val active = Output(Bool())
+    })
 
     /**
      * bus 2 trace control layer
@@ -65,14 +70,14 @@ class Bus2Control(baseAddr: Int)(implicit p: Parameters) extends LazyModule with
     val dataWrite = aChannel.bits.data
     val writeEn   = aChannel.bits.opcode === TLMessages.PutFullData && aChannel.valid
     val size      = aChannel.bits.size
-    val ackError  = (address(1, 0) =/= 0.U) || io.c2b.error
+    val ackError  = (address(1, 0) =/= 0.U) || io.bus.c2b.error
 
-    io.b2c.address := address
+    io.bus.b2c.address := address
     // bus write
-    io.b2c.writeEn   := writeEn
-    io.b2c.dataWrite := dataWrite
+    io.bus.b2c.writeEn   := writeEn
+    io.bus.b2c.dataWrite := dataWrite
     // bus read, only support 32 bits!
-    io.b2c.readEn := readEn
+    io.bus.b2c.readEn := readEn
 
     dChannel.bits := Mux1H(
       Seq(
@@ -80,14 +85,26 @@ class Bus2Control(baseAddr: Int)(implicit p: Parameters) extends LazyModule with
         writeEn
       ),
       Seq(
-        edge.AccessAck(aChannel.bits, io.c2b.dataRead, ackError, false.B),
+        edge.AccessAck(aChannel.bits, io.bus.c2b.dataRead, ackError, false.B),
         edge.AccessAck(aChannel.bits, ackError)
       )
     )
 
     dChannel.valid := aChannel.valid
     aChannel.ready := true.B
-  }
 
-  lazy val module = new Bus2ControlImp(this)
+    /**
+     * write components.control.active
+     * 1. reset: write 0
+     * 2. release: write 1
+     * 3. write other
+    */
+    val active = RegEnable(
+      io.bus.b2c.dataWrite(0),
+      false.B,
+      io.bus.b2c.address === (baseAddr & ctrlMask).U && io.bus.b2c.writeEn
+    )
+    io.active := active
+  }
+  lazy val module = new CtrlAsyncSinkImp(this)
 }
