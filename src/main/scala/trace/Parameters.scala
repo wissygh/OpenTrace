@@ -205,3 +205,24 @@ object BusType {
   def AXI: BusType = new BusType(1)
   def APB: BusType = new BusType(2)
 }
+
+case class NodeType(
+  nodetype: Int = 0
+) {
+  def isSource    = nodetype == 0
+  def isFunnel  = nodetype == 1
+  def isSink   = nodetype == 2
+  def isOther = nodetype >= 3
+  def NodeName: String = nodetype match {
+    case 0 => "Source"
+    case 1 => "Funnel"
+    case 2 => "Sink"
+    case _: Int => "other"
+  }
+}
+
+object NodeType {
+  def source:  NodeType = new NodeType(0)
+  def funnel: NodeType = new NodeType(1)
+  def sink: NodeType = new NodeType(2)
+}
