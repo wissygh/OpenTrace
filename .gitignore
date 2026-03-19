@@ -45,9 +45,6 @@ test_run_dir/*
 *_usage.xml
 *_xst.xrpt
 
-# todo list
-src/main/scala/todo.md
-
 # project-wide generated files
 *.gise
 par_usage_statistics.html
@@ -138,6 +135,7 @@ local.properties
 # Simple Build Tool
 # http://www.scala-sbt.org/release/docs/Getting-Started/Directories.html#configuring-version-control
 
+delp/
 target/
 lib_managed/
 src_managed/
