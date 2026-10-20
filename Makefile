@@ -25,3 +25,13 @@ check-format:
 
 reformat:
 	mill OpenTrace.reformat
+
+.PHONY: test-trace test-decoder
+
+test-decoder:
+	python3 -m unittest discover -s decoder/tests -v
+
+test-trace:
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.PacketGenSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.MultiHartTraceSpec
+	python3 -m unittest discover -s decoder/tests -v
+	python3 -m decoder.check_rtl_capture build/validation/two-hart-from-core.bin
