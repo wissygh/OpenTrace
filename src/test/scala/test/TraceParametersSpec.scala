@@ -8,6 +8,7 @@ class TraceParametersSpec extends AnyFlatSpec with Matchers {
   it should "accept defaults and reject configurations that cannot preserve the advertised wire geometry" in {
     new TraceParameters {}.validateImplementationParameters()
     new TraceParameters { override def hart_num = 2 }.validateImplementationParameters()
+    new TraceParameters { override def buffer_num = 255 }.validateImplementationParameters()
     val invalid = Seq[() => TraceParameters](
       () => new TraceParameters { override def hart_num = 0 },
       () => new TraceParameters { override def hart_num = 17 },
@@ -24,7 +25,7 @@ class TraceParametersSpec extends AnyFlatSpec with Matchers {
       () => new TraceParameters { override def maxPackets = 32 },
       () => new TraceParameters { override def atbIdWidth = 8 },
       () => new TraceParameters { override def encoderAtbDataWidth = 24 },
-      () => new TraceParameters { override def buffer_num = 255 },
+      () => new TraceParameters { override def buffer_num = 1 },
       () => new TraceParameters { override def buffer_ptr_width = 7 },
       () => new TraceParameters { override def core_stall_response_cycles_p = 5 },
       () => new TraceParameters { override def filter_trap_depth_bits_p = 0 })
