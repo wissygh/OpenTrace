@@ -33,9 +33,9 @@ object ETraceReference {
       (BigInt(0), 1), (BigInt(0), 1), (BigInt(0), 2))))
 
   def trap(source: Int, pc: BigInt, cause: Int, tval: BigInt = 0, interrupt: Boolean = false,
-      handler: Boolean = true, privilege: Int = 3): Seq[Int] = {
+      handler: Boolean = true, privilege: Int = 3, context: BigInt = 0): Seq[Int] = {
     val fields = Seq[(BigInt, Int)]((3, 2), (1, 2), (1, 1), (privilege, 3),
-      (0, 64), (0, 32), (cause, 8), (if (interrupt) 1 else 0, 1),
+      (0, 64), (context, 32), (cause, 8), (if (interrupt) 1 else 0, 1),
       (if (handler) 1 else 0, 1), (pc >> 1, AlignedWidth))
     frame(source, payload(fields ++ (if (interrupt) Seq.empty else Seq((tval, AddressWidth)))))
   }
