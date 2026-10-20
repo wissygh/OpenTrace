@@ -51,6 +51,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
 
   packetGen.io.block := deqFromBlockBuffer
   packetGen.io.syncReq := io.control.syncReq
+  packetGen.io.flushReq := io.control.flushReq
   blockBuffer.io.deqReady := packetGen.io.blockReady
 
   /**
@@ -281,7 +282,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut.asUInt
   fifo.io.packetEnq <> packetGen.io.packet
   io.out <> fifo.io.atbm
-  fifo.io.control.flushReq := io.control.flushReq
+  fifo.io.control.flushReq := io.control.flushReq && packetGen.io.flushAck
   fifo.io.control.syncReq := false.B
   io.control.flushAck := fifo.io.control.flushAck
 
@@ -295,7 +296,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * control reg io
    */
   val fifoIsFull  = fifo.io.ctrl.fifoIsFull
-  val fifoIsEmpty = fifo.io.ctrl.fifoIsEmpty
+  val fifoIsEmpty = fifo.io.ctrl.fifoIsEmpty && packetGen.io.empty
   controlMods.foreach { mod =>
     mod match {
       case m: HasTeInstFeaturesBundle =>

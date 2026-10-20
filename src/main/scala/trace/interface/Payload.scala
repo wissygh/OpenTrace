@@ -70,6 +70,9 @@ class Format2 extends Bundle with TraceParameters {
   val format        = UInt(2.W)
 }
 
+/** Maximum-capacity logical fields. The wire map is 1/3/7/15/31 bits:
+  * use ETracePacketCodec.address rather than serializing this Bundle.asUInt.
+  */
 class Format1WithAddr extends Bundle with TraceParameters {
   // val irdepth       = UInt((return_stack_size_p + call_counter_size_p + (if (return_stack_size_p > 0) 1 else 0)).W)
   // val irreport      = Bool()
@@ -97,12 +100,8 @@ class Format1NoAddr extends Bundle with TraceParameters {
   /**
    * The num of bits of branch_map is determined as followed:
    *  swicth(branches)
-   *    0     : cannot occur
-   *    1     : 1
-   *    2-3   : 3
-   *    4-7   : 7
-   *    8-15  : 15
-   *    16-31 : 31
+   *    0     : 31 bits, with no address
+   *    1-31  : cannot occur in an address-free packet
    */
   val branch_map = UInt(31.W)
   val branches   = UInt(5.W)

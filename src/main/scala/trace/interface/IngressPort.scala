@@ -86,7 +86,7 @@ object Itype extends NamedUInt(4) {
 
   def isNotNone(itype: UInt) = itype =/= None
 
-  def isBranchType(itype: UInt) = itype === Branch
+  def isBranchType(itype: UInt) = itype === NonTaken || itype === Taken
 
   def isBranchTaken(itype: UInt) = itype === Taken
 
