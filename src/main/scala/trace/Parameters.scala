@@ -180,8 +180,8 @@ trait TraceParameters {
   def funnelAtbDataBeats  = funnelAtbDataWidth / 8
 
   // asyncBridge
-  val ctrlAsyncBridge = AsyncQueueParams.singleton(safe = false) // AsyncQueueParams(depth = 1, sync = 3, safe = false)
-  val compAsyncBridge = AsyncQueueParams(depth = 16, sync = 3, safe = false)
+  val ctrlAsyncBridge = AsyncQueueParams.singleton(safe = true)
+  val compAsyncBridge = AsyncQueueParams(depth = 16, sync = 3, safe = true)
 
 }
 

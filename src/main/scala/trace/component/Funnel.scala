@@ -16,17 +16,19 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters)
     extends ComponentBaseImp(wrapper)(baseAddr) with FunnelControl {
   require(encoderAtbDataWidth == funnelAtbDataWidth, "A width adapter is required for unequal stream widths")
   val io = IO(new Bundle {
-    val asyncAtbsVec = Vec(wrapper.numSources,
-      Flipped(new AsyncBundle(new TraceBeat(encoderAtbDataBeats), compAsyncBridge)))
+    val in = Vec(wrapper.numSources, Flipped(Decoupled(new TraceBeat(encoderAtbDataBeats))))
+    val sourceControl = Vec(wrapper.numSources, Flipped(new TraceControl))
     val out = Decoupled(new TraceBeat(funnelAtbDataBeats))
+    val control = new TraceControl
   })
-  val sources = io.asyncAtbsVec.map(FromAsyncBundle(_))
-  val arbiter = Module(new PacketArbiter(wrapper.numSources, encoderAtbDataBeats))
-  sources.zip(arbiter.io.in).foreach { case (source, port) => port <> source }
-  arbiter.io.enable := funnelControl.regOut.Enable.asBool
-  arbiter.io.disable := VecInit((0 until wrapper.numSources).map(i => funnelDisInput.regOut.DisInput.asUInt(i)))
-  io.out <> arbiter.io.out
-  val fifoIsEmpty = arbiter.io.idle && !VecInit(sources.map(_.valid)).asUInt.orR
+  val core = Module(new TraceFunnelCore(wrapper.numSources, encoderAtbDataBeats))
+  core.io.in <> io.in
+  core.io.sourceControl <> io.sourceControl
+  core.io.control <> io.control
+  core.io.enable := funnelControl.regOut.Enable.asBool
+  core.io.disable := VecInit((0 until wrapper.numSources).map(i => funnelDisInput.regOut.DisInput.asUInt(i)))
+  io.out <> core.io.out
+  val fifoIsEmpty = core.io.empty
   val fifoIsFull = false.B
   controlMods.foreach {
     case m: HasCtrlBundle =>

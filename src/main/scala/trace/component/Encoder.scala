@@ -25,7 +25,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val fromCore  = Input(new FromCore)
     val toCore    = Output(new ToCore)
     val hpm       = Option.when(supportHPM)(new Hpm)
-    val asyncAtbm = new AsyncBundle(new TraceBeat(encoderAtbDataBeats), compAsyncBridge)
+    val out = Decoupled(new TraceBeat(encoderAtbDataBeats))
+    val control = new TraceControl
   })
 
   /**
@@ -49,6 +50,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val deqFromBlockBuffer = blockBuffer.io.deqEntry
 
   packetGen.io.block := deqFromBlockBuffer
+  packetGen.io.syncReq := io.control.syncReq
   blockBuffer.io.deqReady := packetGen.io.blockReady
 
   /**
@@ -278,8 +280,10 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   packetGen.io.fromCtrl.teInstFeat        := teInstFeatures.regOut.asUInt
   packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut.asUInt
   fifo.io.packetEnq <> packetGen.io.packet
-  // io.atbm <> fifo.io.atbm
-  io.asyncAtbm <> ToAsyncBundle(fifo.io.atbm, compAsyncBridge)
+  io.out <> fifo.io.atbm
+  fifo.io.control.flushReq := io.control.flushReq
+  fifo.io.control.syncReq := false.B
+  io.control.flushAck := fifo.io.control.flushAck
 
   /**
    * encoder IO

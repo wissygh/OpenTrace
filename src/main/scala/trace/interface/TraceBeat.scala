@@ -15,3 +15,13 @@ class TraceBeat(dataBytes: Int) extends Bundle with TraceParameters {
   val last = Bool()
   val packetBytes = UInt(log2Ceil(maxPackets + 1).W)
 }
+
+/** Internal four-phase flush barrier. Hold req until ack, then wait for ack low.
+  * The producer must hold post-boundary output until req is released.
+  * syncReq is an independent event, not a flush or packet-end indication.
+  */
+class TraceControl extends Bundle {
+  val flushReq = Input(Bool())
+  val flushAck = Output(Bool())
+  val syncReq = Input(Bool())
+}

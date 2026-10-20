@@ -38,6 +38,7 @@ class Fifo(param: FifoParam) extends Module with HasCircularQueuePtrHelper with 
     val ctrl = new CtrlInterface
     val sourceFlushAll = Option.when(!param.isLeaf)(Input(Bool()))
     val atbm = Decoupled(new TraceBeat(outBytes))
+    val control = new TraceControl
   })
 
   val data = Reg(Vec(depth, UInt(8.W)))
@@ -72,7 +73,20 @@ class Fifo(param: FifoParam) extends Module with HasCircularQueuePtrHelper with 
     // Zero unused lanes so a concurrent enqueue cannot change stalled bits.
     beat(i) := Mux(i.U < count, data((readPtr + i.U).value), 0.U)
   }
-  io.atbm.valid := lengths.io.deq.valid
+  val flushing = RegInit(false.B)
+  val oldBytes = RegInit(0.U(log2Ceil(depth + inBytes + 1).W))
+  // Include the packet already offered at the request, even if FIFO is full.
+  when(io.control.flushReq && !flushing) {
+    flushing := true.B
+    oldBytes := used +& Mux(io.packetEnq.valid, io.packetEnq.bits.len, 0.U) -
+      Mux(io.atbm.fire, count, 0.U)
+  }.elsewhen(flushing && io.atbm.fire) {
+    assert(count <= oldBytes)
+    oldBytes := oldBytes - count
+  }
+  when(!io.control.flushReq) { flushing := false.B }
+  io.control.flushAck := reset.asBool || (flushing && oldBytes === 0.U)
+  io.atbm.valid := lengths.io.deq.valid && !(flushing && oldBytes === 0.U)
   io.atbm.bits.data := beat.asUInt
   io.atbm.bits.bytes := count - 1.U
   io.atbm.bits.packetBytes := packetSize

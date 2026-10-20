@@ -2,87 +2,33 @@ package trace.component
 
 import chisel3._
 import chisel3.util._
-import org.chipsalliance.cde.config.Parameters
-import trace.TraceParameters
-import trace.interface._
-import trace.NodeType
 
-
-
-class Flush(node: NodeType) extends Module with TraceParameters {
-
+/** IHI0032C AF handshake, backed by an internal four-phase flush barrier.
+  * A held AFVALID starts another flush after the preceding barrier releases.
+  * Completion can retire even if a downstream reset removed AFVALID.
+  */
+class ATBFlushController extends Module {
   val io = IO(new Bundle {
-    val ctrlDisable = Input(Bool())
-    val flushSelfComp = Input(Bool())
-    val flushState = Output(UInt(2.W))
-    val flushSlave = Option.when(!node.isSource)(DecoupledIO(new Bundle {})) // to source
-    val flushMatser = Option.when(!node.isSink)(Flipped(DecoupledIO(new Bundle {}))) // from sink
+    val request = Input(Bool())
+    val clockEnable = Input(Bool())
+    val available = Input(Bool())
+    val upstreamAck = Input(Bool())
+    val localDone = Input(Bool())
+    val upstreamReq = Output(Bool())
+    val ready = Output(Bool())
+    val active = Output(Bool())
   })
-  /**
-    * state machine
-    */
-
-  val idel :: flushSource :: flushSelf :: flushAll :: Nil = Enum(4)
-  val stateReg = RegInit(idel)
-  val stateNext = WireInit(stateReg)
-
-  if(node.isSource) {
-    switch(stateReg) {
-      is(idel) {
-        when(io.ctrlDisable || io.flushMatser.get.valid) {
-          stateNext := flushSelf
-        }
-      }
-      is(flushSelf) {
-        when(io.flushSelfComp) {
-          stateNext := flushAll
-        }
-      }
-      is(flushAll) {
-        when(io.flushSelfComp) {
-          stateNext := idel
-        }
-      }
-    } 
-  } else if(node.isFunnel) {
-    switch(stateReg) {
-      is(idel) {
-        when(io.ctrlDisable || io.flushMatser.get.valid) {
-          stateNext := flushSource
-        }
-      }
-      is(flushSource) {
-        when(io.flushSlave.get.ready){
-          stateNext := flushSelf
-        }
-      }
-      is(flushSelf) {
-        when(io.flushSelfComp) {
-          stateNext := flushAll
-        }
-      }
-      is(flushAll) { // one cycle
-        when(io.flushSelfComp) {
-          stateNext := idel
-        }
-      }
-    }
-  } else if(node.isSink) {
-    switch(stateReg) {
-      is(idel) {
-        when(io.ctrlDisable || io.flushMatser.get.valid) {
-          stateNext := flushSource
-        }
-      }
-      is(flushSource) {
-        when(io.flushSlave.get.ready){
-          stateNext := flushAll
-        }
-      }
+  val idle :: flushing :: release :: Nil = Enum(3)
+  val state = RegInit(idle)
+  io.upstreamReq := state === flushing
+  io.ready := reset.asBool || (state === idle && !io.available) ||
+    (state === flushing && io.upstreamAck && io.localDone)
+  io.active := state =/= idle
+  when(io.clockEnable) {
+    switch(state) {
+      is(idle) { when(io.request && io.available) { state := flushing } }
+      is(flushing) { when(io.ready) { state := release } }
+      is(release) { when(!io.upstreamAck) { state := idle } }
     }
   }
-
-  io.flushState := stateReg.asUInt
-  io.flushSlave.foreach(_.valid := stateReg === flushSource)
-  io.flushMatser.foreach(_.ready := stateReg === flushAll)
 }

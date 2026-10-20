@@ -21,6 +21,8 @@ class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false) extends Bundle 
   val toCore      = Output(Vec(numHarts, new ToCore))
   val hpm         = Option.when(supportHPM)(Vec(numHarts, new Hpm))
   val atbm = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
+  val clock_atb = Option.when(useAtbSink)(Input(Clock()))
+  val reset_atb_n = Option.when(useAtbSink)(Input(Bool()))
   val clock_core  = Input(Clock())
   val reset_core  = Input(Reset())
   val clock_ctrl  = Input(Clock())
@@ -170,11 +172,32 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
         encoder.io.fromCore := ingressPort
       }
     }
-    // encoderModVec.zip(funnelMod.io.atbsVec).map { case (encoder, atbs) => atbs <> encoder.io.atbm }
-    encoderModVec.zip(funnelMod.io.asyncAtbsVec).map { case (encoder, atbs) => atbs <> encoder.io.asyncAtbm }
+    encoderModVec.zipWithIndex.foreach { case (encoder, i) =>
+      val crossing = Module(new TraceAsyncBridge(new TraceBeat(encoderAtbDataBeats)))
+      crossing.io.sourceClock := io.clock_core
+      crossing.io.sourceReset := encoder.reset.asAsyncReset
+      crossing.io.sinkClock := io.clock_trace
+      crossing.io.sinkReset := funnelMod.reset.asAsyncReset
+      crossing.io.in <> encoder.io.out
+      encoder.io.control <> crossing.io.sourceControl
+      funnelMod.io.in(i) <> crossing.io.out
+      crossing.io.control <> funnelMod.io.sourceControl(i)
+    }
     if (useAtbSink) {
       atbMod.io.in <> funnelMod.io.out
-      io.atbm.get <> atbMod.io.atbm
+      funnelMod.io.control <> atbMod.io.upstream
+      val crossing = Module(new ATBAsyncBridge(funnelAtbDataBeats))
+      crossing.io.sourceClock := io.clock_trace
+      crossing.io.sourceReset := atbMod.reset.asAsyncReset
+      crossing.io.sinkClock := io.clock_atb.get
+      crossing.io.sinkReset := (!io.reset_atb_n.get).asAsyncReset
+      crossing.io.slave.at <> atbMod.io.atbm.at
+      atbMod.io.atbm.af <> crossing.io.slave.af
+      atbMod.io.atbm.syncReq := crossing.io.slave.syncReq
+      crossing.io.slave.wakeup := atbMod.io.atbm.wakeup
+      crossing.io.slave.atclken := true.B
+      atbMod.io.atbm.atclken := true.B
+      io.atbm.get <> crossing.io.master
       ramMod.io.in.valid := false.B
       ramMod.io.in.bits := 0.U.asTypeOf(ramMod.io.in.bits)
     } else {
@@ -182,6 +205,13 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
       atbMod.io.in.valid := false.B
       atbMod.io.in.bits := 0.U.asTypeOf(atbMod.io.in.bits)
       atbMod.io.atbm.at.ready := false.B
+      atbMod.io.atbm.atclken := true.B
+      atbMod.io.atbm.af.valid := false.B
+      atbMod.io.atbm.af.bits := 0.U.asTypeOf(atbMod.io.atbm.af.bits)
+      atbMod.io.atbm.syncReq := false.B
+      atbMod.io.upstream.flushAck := true.B
+      funnelMod.io.control.flushReq := false.B
+      funnelMod.io.control.syncReq := false.B
     }
 
     // hpm

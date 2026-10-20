@@ -24,6 +24,7 @@ class PacketGen extends Module with TraceParameters {
     val blockReady = Output(Bool())
     val fromCtrl = Input(new EncoderCtrlInterface)
     val packet   = DecoupledIO(new PacketEnq(maxPackets))
+    val syncReq = Input(Bool())
   })
 
   private val teCtrl = io.fromCtrl.teCtrl
@@ -83,11 +84,19 @@ class PacketGen extends Module with TraceParameters {
   private val curIsBrh    = Itype.isBranchType(curBlock.itype)
   private val curNotify   = curBlock.trigger === TriggerAction.Notify
 
+  val syncRequested = RegInit(false.B)
+  val forceSync = RegInit(false.B)
+  when(io.syncReq && teCtrl.Enable.asBool && teCtrl.InstTracing.asBool) {
+    syncRequested := true.B
+  }
+  // Do not change a packet already stalled at the output.
+  when(blockReady) { forceSync := syncRequested }
+
   val resyncCnt = RegInit(0.U(20.W))                       // InstSyncMax is 15
   val syncMax   = 1.U << (teCtrl.InstSyncMax.asUInt + 4.U) // only support packet mode
   val resync =
     (!preQualified && curQualified) || prePriv =/= curPriv || (curBlock.ctype === Ctype.AsyncDiscontinuity) ||
-      (resyncCnt > syncMax)
+      (resyncCnt > syncMax) || forceSync
   val excpReported  = RegInit(false.B)
   val lastFullAdder = RegInit(0.U(iaddress_width_p.W))
 
@@ -401,4 +410,8 @@ class PacketGen extends Module with TraceParameters {
   io.packet.valid     := payloadLen =/= 0.U && teCtrl.InstTracing.asBool // todo: add teCtrl.Enable.asBool
   io.packet.bits.len  := payloadLen + 2.U                                // payLoad + srcid + header
   io.packet.bits.data := packet.asUInt.asTypeOf(io.packet.bits.data)
+  when(io.packet.fire && payload(3, 0) === 3.U) {
+    syncRequested := false.B
+    forceSync := false.B
+  }
 }
