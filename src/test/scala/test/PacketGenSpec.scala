@@ -12,7 +12,6 @@ class PacketGenHarness extends Module with TraceParameters {
   val io = IO(new Bundle {
     val block            = Input(new BlockBufferEntry)
     val filterRes        = Input(Bool())
-    val blockBufferIsFull = Input(Bool())
     val fifoIsFull       = Input(Bool())
     val teCtrl           = Input(UInt(32.W))
     val teInstFeat       = Input(UInt(32.W))
@@ -29,7 +28,6 @@ class PacketGenHarness extends Module with TraceParameters {
   val gen  = Module(new PacketGen)
   val ctrl = Wire(new EncoderCtrlInterface)
   ctrl.filterRes         := io.filterRes
-  ctrl.blockBufferIsFull := io.blockBufferIsFull
   ctrl.fifoIsFull        := io.fifoIsFull
   ctrl.teCtrl            := io.teCtrl
   ctrl.teInstFeat        := io.teInstFeat
@@ -55,8 +53,8 @@ class PacketGenSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers
       dut.io.stopReq.poke(false.B)
       dut.io.block.traceOffAfter.poke(false.B)
       dut.io.block.notifyRequested.poke(false.B)
+      dut.io.block.traceLost.poke(false.B)
       dut.io.filterRes.poke(true.B)
-      dut.io.blockBufferIsFull.poke(false.B)
       dut.io.fifoIsFull.poke(false.B)
       dut.io.teCtrl.poke(6.U) // Enable=1, InstTracing=1
       dut.io.teInstFeat.poke(0.U)
@@ -139,8 +137,8 @@ class PacketGenSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers
       d.io.stopReq.poke(false.B)
       d.io.block.traceOffAfter.poke(false.B)
       d.io.block.notifyRequested.poke(false.B)
+      d.io.block.traceLost.poke(false.B)
       d.io.filterRes.poke(true.B)
-      d.io.blockBufferIsFull.poke(false.B)
       d.io.fifoIsFull.poke(false.B)
       d.io.teCtrl.poke(6.U)
       d.io.teInstFeat.poke(0.U)
@@ -189,8 +187,8 @@ class PacketGenSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers
       d.io.stopReq.poke(false.B)
       d.io.block.traceOffAfter.poke(false.B)
       d.io.block.notifyRequested.poke(false.B)
+      d.io.block.traceLost.poke(false.B)
       d.io.filterRes.poke(true.B)
-      d.io.blockBufferIsFull.poke(false.B)
       d.io.fifoIsFull.poke(false.B)
       d.io.teCtrl.poke(0.U)
       d.io.teInstFeat.poke(0.U)

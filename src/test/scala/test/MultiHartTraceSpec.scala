@@ -38,7 +38,6 @@ private class MultiHartTraceHarness extends Module with TraceParameters {
     encoder.io.block := blocks.io.deqEntry
     val control = Wire(new EncoderCtrlInterface)
     control.filterRes := true.B
-    control.blockBufferIsFull := blocks.io.overflow
     control.fifoIsFull := fifo.io.ctrl.fifoIsFull
     control.teCtrl := io.control
     control.teInstFeat := io.features(i)

@@ -54,6 +54,7 @@ class PacketEncodingSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
         d.io.stopReq.poke(false.B)
         d.io.block.traceOffAfter.poke(false.B)
       d.io.block.notifyRequested.poke(false.B)
+      d.io.block.traceLost.poke(false.B)
       }
       def send(blocks: Seq[Block]): Unit = blocks.foreach { block =>
         drive(block)
@@ -71,7 +72,6 @@ class PacketEncodingSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
         packets.clear(); held = None; cycles = 0
         d.io.syncReq.poke(false.B)
         d.io.filterRes.poke(true.B)
-        d.io.blockBufferIsFull.poke(false.B)
         d.io.fifoIsFull.poke(false.B)
         d.io.teCtrl.poke(0.U)
         d.io.teInstFeat.poke(((source << 16) | (if (fullAddress) 1 else 0)).U)

@@ -1,7 +1,7 @@
-"""Compare a real PacketGen capture with the retirement prefix through its last anchor.
+"""Check real RTL captures against retained retirement PCs.
 
-The final RTL input at 0xff4 supplies lookahead; it is beyond that anchor and is
-not included in the expected decoded prefix. This is not a trace-end test.
+The baseline capture covers an anchored prefix; lifecycle captures complete
+stopped segments, and loss captures contain only the retained instructions.
 """
 import json
 from pathlib import Path
@@ -31,7 +31,12 @@ def main(directory, stem='packetgen-execution'):
         ends = [e for e in events if e['kind'] == 'support' and e['qual_status'] == 1 and not e['ienable']]
         if len(ends) != 2 or not decoder.decoders[3].start_of_trace:
             raise SystemExit('lifecycle capture did not finish two disabled trace segments')
-    extent = '全部退休指令' if stem == 'packetgen-lifecycle' else '至最后 trace 锚点的退休前缀'
+    if stem == 'packetgen-loss':
+        lost = [e for e in events if e['kind'] == 'support' and e['qual_status'] == 2]
+        sync = [e for e in events if e['kind'] == 'instruction' and e['pc'] == 0x3000]
+        if len(lost) != 1 or len(sync) != 1 or not decoder.decoders[3].start_of_trace:
+            raise SystemExit('loss capture did not report one gap and finish the recovered segment')
+    extent = '保留下来的全部退休指令' if stem == 'packetgen-loss' else '全部退休指令' if stem == 'packetgen-lifecycle' else '至最后 trace 锚点的退休前缀'
     print(f'[encoder->decoder][3/3] {len(actual)} 条指令与{extent}逐条一致：' +
           ', '.join(f'0x{pc:x}' for pc in actual), file=sys.stderr)
     print(f'{stem} capture decoded successfully: {len(actual)} instructions')

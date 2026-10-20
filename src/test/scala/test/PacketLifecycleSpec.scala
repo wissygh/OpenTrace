@@ -39,7 +39,6 @@ private class PacketLifecycleHarness extends Module with TraceParameters {
   encoder.io.syncReq := false.B
   encoder.io.flushReq := false.B
   encoder.io.fromCtrl.filterRes := io.filter
-  encoder.io.fromCtrl.blockBufferIsFull := false.B
   encoder.io.fromCtrl.fifoIsFull := false.B
   encoder.io.fromCtrl.teCtrl := control.regOut
   encoder.io.fromCtrl.teInstFeat := io.features
@@ -106,6 +105,7 @@ class PacketLifecycleSpec extends AnyFlatSpec with ChiselScalatestTester with Ma
         d.io.block.iretire.poke(0.U); d.io.block.ilastsize.poke(Ilastsize.HalfWord)
         d.io.block.trigger.poke(TriggerAction.None); d.io.block.traceOffAfter.poke(false.B)
         d.io.block.notifyRequested.poke(false.B)
+      d.io.block.traceLost.poke(false.B)
         d.io.block.priv.poke(Priv.M); d.io.block.time.poke(0.U); d.io.block.context.poke(0.U)
         d.io.block.ctype.poke(Ctype.None); d.io.block.cause.poke(0.U); d.io.block.tval.poke(0.U)
         d.io.block.impdef.poke(0.U); d.io.block.hartIsReset.poke(false.B)
