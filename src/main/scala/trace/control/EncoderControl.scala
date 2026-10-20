@@ -282,7 +282,7 @@ class TeInstFiltersBundle extends CSRBundle with TraceParameters {
 
 object FiltersIndexField extends CSREnum with WARLApply {
   val None = Value(0.U)
-  override def isLegal(enumeration: CSREnumType): Bool = PopCount(enumeration.asUInt) <= 1.U
+  override def isLegal(enumeration: CSREnumType): Bool = true.B // filter selection is a bit mask
 }
 
 /**
@@ -345,8 +345,8 @@ class TeFilterControlBundle extends CSRBundle {
   val MatchComp3     = RW(12).withReset(0.U)
   val Comp3          = CompField(15, 13, wNoFilter).withReset(CompField.Zero)
   val MatchImpdef    = RW(16).withReset(0.U) // trTeFilterMatchValueImpdef & trTeFilterMatchMaskImpdef
-  val MatchDtype     = RW(24).withReset(0.U) // TeFilterMatchData.MatchChoiceDtype
-  val MatchDSize     = RW(25).withReset(0.U) // TeFilterMatchData.MatchChoiceDsize
+  val MatchDtype     = RO(24).withReset(0.U) // TeFilterMatchData.MatchChoiceDtype
+  val MatchDSize     = RO(25).withReset(0.U) // TeFilterMatchData.MatchChoiceDsize
 }
 
 class TeFilterMatchInstBundle extends CSRBundle {
@@ -354,14 +354,14 @@ class TeFilterMatchInstBundle extends CSRBundle {
   val MatchValueInterrupt  = MatchExpInt(8, wNoFilter).withReset(MatchExpInt.Exception)
 }
 
-object MatchPriv extends CSREnum with WARLApply { // 1h, F**king riscv trace spec
+object MatchPriv extends CSREnum with WARLApply { // any combination of implemented privilege bits
   val HU = Value(1.U)
   val HS = Value(2.U)
   val M  = Value(8.U)
   val D  = Value(16.U)
   val VU = Value(32.U)
   val VS = Value(64.U)
-  override def isLegal(enumeration: CSREnumType): Bool = enumeration.isOneOf(HU, HS, M, D, VU, VS)
+  override def isLegal(enumeration: CSREnumType): Bool = !(enumeration.asUInt & "h84".U).orR
 }
 
 object MatchExpInt extends CSREnum with WARLApply {
@@ -375,8 +375,8 @@ object CompField extends CSREnum with WARLApply with TraceParameters {
 }
 
 class TeFilterMatchDataBundle extends CSRBundle {
-  val MatchChoiceDtype = MatchDtype(15, 0, wNoFilter).withReset(MatchDtype.Load)
-  val MatchChoiceDsize = MatchDsize(23, 16, wNoFilter).withReset(MatchDsize.B_1)
+  val MatchChoiceDtype = RO(15, 0).withReset(0.U)
+  val MatchChoiceDsize = RO(23, 16).withReset(0.U)
 }
 
 object MatchDtype extends CSREnum with WARLApply { // 1h, F**king riscv trace spec

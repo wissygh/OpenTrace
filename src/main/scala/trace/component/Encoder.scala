@@ -110,6 +110,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   }
   packetGen.io.block.notifyRequested := block.notifyRequested || compNotifyVec.asUInt.orR
 
+  val filterEnableVec = Wire(Vec(filter_num, Bool()))
   val privMatchVec   = Wire(Vec(filter_num, Bool()))
   val ecauseMatchVec = Wire(Vec(filter_num, Bool()))
   val intExpMatchVec = Wire(Vec(filter_num, Bool()))
@@ -132,16 +133,17 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     ecauseReg := teFilterMatchEcauseHighVec(i).rdata ## teFilterMatchEcauseLowVec(i).rdata
     dataReg   := teFilterMatchDataVec(i).rdata
 
+    filterEnableVec(i) := ctrlReg.Enable.asBool
     privMatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchPrivilege.asBool,
-      instReg.MatchChoicePrivilege.asUInt === UIntToOH(block.priv),
+      TraceFilterLogic.privilege(instReg.MatchChoicePrivilege.asUInt, block.priv),
       true.B
     )
 
     // todo: Add count to hand nested trap.
     ecauseMatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchEcause.asBool,
-      ecauseReg === UIntToOH(block.cause),
+      TraceFilterLogic.cause(ecauseReg, block.cause),
       true.B
     )
 
@@ -187,9 +189,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     comp3MatchVec,
     impdefMatchVec
   ).map(_.asUInt).reduce(_ & _)
-  val filter1H = teInstFilters.regOut.InstFilters.asUInt
-
-  val filterRes = Mux(filter1H.orR, Mux1H(filter1H, allFiltersMatchVec), true.B)
+  val filterSelection = teInstFilters.regOut.InstFilters.asUInt
+  val filterRes = TraceFilterLogic.selected(filterSelection, filterEnableVec.asUInt, allFiltersMatchVec)
 
   /**
    * filters match_end
