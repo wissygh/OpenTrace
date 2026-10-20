@@ -30,7 +30,7 @@ reformat:
 
 test-encoder:
 	@echo "[encoder-golden] 1/3 独立位布局、CSR 生命周期与实际 PacketGen 对拍"
-	mill -i OpenTrace.test.testOnly trace.component.ETraceCodecSpec trace.component.PacketGenSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceLossSpec
+	mill -i OpenTrace.test.testOnly trace.component.ETraceCodecSpec trace.component.PacketGenSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceComparatorSpec trace.component.TraceLossSpec
 	@echo "[encoder-golden] 2/3 实际 RTL 捕获交给 decoder，比较退休 PC 前缀"
 	python3 -m decoder.tests.check_packetgen_capture build/validation
 	@echo "[encoder-golden] 3/3 完整停止/重启捕获，比较全部退休指令"
@@ -45,7 +45,7 @@ test-atb:
 
 test-control:
 	@echo "[control-test] Active/CSR 响应反压、复位恢复与能力发现"
-	mill -i OpenTrace.test.testOnly trace.control.TraceControlEndpointSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec
+	mill -i OpenTrace.test.testOnly trace.control.TraceControlEndpointSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceComparatorSpec
 
 test-decoder:
 	@echo "[trace-test] Python decoder 单元测试开始：encapsulation / multihart / execution"
@@ -53,7 +53,7 @@ test-decoder:
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.control.TraceControlEndpointSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceComparatorSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.control.TraceControlEndpointSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核启动 RTL->decoder 联动检查"
