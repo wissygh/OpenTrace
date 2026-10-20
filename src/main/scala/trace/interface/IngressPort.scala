@@ -47,6 +47,8 @@ class BlockBufferEntry extends Bundle with TraceParameters {
   val impdef      = UInt(ImpdefWidth.W)
   val hartIsReset = Bool()
   val trigger = UInt(2.W) // 0: None, 1: traceOn, 2: traceOff, 3: notify don't support notify when trace on/off cycle
+  val traceOffAfter = Bool() // simultaneous trace-on/off: trace this entire block, then stop
+  val notifyRequested = Bool() // notification is independent of trace-on/off actions
   // group signals of a block
   val valid     = Bool()
   val iaddr     = UInt(IaddrWidth.W)

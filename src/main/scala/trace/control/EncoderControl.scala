@@ -10,29 +10,29 @@ import chisel3.util._
 import trace.TraceParameters
 import trace.component.EncoderImp
 
+class EncoderTraceControlRegister extends CSRModule("TeControl", new TeControlBundle)
+    with HasTeCtrlBundle with HasCtrlBundle {
+  regOut.Active := !reset.asBool
+
+  when(wen) {
+    reg.InstTracing := wdata.InstTracing && wdata.Enable
+  }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
+    // Projected trace-on qualifies the current group; trace-off wins after it.
+    reg.InstTracing := traceOn && !traceOff
+  }
+
+  when(wen && (wdata.Enable || wdata.InstStallOrOverflow)) {
+    reg.InstStallOrOverflow := false.B
+  }.elsewhen(fifoIsFull) {
+    reg.InstStallOrOverflow := fifoIsFull
+  }
+
+  regOut.Emptry := fifoIsEmpty
+}
+
 trait EncoderControl extends ControlBase { self: EncoderImp =>
 
-  val teControl = Module(new CSRModule("TeControl", new TeControlBundle) with HasTeCtrlBundle with HasCtrlBundle {
-    regOut.Active := !reset.asBool
-
-    when(wen) {
-      reg.InstTracing := wdata.InstTracing && wdata.Enable
-    }.elsewhen((traceOn || traceOff) & reg.InstTrigEnable.asBool & reg.Enable.asBool) {
-      reg.InstTracing := Mux1H(
-        Seq(traceOn, traceOff),
-        Seq(true.B, false.B)
-      )
-    }
-
-    when(wen && (wdata.Enable || wdata.InstStallOrOverflow)) {
-      reg.InstStallOrOverflow := false.B
-    }.elsewhen(fifoIsFull) {
-      reg.InstStallOrOverflow := fifoIsFull
-    }
-
-    reg.Emptry := fifoIsEmpty
-  })
-    .setAddr(CtrlReg.TeControl)
+  val teControl = Module(new EncoderTraceControlRegister).setAddr(CtrlReg.TeControl)
 
   val teImpl = Module(new CSRModule("TeImpl", new TeImplBundle))
     .setAddr(CtrlReg.TeImpl)

@@ -48,7 +48,11 @@ abstract class CSRBundle extends Bundle {
     val init = Wire(this)
     suppressEnumCastWarning {
       init.elements.foreach { case (str, field: CSREnumType) =>
-        field := (if (field.init != null) field.factory(field.init.asUInt) else field.factory(0.U))
+        // Enum reset literals may have been declared before the factory gained
+        // its final width. Size them now so async-reset registers see literals,
+        // rather than a pad operation rejected by FIRRTL reset checks.
+        val value = if (field.init != null) field.init.litValue else BigInt(0)
+        field := field.factory(value.U(field.getWidth.W))
       }
     }
     init.asInstanceOf[this.type]

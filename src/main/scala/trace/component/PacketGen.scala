@@ -26,9 +26,37 @@ class PacketGen extends Module with TraceParameters {
     val flushReq = Input(Bool())
     val flushAck = Output(Bool())
     val empty = Output(Bool())
+    val stopReq = Input(Bool())
   })
   val control = io.fromCtrl.teCtrl
-  val running = control.Enable.asBool && control.InstTracing.asBool
+  val configuredOptions = Cat(io.fromCtrl.teInstFeat.NoAddrDiff.asBool,
+    io.fromCtrl.teInstFeat.EnJumpTargetCache.asBool, io.fromCtrl.teInstFeat.EnBranchPred.asBool,
+    io.fromCtrl.teInstFeat.NoTrapDiff.asBool, io.fromCtrl.teInstFeat.EnImRet.asBool,
+    io.fromCtrl.teInstFeat.EnSiJump.asBool)
+  val projectedTraceOn = io.block.valid && io.block.trigger === TriggerAction.TraceOn &&
+    control.Enable.asBool && control.InstTrigEnable.asBool
+  val metadataOnly = io.block.iretire === 0.U && !Itype.isTrap(io.block.itype)
+  val projectedTraceOff = io.block.valid && metadataOnly &&
+    (io.block.trigger === TriggerAction.TraceOff || io.block.traceOffAfter) &&
+    control.Enable.asBool && control.InstTrigEnable.asBool
+  val requestedTracing = control.Enable.asBool && !projectedTraceOff &&
+    (control.InstTracing.asBool || projectedTraceOn)
+  val requestedConfig = Cat(control.Enable.asBool, requestedTracing, configuredOptions)
+  val activeConfig = RegInit(0.U(8.W))
+  val running = activeConfig(7) && activeConfig(6)
+  val configurationChanged = requestedConfig =/= activeConfig
+  val configPending = RegInit(false.B)
+  val pendingConfig = Reg(UInt(8.W))
+  when(configurationChanged && !configPending) {
+    configPending := true.B
+    pendingConfig := requestedConfig
+  }
+  val nextConfig = Mux(configPending, pendingConfig, requestedConfig)
+  val stopPending = RegInit(false.B)
+  when(io.stopReq && !RegNext(io.stopReq, false.B)) { stopPending := true.B }
+  val endPending = RegInit(false.B)
+  val endingConfig = Reg(UInt(8.W))
+  val endingChangesConfig = RegInit(false.B)
   val generated = Wire(Decoupled(new PacketEnq(maxPackets)))
   val output = Module(new Queue(new PacketEnq(maxPackets), 1, pipe = true))
   output.io.enq <> generated
@@ -47,10 +75,8 @@ class PacketGen extends Module with TraceParameters {
   }
   when(!io.flushReq) { flushing := false.B; oldPending := false.B }
   io.flushAck := reset.asBool || (flushing && !oldPending && !output.io.deq.valid)
-  io.empty := !output.io.deq.valid && !generated.valid
-  val enableRise = control.Enable.asBool && !RegNext(control.Enable.asBool, false.B)
-  val supportPending = RegInit(false.B)
-  when(enableRise) { supportPending := true.B }
+  io.empty := !output.io.deq.valid && !generated.valid && !configPending &&
+    !configurationChanged && !endPending && !stopPending
   val cur = RegInit(0.U.asTypeOf(new BlockBufferEntry))
   val previous = RegInit(0.U.asTypeOf(new BlockBufferEntry))
   val qualified = RegInit(false.B)
@@ -64,19 +90,23 @@ class PacketGen extends Module with TraceParameters {
     cur.iretire > lastHalfwords && !tail
   val address = Mux(tail, lastPC, cur.iaddr)
   val kind = Mux(firstOfMulti, Itype.None, cur.itype)
-  val curNotify = !firstOfMulti && cur.trigger === TriggerAction.Notify
+  val curNotify = !firstOfMulti && (cur.trigger === TriggerAction.Notify || cur.notifyRequested)
   val branch = qualified && Itype.isBranchType(kind)
   val taken = Itype.isBranchTaken(kind)
-  val hasNext = firstOfMulti || io.block.valid
-  val nextQualifiedInput = running && io.fromCtrl.filterRes && !io.block.hartIsReset && io.block.priv =/= Priv.D
+  val closing = configPending || configurationChanged || stopPending || io.stopReq
+  val hasNext = firstOfMulti || io.block.valid || closing
+  val nextQualifiedInput = running && !closing && io.fromCtrl.filterRes &&
+    !metadataOnly && !io.stopReq && !io.block.hartIsReset && io.block.priv =/= Priv.D
   val nextQualified = Mux(firstOfMulti, qualified, nextQualifiedInput)
   val nextTrap = !firstOfMulti && Itype.isTrap(io.block.itype)
   val nextBoundary = !firstOfMulti && (cur.priv =/= io.block.priv ||
     io.block.ctype === Ctype.Precisely || io.block.ctype === Ctype.AsyncDiscontinuity)
-  val previousTrap = !tail && Itype.isTrap(previous.itype)
-  val previousJump = !tail && (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
-  io.blockReady := canAdvance && !firstOfMulti && !supportPending
-  val step = hasNext && canAdvance && !supportPending
+  val previousTrap = previousQualified && !tail && Itype.isTrap(previous.itype)
+  val previousJump = previousQualified && !tail && (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
+  val endCurrent = cur.valid && qualified && !firstOfMulti && (closing || (io.block.valid && !nextQualifiedInput))
+  val supportWanted = endPending || ((!cur.valid || !qualified) && (configPending || configurationChanged))
+  io.blockReady := canAdvance && !firstOfMulti && !supportWanted && (!closing || !qualified) && !endCurrent
+  val step = cur.valid && hasNext && canAdvance && !supportWanted
   when(step) { tail := firstOfMulti }
   when(io.block.valid && io.blockReady) {
     cur := io.block
@@ -107,7 +137,10 @@ class PacketGen extends Module with TraceParameters {
   val syncPacket = WireDefault(false.B)
   val carriesAddress = WireDefault(false.B)
   val reportedAddress = WireDefault(address)
-  val startupSupport = WireDefault(false.B)
+  val supportPacket = WireDefault(false.B)
+  val supportChangesConfig = WireDefault(false.B)
+  val supportConfig = WireDefault(activeConfig)
+  val finishesCurrent = WireDefault(false.B)
 
   def emitPayload(value: UInt): Unit = {
     payload := ETracePacketCodec.extend(value, payload_max_width)
@@ -147,7 +180,7 @@ class PacketGen extends Module with TraceParameters {
   }
   def addressPacket(requestedNotify: Bool, beforeSync: Bool): Unit = {
     val delta = Wire(UInt(iaddress_width_p.W))
-    delta := Mux(io.fromCtrl.teInstFeat.NoAddrDiff.asBool, address, address - reference)
+    delta := Mux(activeConfig(5), address, address - reference)
     payload := ETracePacketCodec.address(count(4, 0), map(30, 0),
       delta(iaddress_width_p - 1, iaddress_lsb_p), requestedNotify, beforeSync, payload_max_width)
     emit := true.B
@@ -155,7 +188,7 @@ class PacketGen extends Module with TraceParameters {
     carriesAddress := true.B
   }
 
-  when(cur.valid && hasNext && qualified && running && !supportPending) {
+  when(cur.valid && hasNext && qualified && running && !supportWanted) {
     when(previousTrap) {
       when(Itype.isTrap(kind)) {
         trap(previous.cause, Itype.isInt(previous.itype), previous.tval, false.B)
@@ -174,8 +207,8 @@ class PacketGen extends Module with TraceParameters {
     }.elsewhen(syncRequired && branchCount === 0.U) {
       synchronization()
     }.elsewhen(previousJump) {
-      addressPacket(false.B, nextTrap || nextBoundary || syncRequired)
-    }.elsewhen(curNotify || nextTrap || nextBoundary || !nextQualified || syncRequired) {
+      addressPacket(false.B, nextTrap || nextBoundary || syncRequired || endCurrent)
+    }.elsewhen(curNotify || nextTrap || nextBoundary || !nextQualified || syncRequired || endCurrent) {
       // If history is pending, flush it with an address before the next sync.
       addressPacket(curNotify, false.B)
     }.elsewhen(count === 31.U) {
@@ -191,30 +224,27 @@ class PacketGen extends Module with TraceParameters {
       packet.context.foreach(_ := cur.context)
       emitPayload(packet.asUInt)
     }
-  }.otherwise {
-    // Full enable/trace-end/configuration lifecycle remains a separate task.
-    val qualificationEnd = previousQualified && !qualified && cur.valid && hasNext
-    val lost = io.fromCtrl.blockBufferIsFull
-    when(supportPending || qualificationEnd || lost) {
+    finishesCurrent := endCurrent
+  }.elsewhen(supportWanted) {
+      supportConfig := Mux(endPending, endingConfig, nextConfig)
+      supportChangesConfig := Mux(endPending, endingChangesConfig, true.B)
       val packet = Wire(new Format33)
       packet.format := 3.U
       packet.subformat := 3.U
-      packet.ienable := control.InstTracing.asBool
+      packet.ienable := supportConfig(7) && supportConfig(6)
       packet.encoder_mode := 0.U
-      packet.qual_status := Mux(lost, QualStatus.Trace_lost,
-        Mux(qualificationEnd, QualStatus.Ended_req, QualStatus.No_change))
-      packet.sijump := io.fromCtrl.teInstFeat.EnSiJump.asBool
-      packet.imRet := io.fromCtrl.teInstFeat.EnImRet.asBool
-      packet.imExp := io.fromCtrl.teInstFeat.NoTrapDiff.asBool
-      packet.branchPred := io.fromCtrl.teInstFeat.EnBranchPred.asBool
-      packet.jumpCache := io.fromCtrl.teInstFeat.EnJumpTargetCache.asBool
-      packet.fullAddr := io.fromCtrl.teInstFeat.NoAddrDiff.asBool
-      packet.denable := io.fromCtrl.teDataCtrl.DataImplemented.asBool && io.fromCtrl.teDataCtrl.DataTracing.asBool
+      packet.qual_status := Mux(endPending, QualStatus.Ended_req, QualStatus.No_change)
+      packet.sijump := supportConfig(0)
+      packet.imRet := supportConfig(1)
+      packet.imExp := supportConfig(2)
+      packet.branchPred := supportConfig(3)
+      packet.jumpCache := supportConfig(4)
+      packet.fullAddr := supportConfig(5)
+      packet.denable := false.B
       packet.dloss := false.B
       packet.doptions := 0.U
       emitPayload(packet.asUInt)
-      startupSupport := supportPending
-    }
+      supportPacket := true.B
   }
 
   when(step && cur.valid) {
@@ -228,7 +258,24 @@ class PacketGen extends Module with TraceParameters {
     }
   }
   when(generated.fire) {
-    when(startupSupport) { supportPending := false.B }
+    when(finishesCurrent) {
+      cur.valid := false.B
+      qualified := false.B
+      previousQualified := false.B
+      tail := false.B
+      endPending := true.B
+      endingConfig := Mux(configPending || configurationChanged, nextConfig, activeConfig)
+      endingChangesConfig := configPending || configurationChanged
+    }
+    when(supportPacket) {
+      activeConfig := supportConfig
+      when(supportChangesConfig) { configPending := false.B }
+      endPending := false.B
+      stopPending := false.B
+      previousQualified := false.B
+      branchMap := 0.U
+      branchCount := 0.U
+    }
     when(carriesAddress) { reference := reportedAddress }
     when(syncPacket) {
       resyncCount := 0.U
@@ -241,5 +288,6 @@ class PacketGen extends Module with TraceParameters {
   val source = Wire(UInt(src_bits_p.W))
   source := io.fromCtrl.teInstFeat.SrcID.asUInt
   generated.bits := ETracePacketCodec.encapsulate(payload, source, maxPackets)
-  generated.valid := mayGenerate && emit && control.Enable.asBool && (startupSupport || control.InstTracing.asBool)
+  generated.valid := mayGenerate && emit
+  when(stopPending && (!cur.valid || !qualified) && !endPending) { stopPending := false.B }
 }

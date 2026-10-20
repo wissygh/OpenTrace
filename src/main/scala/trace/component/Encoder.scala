@@ -45,13 +45,23 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val fifo        = Module(new Fifo(fifoParam))
 
   // connection
+  val ingressEnabled = teControl.regOut.Enable.asBool &&
+    (teControl.regOut.InstTracing.asBool || teControl.regOut.InstTrigEnable.asBool)
   blockBuffer.io.fromCore := io.fromCore
+  blockBuffer.io.fromCore.blocks.zip(io.fromCore.blocks).foreach { case (buffered, incoming) =>
+    buffered.valid := incoming.valid && ingressEnabled
+  }
+  blockBuffer.io.fromCore.trigger.traceOn := io.fromCore.trigger.traceOn &&
+    teControl.regOut.Enable.asBool && teControl.regOut.InstTrigEnable.asBool
+  blockBuffer.io.fromCore.trigger.traceOff := io.fromCore.trigger.traceOff &&
+    teControl.regOut.Enable.asBool && teControl.regOut.InstTrigEnable.asBool
   val blockBufferIsFull  = blockBuffer.io.bufferIsFull
   val deqFromBlockBuffer = blockBuffer.io.deqEntry
 
   packetGen.io.block := deqFromBlockBuffer
   packetGen.io.syncReq := io.control.syncReq
   packetGen.io.flushReq := io.control.flushReq
+  packetGen.io.stopReq := io.fromCore.hartIsReset || io.fromCore.priv === Priv.D
   blockBuffer.io.deqReady := packetGen.io.blockReady
 
   /**
@@ -77,7 +87,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * todo: data trace match
    */
   val block         = deqFromBlockBuffer
-  val triggerNotify = block.trigger === TriggerAction.Notify
+  val triggerNotify = block.trigger === TriggerAction.Notify || block.notifyRequested
 
   val compMatchVec = Wire(Vec(comparator_num, Bool()))
 
@@ -248,8 +258,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
 
   // todo：remove following two lines
-  val stallHart       = (blockBufferIsFull || fifo.io.ctrl.fifoIsFull) && teControl.regOut.InstStallEna.asBool
-  val instTraceEnable = teControl.regOut.InstTracing.asBool
+  val stallHart = ingressEnabled && (blockBufferIsFull || fifo.io.ctrl.fifoIsFull) &&
+    teControl.regOut.InstStallEna.asBool
+  val instTraceEnable = ingressEnabled
 
   /**
    * hpm
@@ -277,9 +288,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   packetGen.io.fromCtrl.filterRes         := filterRes
   packetGen.io.fromCtrl.blockBufferIsFull := blockBuffer.io.overflow
   packetGen.io.fromCtrl.fifoIsFull        := fifo.io.ctrl.fifoIsFull
-  packetGen.io.fromCtrl.teCtrl            := teControl.regOut.asUInt
-  packetGen.io.fromCtrl.teInstFeat        := teInstFeatures.regOut.asUInt
-  packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut.asUInt
+  packetGen.io.fromCtrl.teCtrl            := teControl.regOut
+  packetGen.io.fromCtrl.teInstFeat        := teInstFeatures.regOut
+  packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut
   fifo.io.packetEnq <> packetGen.io.packet
   io.out <> fifo.io.atbm
   fifo.io.control.flushReq := io.control.flushReq && packetGen.io.flushAck
@@ -305,8 +316,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     }
     mod match {
       case m: HasTeCtrlBundle => // trace all blocks of "traceOn or traceOff cycle"
-        m.traceOn  := block.trigger === TriggerAction.TraceOn
-        m.traceOff := block.trigger === RegNext(TriggerAction.TraceOff)
+        m.traceOn  := block.valid && packetGen.io.blockReady && block.trigger === TriggerAction.TraceOn
+        m.traceOff := block.valid && packetGen.io.blockReady &&
+          (block.trigger === TriggerAction.TraceOff || block.traceOffAfter)
       case _ =>
     }
     mod match {
