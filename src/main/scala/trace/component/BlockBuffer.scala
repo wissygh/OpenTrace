@@ -18,6 +18,7 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
     val deqReady     = Input(Bool())
     val bufferIsFull = Output(Bool())
     val overflow     = Output(Bool())
+    val empty        = Output(Bool())
     val deqEntry     = Output(new BlockBufferEntry)
   })
 
@@ -76,12 +77,33 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   val enqCount = Mux(metadataOnly, 1.U, PopCount(needPcVec.asUInt))
   val freeEntries = hasFreeEntries(enqPtr, deqPtr)
   val canEnq = enqCount <= freeEntries
-  enqPtrNext := Mux(canEnq, enqPtr + enqCount, enqPtr)
+  // Stop admitting post-gap data until an ordered marker has been written at
+  // the old tail. Keep draining all previously accepted entries normally.
+  val lossPending = RegInit(false.B)
+  val lostTrigger = RegInit(TriggerAction.None)
+  val incomingTrigger = Mux(io.fromCore.trigger.traceOff, TriggerAction.TraceOff,
+    Mux(io.fromCore.trigger.traceOn, TriggerAction.TraceOn, TriggerAction.None))
+  val markerTrigger = Mux(incomingTrigger =/= TriggerAction.None, incomingTrigger, lostTrigger)
+  val insertMarker = lossPending && freeEntries =/= 0.U
+  val admit = !lossPending && canEnq
+  val dropped = enqCount =/= 0.U && !admit
+  when(dropped && !lossPending) { lossPending := true.B }
+  when(dropped) { lostTrigger := markerTrigger }
+  when(insertMarker) {
+    val marker = WireInit(0.U.asTypeOf(new BlockBufferEntry))
+    marker.valid := true.B
+    marker.traceLost := true.B
+    marker.trigger := markerTrigger
+    fifo(enqPtr.value) := marker
+    lossPending := false.B
+    lostTrigger := TriggerAction.None
+  }
+  enqPtrNext := Mux(insertMarker, enqPtr + 1.U, Mux(admit, enqPtr + enqCount, enqPtr))
   deqPtrNext := deqPtr + Mux(io.deqReady && !fifoIsEmpty, 1.U, 0.U)
 
   // enqueue
   for (i <- 0 until BlockNum) {
-    when(canEnq && i.U < enqCount) {
+    when(admit && i.U < enqCount) {
       fifo((enqPtr + i.U).value) := {
         val entry = Wire(new BlockBufferEntry)
         entry.priv        := enq.priv
@@ -100,6 +122,7 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
         )
         entry.traceOffAfter := enq.trigger.traceOn && enq.trigger.traceOff && enqCount === 1.U
         entry.notifyRequested := !metadataOnly && enq.blocks(i).bits.trigNotify
+        entry.traceLost := false.B
         entry.valid     := true.B
         entry.iaddr     := Mux(metadataOnly, 0.U, enq.blocks(i).bits.iaddr)
         entry.itype     := Mux(metadataOnly, Itype.None, enq.blocks(i).bits.itype)
@@ -112,8 +135,9 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
 
   // dequeue
   io.deqEntry     := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
-  io.bufferIsFull := freeEntries < BlockNum.U
-  io.overflow := !canEnq && enqCount =/= 0.U
+  io.bufferIsFull := lossPending || freeEntries < BlockNum.U
+  io.overflow := dropped
+  io.empty := fifoIsEmpty && !lossPending
 }
 
 class BlockPtr(entries: Int) extends CircularQueuePtr[BlockPtr](entries) {}

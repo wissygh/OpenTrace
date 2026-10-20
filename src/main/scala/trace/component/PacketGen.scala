@@ -8,7 +8,6 @@ import trace.interface._
 
 class EncoderCtrlInterface extends Bundle with TraceParameters {
   val filterRes         = Bool()
-  val blockBufferIsFull = Bool()
   val fifoIsFull        = Bool()
   val teCtrl            = new TeControlBundle
   val teInstFeat        = new TeInstFeaturesBundle
@@ -95,7 +94,7 @@ class PacketGen extends Module with TraceParameters {
   val taken = Itype.isBranchTaken(kind)
   val closing = configPending || configurationChanged || stopPending || io.stopReq
   val hasNext = firstOfMulti || io.block.valid || closing
-  val nextQualifiedInput = running && !closing && io.fromCtrl.filterRes &&
+  val nextQualifiedInput = running && !closing && io.fromCtrl.filterRes && !io.block.traceLost &&
     !metadataOnly && !io.stopReq && !io.block.hartIsReset && io.block.priv =/= Priv.D
   val nextQualified = Mux(firstOfMulti, qualified, nextQualifiedInput)
   val nextTrap = !firstOfMulti && Itype.isTrap(io.block.itype)
@@ -103,8 +102,10 @@ class PacketGen extends Module with TraceParameters {
     io.block.ctype === Ctype.Precisely || io.block.ctype === Ctype.AsyncDiscontinuity)
   val previousTrap = previousQualified && !tail && Itype.isTrap(previous.itype)
   val previousJump = previousQualified && !tail && (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
-  val endCurrent = cur.valid && qualified && !firstOfMulti && (closing || (io.block.valid && !nextQualifiedInput))
-  val supportWanted = endPending || ((!cur.valid || !qualified) && (configPending || configurationChanged))
+  val endCurrent = cur.valid && qualified && !firstOfMulti &&
+    (closing || (io.block.valid && !io.block.traceLost && !nextQualifiedInput))
+  val lossWanted = cur.valid && cur.traceLost
+  val supportWanted = lossWanted || endPending || ((!cur.valid || !qualified) && (configPending || configurationChanged))
   io.blockReady := canAdvance && !firstOfMulti && !supportWanted && (!closing || !qualified) && !endCurrent
   val step = cur.valid && hasNext && canAdvance && !supportWanted
   when(step) { tail := firstOfMulti }
@@ -226,14 +227,15 @@ class PacketGen extends Module with TraceParameters {
     }
     finishesCurrent := endCurrent
   }.elsewhen(supportWanted) {
-      supportConfig := Mux(endPending, endingConfig, nextConfig)
-      supportChangesConfig := Mux(endPending, endingChangesConfig, true.B)
+      supportConfig := Mux(lossWanted, activeConfig, Mux(endPending, endingConfig, nextConfig))
+      supportChangesConfig := !lossWanted && Mux(endPending, endingChangesConfig, true.B)
       val packet = Wire(new Format33)
       packet.format := 3.U
       packet.subformat := 3.U
       packet.ienable := supportConfig(7) && supportConfig(6)
       packet.encoder_mode := 0.U
-      packet.qual_status := Mux(endPending, QualStatus.Ended_req, QualStatus.No_change)
+      packet.qual_status := Mux(lossWanted, QualStatus.Trace_lost,
+        Mux(endPending, QualStatus.Ended_req, QualStatus.No_change))
       packet.sijump := supportConfig(0)
       packet.imRet := supportConfig(1)
       packet.imExp := supportConfig(2)
@@ -275,6 +277,15 @@ class PacketGen extends Module with TraceParameters {
       previousQualified := false.B
       branchMap := 0.U
       branchCount := 0.U
+      when(lossWanted) {
+        // Consume the metadata exactly once, when its support packet is queued.
+        cur.valid := false.B
+        qualified := false.B
+        tail := false.B
+        trapReported := false.B
+        reference := 0.U
+        resyncCount := 0.U
+      }
     }
     when(carriesAddress) { reference := reportedAddress }
     when(syncPacket) {
