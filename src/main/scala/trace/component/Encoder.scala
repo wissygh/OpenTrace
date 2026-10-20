@@ -89,67 +89,26 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * todo: data trace match
    */
   val block         = deqFromBlockBuffer
-  val triggerNotify = block.trigger === TriggerAction.Notify || block.notifyRequested
-
   val compMatchVec = Wire(Vec(comparator_num, Bool()))
+  val compNotifyVec = Wire(Vec(comparator_num, Bool()))
 
   def comparatorMatch(index: UInt): Bool =
     MuxLookup(index, false.B)(compMatchVec.zipWithIndex.map { case (result, i) => i.U -> result })
 
-  def matchFunc(isPfunc: Boolean)(compInput: UInt, CompFunc: UInt, matchRegData: UInt, notify: Bool): Bool = {
-    val srcData = MuxLookup(compInput, block.iaddr)(Seq(
-      CompInputField.Iaddr.asUInt   -> block.iaddr, // todo: check per block?
-      CompInputField.Context.asUInt -> block.context,
-      CompInputField.Tval.asUInt    -> block.tval
-      // CompInputField.Daddr.asUInt -> Daddr // todo: support data trace
-    ))
-    val eq = srcData === matchRegData
-    val ne = srcData =/= matchRegData
-    val lt = srcData < matchRegData
-    val le = srcData <= matchRegData
-    val gt = srcData > matchRegData
-    val ge = srcData >= matchRegData
-
-    MuxLookup(CompFunc, true.B)(Seq(
-      CompPFuncField.Equal.asUInt            -> eq,
-      CompPFuncField.NotEqual.asUInt         -> ne,
-      CompPFuncField.LessThan.asUInt         -> lt,
-      CompPFuncField.LessEqual.asUInt        -> le,
-      CompPFuncField.GreaterThan.asUInt      -> gt,
-      CompPFuncField.GreaterEqual.asUInt     -> ge,
-      CompPFuncField.AlwaysFalseLatch.asUInt -> (if (isPfunc) false.B else true.B)
-    )) || (compInput === 0.U) && notify && triggerNotify
+  for (i <- 0 until comparator_num) {
+    val comparator = Module(new TraceComparator)
+    comparator.io.block := block
+    comparator.io.control := teCompControlVec(i).rdata
+    comparator.io.primary := Cat(teCompPMatchHighVec(i).rdata, teCompPMatchLowVec(i).rdata)
+    comparator.io.secondary := Cat(teCompSMatchHighVec(i).rdata, teCompSMatchLowVec(i).rdata)
+    // Prime from the new control word on its actual CSR write edge.
+    comparator.io.configure := teCompControlVec(i).w.wen
+    when(teCompControlVec(i).w.wen) { comparator.io.control := teCompControlVec(i).w.wdata }
+    comparator.io.advance := block.valid && packetGen.io.blockReady && teControl.regOut.Enable.asBool
+    compMatchVec(i) := comparator.io.matched
+    compNotifyVec(i) := comparator.io.notification
   }
-
-  (0 until comparator_num).map { i =>
-    val ctrlReg       = Wire(new TeCompControlBundle)
-    val pMatchRegData = Wire(UInt(64.W))
-    val sMatchRegData = Wire(UInt(64.W))
-    ctrlReg       := teCompControlVec(i).rdata
-    pMatchRegData := teCompPMatchHighVec(i).rdata ## teCompPMatchLowVec(i).rdata
-    sMatchRegData := teCompSMatchHighVec(i).rdata ## teCompSMatchLowVec(i).rdata
-
-    val pMatch: Bool = matchFunc(true)(
-      ctrlReg.PInput.asUInt,
-      ctrlReg.PFunc.asUInt,
-      Mux(ctrlReg.SFunc === CompSFuncField.AlwaysTrueMask, pMatchRegData & sMatchRegData, pMatchRegData),
-      ctrlReg.PNotify.asBool
-    )
-    val sMatch: Bool =
-      matchFunc(false)(ctrlReg.SInput.asUInt, ctrlReg.SFunc.asUInt, sMatchRegData, ctrlReg.SNotify.asBool)
-
-    val puntilsMatchReg = RegInit(false.B)
-    when(pMatch) {
-      puntilsMatchReg := true.B
-    }.elsewhen(sMatch) {
-      puntilsMatchReg := false.B
-    }
-    val matchMode = ctrlReg.MatchMode.asUInt
-    compMatchVec(i) := (matchMode === MatchModeField.P.asUInt) && pMatch ||
-      (matchMode === MatchModeField.PS.asUInt) && (pMatch & sMatch) ||
-      (matchMode === MatchModeField.NonPS.asUInt) && !(pMatch & sMatch) ||
-      (matchMode === MatchModeField.PUntilS.asUInt) && puntilsMatchReg // comp Match from p match to s match todo: checking spec
-  }
+  packetGen.io.block.notifyRequested := block.notifyRequested || compNotifyVec.asUInt.orR
 
   val privMatchVec   = Wire(Vec(filter_num, Bool()))
   val ecauseMatchVec = Wire(Vec(filter_num, Bool()))
