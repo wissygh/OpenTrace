@@ -47,7 +47,7 @@ test-decoder:
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核启动 RTL->decoder 联动检查"

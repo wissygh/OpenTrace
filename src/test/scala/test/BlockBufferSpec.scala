@@ -39,7 +39,7 @@ class BlockBufferSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       dut.io.fromCore.blocks(0).valid.poke(true.B)
       dut.io.fromCore.blocks(0).bits.iaddr.poke("h1000".U)
       dut.io.fromCore.blocks(0).bits.itype.poke(Itype.None)
-      dut.io.fromCore.blocks(0).bits.iretire.poke(1.U)
+      dut.io.fromCore.blocks(0).bits.iretire.poke(2.U)
       dut.io.fromCore.blocks(0).bits.ilastsize.poke(Ilastsize.Word)
       dut.clock.step()
 
