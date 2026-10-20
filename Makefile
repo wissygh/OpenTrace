@@ -26,7 +26,7 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder
+.PHONY: test-trace test-decoder test-atb test-encoder test-control
 
 test-encoder:
 	@echo "[encoder-golden] 1/3 独立位布局、CSR 生命周期与实际 PacketGen 对拍"
@@ -42,13 +42,17 @@ test-atb:
 	@echo "[ATB-test] AF/SYNCREQ/ATCLKEN/ATWAKEUP 与多时钟端到端验证"
 	mill -i OpenTrace.test.testOnly trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.component.TraceATBAdapterSpec trace.component.PacketGenSpec
 
+test-control:
+	@echo "[control-test] Active/CSR 响应反压、复位恢复与能力发现"
+	mill -i OpenTrace.test.testOnly trace.control.TraceControlEndpointSpec trace.component.EncoderCapabilitiesSpec
+
 test-decoder:
 	@echo "[trace-test] Python decoder 单元测试开始：encapsulation / multihart / execution"
 	python3 -m unittest discover -s decoder/tests -v
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.EncoderCapabilitiesSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.EncoderCapabilitiesSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.control.TraceControlEndpointSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核启动 RTL->decoder 联动检查"
