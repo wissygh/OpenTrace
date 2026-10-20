@@ -156,10 +156,10 @@ trait TraceParameters {
   def supportEtrace = true
   def supportNtrace = !supportEtrace
 
-  def supportFullAddr   = false
+  def supportFullAddr   = true
   def supportJumpCache  = false
   def supportBranchPred = false
-  def supportImExp      = true
+  def supportImExp      = false
   def supportImRet      = false
   def supportSijump     = false
 

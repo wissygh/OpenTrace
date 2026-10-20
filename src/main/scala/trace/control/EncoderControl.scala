@@ -32,6 +32,11 @@ class EncoderTraceControlRegister extends CSRModule("TeControl", new TeControlBu
   regOut.Emptry := fifoIsEmpty
 }
 
+class EncoderInstructionFeaturesRegister extends CSRModule("TeInstFeatures", new TeInstFeaturesBundle)
+    with HasTeInstFeaturesBundle {
+  regOut.SrcID := id
+}
+
 trait EncoderControl extends ControlBase { self: EncoderImp =>
 
   val teControl = Module(new EncoderTraceControlRegister).setAddr(CtrlReg.TeControl)
@@ -39,9 +44,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   val teImpl = Module(new CSRModule("TeImpl", new TeImplBundle))
     .setAddr(CtrlReg.TeImpl)
 
-  val teInstFeatures = Module(new CSRModule("TeInstFeatures", new TeInstFeaturesBundle) with HasTeInstFeaturesBundle {
-    regOut.SrcID := id
-  })
+  val teInstFeatures = Module(new EncoderInstructionFeaturesRegister)
     .setAddr(CtrlReg.TeInstFeatures)
 
   val teInstFilters = Module(new CSRModule("TeInstFilters", new TeInstFiltersBundle) {})
@@ -245,14 +248,14 @@ class TeImplBundle extends CSRBundle {
  * Instruction trace bundle
  */
 
-class TeInstFeaturesBundle extends CSRBundle {
-  val NoAddrDiff        = RW(0)
-  val NoTrapDiff        = RW(1)
-  val EnSiJump          = RW(2)
-  val EnImRet           = RW(3)
-  val EnBranchPred      = RW(4)
-  val EnJumpTargetCache = RW(5)
-  val ImRetMode         = ImpRetModeField(7, 6, wNoFilter).withReset(ImpRetModeField.None)
+class TeInstFeaturesBundle extends CSRBundle with TraceParameters {
+  val NoAddrDiff        = (if (supportFullAddr) RW(0) else RO(0)).withReset(0.U)
+  val NoTrapAddr        = RO(1).withReset(0.U)
+  val EnSiJump          = RO(2).withReset(0.U)
+  val EnImRet           = RO(3).withReset(0.U)
+  val EnBranchPred      = RO(4).withReset(0.U)
+  val EnJumpTargetCache = RO(5).withReset(0.U)
+  val ImRetMode         = RO(7, 6).withReset(0.U)
   val EnRepHistoty      = RO(8).withReset(0.U)
   val EnAllJumps        = RO(9).withReset(0.U)
   val ExtendAddrMSB     = RO(10).withReset(0.U)
@@ -288,15 +291,15 @@ object FiltersIndexField extends CSREnum with WARLApply {
 
 class TeDataControlBundle extends CSRBundle {
   val DataImplemented  = RO(0).withReset(0.U)
-  val DataTracing      = RW(1)
-  val DataTrigEnable   = RW(2)
-  val DataStallOrOf    = RW(3)
-  val DataStallEna     = RW(4)
-  val DataDrop         = RW(5)
-  val DataDropEna      = RW(6)
-  val DataNoValue      = RW(16)
-  val DataNoAddr       = RW(17)
-  val DataAddrCompress = DataAddrCompressField(19, 18, wNoFilter)
+  val DataTracing      = RO(1).withReset(0.U)
+  val DataTrigEnable   = RO(2).withReset(0.U)
+  val DataStallOrOf    = RO(3).withReset(0.U)
+  val DataStallEna     = RO(4).withReset(0.U)
+  val DataDrop         = RO(5).withReset(0.U)
+  val DataDropEna      = RO(6).withReset(0.U)
+  val DataNoValue      = RO(16).withReset(0.U)
+  val DataNoAddr       = RO(17).withReset(0.U)
+  val DataAddrCompress = RO(19, 18).withReset(0.U)
 }
 
 object DataAddrCompressField extends CSREnum with WARLApply {
@@ -307,10 +310,7 @@ object DataAddrCompressField extends CSREnum with WARLApply {
 }
 
 class TeDataFiltersBundle extends CSRBundle {
-  val DataFilters =
-    FiltersIndexField(15, 0, wNoFilter).withReset(
-      FiltersIndexField.None
-    ) // same as  TeInstFilters; 1hot: bit_i -> filter_i
+  val DataFilters = RO(15, 0).withReset(0.U)
 }
 
 object TrigAction extends CSREnum with WARLApply {

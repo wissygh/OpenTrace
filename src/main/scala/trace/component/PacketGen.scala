@@ -30,7 +30,7 @@ class PacketGen extends Module with TraceParameters {
   val control = io.fromCtrl.teCtrl
   val configuredOptions = Cat(io.fromCtrl.teInstFeat.NoAddrDiff.asBool,
     io.fromCtrl.teInstFeat.EnJumpTargetCache.asBool, io.fromCtrl.teInstFeat.EnBranchPred.asBool,
-    io.fromCtrl.teInstFeat.NoTrapDiff.asBool, io.fromCtrl.teInstFeat.EnImRet.asBool,
+    io.fromCtrl.teInstFeat.NoTrapAddr.asBool, io.fromCtrl.teInstFeat.EnImRet.asBool,
     io.fromCtrl.teInstFeat.EnSiJump.asBool)
   val projectedTraceOn = io.block.valid && io.block.trigger === TriggerAction.TraceOn &&
     control.Enable.asBool && control.InstTrigEnable.asBool
