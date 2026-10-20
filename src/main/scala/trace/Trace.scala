@@ -235,7 +235,7 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
     compMods.zip(ctrlSinkMods).map {
       case (comp, sink) => {
         comp.clock := sink.clock
-        comp.reset := (!sink.io.active).asAsyncReset
+        comp.reset := sink.io.componentReset
       }
     }
   }

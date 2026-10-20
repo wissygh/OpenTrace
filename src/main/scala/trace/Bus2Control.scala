@@ -44,8 +44,8 @@ class CtrlAsyncSink(baseAddr: Int)(implicit p: Parameters) extends LazyModule wi
     Seq(TLManagerParameters(
       address = Seq(AddressSet(baseAddr, 0xffff)),
       regionType = RegionType.UNCACHED,
-      supportsGet = TransferSizes(1, ctrlBeatBytes),
-      supportsPutFull = TransferSizes(1, ctrlBeatBytes),
+      supportsGet = TransferSizes(ctrlBeatBytes, ctrlBeatBytes),
+      supportsPutFull = TransferSizes(ctrlBeatBytes, ctrlBeatBytes),
       fifoId = Some(0)
     )),
     ctrlBeatBytes
@@ -56,55 +56,17 @@ class CtrlAsyncSink(baseAddr: Int)(implicit p: Parameters) extends LazyModule wi
     val io = IO(new Bundle {
       val bus    = Flipped(new Control2BusRegBundle)
       val active = Output(Bool())
+      val componentReset = Output(AsyncReset())
     })
 
-    /**
-     * bus 2 trace control layer
-     */
-    val (tl, edge) = tlslavenode.in(0)
-    val aChannel   = tl.a
-    val dChannel   = tl.d
+    val (tl, _) = tlslavenode.in(0)
+    val endpoint = Module(new trace.control.TraceControlEndpoint(baseAddr, tl.params))
+    endpoint.io.a <> tl.a
+    tl.d <> endpoint.io.d
+    io.bus <> endpoint.io.bus
+    io.active := endpoint.io.active
+    io.componentReset := endpoint.io.componentReset
 
-    val address   = aChannel.bits.address
-    val readEn    = aChannel.bits.opcode === TLMessages.Get && aChannel.valid
-    val dataWrite = aChannel.bits.data
-    val writeEn   = aChannel.bits.opcode === TLMessages.PutFullData && aChannel.valid
-    val size      = aChannel.bits.size
-    val ackError  = (address(1, 0) =/= 0.U) || io.bus.c2b.error
-
-    io.bus.b2c.address := address
-    // bus write
-    io.bus.b2c.writeEn   := writeEn
-    io.bus.b2c.dataWrite := dataWrite
-    // bus read, only support 32 bits!
-    io.bus.b2c.readEn := readEn
-
-    dChannel.bits := Mux1H(
-      Seq(
-        readEn,
-        writeEn
-      ),
-      Seq(
-        edge.AccessAck(aChannel.bits, io.bus.c2b.dataRead, ackError, false.B),
-        edge.AccessAck(aChannel.bits, ackError)
-      )
-    )
-
-    dChannel.valid := aChannel.valid
-    aChannel.ready := true.B
-
-    /**
-     * write components.control.active
-     * 1. reset: write 0
-     * 2. release: write 1
-     * 3. write other
-    */
-    val active = RegEnable(
-      io.bus.b2c.dataWrite(0),
-      false.B,
-      io.bus.b2c.address === (baseAddr & ctrlMask).U && io.bus.b2c.writeEn
-    )
-    io.active := active
   }
   lazy val module = new CtrlAsyncSinkImp(this)
 }
