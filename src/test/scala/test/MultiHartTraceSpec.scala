@@ -29,6 +29,7 @@ private class MultiHartTraceHarness extends Module with TraceParameters {
   for (i <- 0 until 2) {
     val blocks = Module(new BlockBuffer)
     val encoder = Module(new PacketGen)
+    encoder.io.syncReq := false.B
     val fifo = Module(new Fifo(FifoParam(true, maxPackets * 3, maxPackets, encoderAtbDataBeats)))
     blocks.io.fromCore := io.fromCore(i)
     blocks.io.deqReady := encoder.io.blockReady
@@ -41,6 +42,8 @@ private class MultiHartTraceHarness extends Module with TraceParameters {
     control.teInstFeat := io.features(i)
     control.teDataCtrl := 0.U
     encoder.io.fromCtrl := control
+    fifo.io.control.flushReq := false.B
+    fifo.io.control.syncReq := false.B
     fifo.io.packetEnq <> encoder.io.packet
     arbiter.io.in(i) <> fifo.io.atbm
   }

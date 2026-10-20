@@ -10,6 +10,8 @@ class FifoSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
 
   it should "preserve complete packets through non-power-of-two wrap and stalls" in {
     test(new Fifo(FifoParam(true, 13, 8, 4))) { dut =>
+      dut.io.control.flushReq.poke(false.B)
+      dut.io.control.syncReq.poke(false.B)
       val random = new scala.util.Random(91)
       val packets = Vector.fill(80)(Vector.fill(1 + random.nextInt(8))(random.nextInt(256)))
       val pending = scala.collection.mutable.ArrayDeque[Vector[Int]]()
@@ -66,6 +68,8 @@ class FifoSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
 
   it should "start each back-to-back packet at the packet boundary" in {
     test(new Fifo(FifoParam(isLeaf = true, fifoDepth = 32, enqDataBytes = 8, deqDataBytes = 4))) { dut =>
+      dut.io.control.flushReq.poke(false.B)
+      dut.io.control.syncReq.poke(false.B)
       dut.io.atbm.ready.poke(false.B)
       dut.io.packetEnq.valid.poke(false.B)
       dut.io.packetEnq.bits.len.poke(0.U)
@@ -121,6 +125,8 @@ class FifoSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
 
   it should "hold a short packet byte count while ATB is stalled" in {
     test(new Fifo(FifoParam(isLeaf = true, fifoDepth = 16, enqDataBytes = 8, deqDataBytes = 4))) { dut =>
+      dut.io.control.flushReq.poke(false.B)
+      dut.io.control.syncReq.poke(false.B)
       dut.io.atbm.ready.poke(false.B)
       dut.io.packetEnq.valid.poke(false.B)
       dut.io.packetEnq.bits.len.poke(0.U)
@@ -153,6 +159,8 @@ class FifoSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
 
   it should "use enqueue metadata for a one-byte packet" in {
     test(new Fifo(FifoParam(isLeaf = true, fifoDepth = 16, enqDataBytes = 8, deqDataBytes = 4))) { dut =>
+      dut.io.control.flushReq.poke(false.B)
+      dut.io.control.syncReq.poke(false.B)
       dut.io.atbm.ready.poke(false.B)
       dut.io.packetEnq.valid.poke(false.B)
       dut.io.packetEnq.bits.len.poke(0.U)
@@ -182,6 +190,8 @@ class FifoSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
 
   it should "backpressure a packet that does not fit in the remaining byte space" in {
     test(new Fifo(FifoParam(isLeaf = true, fifoDepth = 8, enqDataBytes = 8, deqDataBytes = 4))) { dut =>
+      dut.io.control.flushReq.poke(false.B)
+      dut.io.control.syncReq.poke(false.B)
       dut.io.atbm.ready.poke(false.B)
       dut.io.packetEnq.valid.poke(false.B)
       dut.io.packetEnq.bits.data.foreach(_.poke(0.U))
