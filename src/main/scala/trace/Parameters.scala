@@ -100,8 +100,7 @@ trait TraceParameters {
 
   def ts_width_p    = 63
   def ts_prescale_p = 2 // 0,1,2,3
-  def prescale_p    = math.pow(2, 2 * ts_prescale_p).toInt
-  def clock_domain  = 2 // 2: bus, 3: cpu
+  def clock_domain  = 3 // Internal Core: the counter is clocked in the encoder domain
 
   /**
    * RAM parameters

@@ -59,7 +59,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   /**
    * timestamp
    */
-  val tsControl = Module(new CSRModule("TsControl", new TsControlBundle))
+  val tsControl = Module(new EncoderTimestampControlRegister)
     .setAddr(CtrlReg.TsControl)
 
   val tsCounterLow = Module(new CSRModule("TsCounterLow", new OneROFieldBundle) with HasTsCountBundle {
@@ -197,8 +197,8 @@ class TeControlBundle extends CSRBundle with TraceParameters {
   val Enable      = RW(1).withReset(0.U)
   val InstTracing = if (test_xsEmu) RW(2).withReset(1.U) else RW(2).withReset(0.U)
   val Emptry      = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
-  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.HTM)               // issues/240
-  val Context             = RO(9).withReset(1.U)
+  val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.VendorDef)
+  val Context             = RO(9).withReset(0.U) // E-Trace Chapter 2, Table 2
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
   val InstStallEna        = RW(13).withReset(0.U)                                              // 0: drop 1: stall

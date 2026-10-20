@@ -43,11 +43,13 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val blockBuffer = Module(new BlockBuffer(core_stall_response_cycles_p))
   val packetGen   = Module(new PacketGen)
   val fifo        = Module(new Fifo(fifoParam))
+  val timestamp   = Module(new EncoderTimestampCounter)
 
   // connection
   val ingressEnabled = teControl.regOut.Enable.asBool &&
     (teControl.regOut.InstTracing.asBool || teControl.regOut.InstTrigEnable.asBool)
   blockBuffer.io.fromCore := io.fromCore
+  blockBuffer.io.fromCore.time := timestamp.io.traceTime
   blockBuffer.io.fromCore.blocks.zip(io.fromCore.blocks).foreach { case (buffered, incoming) =>
     buffered.valid := incoming.valid && ingressEnabled
   }
@@ -234,24 +236,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * filters match_end
    */
 
-  /**
-   * time stamp. todo: support what type counter? bus clock or hart clock? be determined to trace's clock domain
-   * todo: prescale_p rw
-   */
-  val w1toTsReset: Bool = tsControl.w.wen && tsControl.w.wdataFields.Reset.asBool
-  // Real time counter.
-  val timeCount = RegInit(0.U((ts_width_p + prescale_p).W))
-
-  val countEn = Mux(
-    block.priv === Priv.D,
-    tsControl.regOut.RunInDebug.asBool,
-    tsControl.regOut.Count.asUInt === TsCountEnField.Runs.asUInt
-  )
-  when(w1toTsReset) {
-    timeCount := 0.U
-  }.elsewhen(countEn) {
-    timeCount := timeCount + 1.U
-  }
+  timestamp.io.control := tsControl.regOut
+  timestamp.io.resetCount := tsControl.w.wen && tsControl.w.wdataFields.Reset.asBool
+  timestamp.io.debug := io.fromCore.priv === Priv.D
 
   /**
    * packets
@@ -321,7 +308,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     }
     mod match {
       case m: HasTsCountBundle =>
-        m.timeCount := timeCount(ts_width_p + prescale_p - 1, prescale_p)
+        m.timeCount := timestamp.io.value
       case _ =>
     }
     mod match {
