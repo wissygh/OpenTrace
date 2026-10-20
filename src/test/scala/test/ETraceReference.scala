@@ -27,9 +27,9 @@ object ETraceReference {
     frame(source, payload(Seq[(BigInt, Int)]((3, 2), (0, 2), (if (taken) 0 else 1, 1),
       (privilege, 3), (time, 64), (context, 32), (pc >> 1, AlignedWidth))))
 
-  def support(source: Int, fullAddress: Boolean = false): Seq[Int] =
-    frame(source, payload(Seq((BigInt(3), 2), (BigInt(3), 2), (BigInt(1), 1),
-      (BigInt(0), 1), (BigInt(0), 2), (if (fullAddress) BigInt(32) else BigInt(0), 6),
+  def support(source: Int, fullAddress: Boolean = false, status: Int = 0, tracing: Boolean = true): Seq[Int] =
+    frame(source, payload(Seq((BigInt(3), 2), (BigInt(3), 2), (if (tracing) BigInt(1) else BigInt(0), 1),
+      (BigInt(0), 1), (BigInt(status), 2), (if (fullAddress) BigInt(32) else BigInt(0), 6),
       (BigInt(0), 1), (BigInt(0), 1), (BigInt(0), 2))))
 
   def address(source: Int, pc: BigInt, reference: BigInt, outcomes: Seq[Boolean] = Seq.empty,

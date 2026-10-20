@@ -22,6 +22,8 @@ class PacketGenHarness extends Module with TraceParameters {
     val syncReq          = Input(Bool())
     val flushReq         = Input(Bool())
     val flushAck         = Output(Bool())
+    val stopReq          = Input(Bool())
+    val empty            = Output(Bool())
   })
 
   val gen  = Module(new PacketGen)
@@ -35,6 +37,8 @@ class PacketGenHarness extends Module with TraceParameters {
   gen.io.syncReq         := io.syncReq
   gen.io.flushReq        := io.flushReq
   io.flushAck           := gen.io.flushAck
+  gen.io.stopReq         := io.stopReq
+  io.empty              := gen.io.empty
   gen.io.block           := io.block
   gen.io.fromCtrl        := ctrl
   io.blockReady          := gen.io.blockReady
@@ -48,6 +52,9 @@ class PacketGenSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers
     test(new PacketGenHarness) { dut =>
       dut.io.syncReq.poke(false.B)
       dut.io.flushReq.poke(false.B)
+      dut.io.stopReq.poke(false.B)
+      dut.io.block.traceOffAfter.poke(false.B)
+      dut.io.block.notifyRequested.poke(false.B)
       dut.io.filterRes.poke(true.B)
       dut.io.blockBufferIsFull.poke(false.B)
       dut.io.fifoIsFull.poke(false.B)
@@ -129,6 +136,9 @@ class PacketGenSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers
       println("[ATB-test] Encoder SYNCREQ：空闲期间锁存请求，后续有效指令触发 Format 30")
       d.io.syncReq.poke(false.B)
       d.io.flushReq.poke(false.B)
+      d.io.stopReq.poke(false.B)
+      d.io.block.traceOffAfter.poke(false.B)
+      d.io.block.notifyRequested.poke(false.B)
       d.io.filterRes.poke(true.B)
       d.io.blockBufferIsFull.poke(false.B)
       d.io.fifoIsFull.poke(false.B)
@@ -176,6 +186,9 @@ class PacketGenSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers
       println("[encoder-flush] 快照已寄存 packet 和其后受阻 packet，旧包全部交付后才确认")
       d.io.syncReq.poke(false.B)
       d.io.flushReq.poke(false.B)
+      d.io.stopReq.poke(false.B)
+      d.io.block.traceOffAfter.poke(false.B)
+      d.io.block.notifyRequested.poke(false.B)
       d.io.filterRes.poke(true.B)
       d.io.blockBufferIsFull.poke(false.B)
       d.io.fifoIsFull.poke(false.B)

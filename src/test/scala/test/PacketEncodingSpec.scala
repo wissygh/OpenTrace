@@ -51,6 +51,9 @@ class PacketEncodingSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
         }
         d.io.syncReq.poke(false.B)
         d.io.flushReq.poke(false.B)
+        d.io.stopReq.poke(false.B)
+        d.io.block.traceOffAfter.poke(false.B)
+      d.io.block.notifyRequested.poke(false.B)
       }
       def send(blocks: Seq[Block]): Unit = blocks.foreach { block =>
         drive(block)
