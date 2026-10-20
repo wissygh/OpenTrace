@@ -13,12 +13,7 @@ import trace.component.PIBImp
 
 trait PIBControl extends ControlBase { self: PIBImp =>
 
-  val PIBControl = Module(new CSRModule("PIBControl", new PIBControlBundle) {
-    regOut.Active := !reset.asBool
-    when(wen && wdata.ClkCenter.asBool && PIBModeField.isParallel(wdata.Mode)) {
-      reg.ClkCenter := true.B
-    }
-  })
+  val PIBControl = Module(new PIBControlRegister)
     .setAddr(CtrlReg.PIBControl)
 
   val PIBImpl = Module(new CSRModule("PIBImpl", new PIBImplBundle) {})
@@ -30,15 +25,20 @@ trait PIBControl extends ControlBase { self: PIBImp =>
   )
 }
 
+class PIBControlRegister extends CSRModule("PIBControl", new PIBControlBundle) {
+  regOut.Active := !reset.asBool
+}
+
 class PIBControlBundle extends CSRBundle {
-  val Active    = RW(0).withReset(0.U)
-  val Enable    = RW(1).withReset(0.U)
-  val Emptry    = RO(3).withReset(1.U)
-  val Mode      = PIBModeField(7, 4, wNoFilter).withReset(PIBModeField.Off)
-  val ClkCenter = RW(8)
-  val Calibrate = RW(9)
-  val AsyncFreq = RW(14, 12)
-  val Divider   = RW(31, 16)
+  val Active = RW(0).withReset(0.U)
+  val Enable = RO(1).withReset(0.U)
+  val Emptry = RO(3).withReset(1.U)
+  // The serializer is not implemented; discovery must not enable a dead output.
+  val Mode      = RO(7, 4).withReset(0.U)
+  val ClkCenter = RO(8).withReset(0.U)
+  val Calibrate = RO(9).withReset(0.U)
+  val AsyncFreq = RO(14, 12).withReset(0.U)
+  val Divider   = RO(31, 16).withReset(0.U)
 }
 
 object PIBModeField extends CSREnum with WARLApply {
@@ -65,7 +65,7 @@ object PIBModeField extends CSREnum with WARLApply {
 
 class PIBImplBundle extends CSRBundle {
   val VerMajor = MajorVersion(3, 0).withReset(MajorVersion.Default)
-  val VerMinor = MinorVersion(7, 0).withReset(MinorVersion.Default)
+  val VerMinor = MinorVersion(7, 4).withReset(MinorVersion.Default)
   val CompType = TrcompTypeField(11, 8).withReset(TrcompTypeField.PIB)
 }
 

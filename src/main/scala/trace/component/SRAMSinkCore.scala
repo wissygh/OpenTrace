@@ -49,14 +49,14 @@ class SRAMSinkCore(bufferWords: Int, wordBytes: Int = 4) extends Module {
     packetRemaining := expected - accepted
     inPacket        := !io.in.bits.last
   }
-  when(!io.enable)(stopping := false.B)
+  when(!io.enable)(stopping   := false.B)
   when(rejectPacket)(stopping := true.B)
-  io.wrap := false.B
+  io.wrap                     := false.B
   when(packer.io.out.fire) {
     memory.write(wp, packer.io.out.bits)
     when(wp === (bufferWords - 1).U) {
-      wp      := 0.U
-      io.wrap := true.B
+      wp                           := 0.U
+      io.wrap                      := true.B
       when(io.stopOnWrap)(stopping := true.B)
     }.otherwise(wp := wp + 1.U)
   }

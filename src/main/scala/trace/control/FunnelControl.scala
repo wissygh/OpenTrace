@@ -56,7 +56,7 @@ class FunnelControlBundle extends CSRBundle {
 
 class FunnelImplBundle extends CSRBundle {
   val VerMajor = MajorVersion(3, 0).withReset(MajorVersion.Default)
-  val VerMinor = MinorVersion(7, 0).withReset(MinorVersion.Default)
+  val VerMinor = MinorVersion(7, 4).withReset(MinorVersion.Default)
   val CompType = TrcompTypeField(11, 8).withReset(TrcompTypeField.Funnel)
 }
 

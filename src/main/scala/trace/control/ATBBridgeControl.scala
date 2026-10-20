@@ -30,7 +30,7 @@ trait ATBBridgeControl extends ControlBase { self: ATBBridgeImp =>
 class ATBControlBundle extends CSRBundle {
   val Active = RW(0).withReset(0.U)
   val Enable = RW(1).withReset(0.U)
-  val Emptry = RO(3)
+  val Emptry = RO(3).withReset(1.U)
   val ID     = IDField(14, 8, wNoFilter).withReset(IDField.Default)
 }
 
@@ -46,7 +46,7 @@ object IDField extends CSREnum with WARLApply {
 
 class ATBImplBundle extends CSRBundle {
   val VerMajor  = MajorVersion(3, 0).withReset(MajorVersion.Default)
-  val VerMinor  = MinorVersion(7, 0).withReset(MinorVersion.Default)
+  val VerMinor  = MinorVersion(7, 4).withReset(MinorVersion.Default)
   val CompType  = TrcompTypeField(11, 8).withReset(TrcompTypeField.ATBBridge)
-  val AsyncFreq = RW(14, 12).withReset(0.U)
+  val AsyncFreq = RO(14, 12).withReset(0.U)
 }

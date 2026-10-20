@@ -46,8 +46,8 @@ class RAMControlBundle extends CSRBundle with TraceParameters {
   val Emptry     = RO(3).withReset(1.U)
   val Mode       = RAMModeROField(4).withReset(if (supportSRAM) RAMModeROField.SRAM else RAMModeROField.SMEM)
   val StopOnWrap = RW(8)
-  val MemFormat  = MemFormatField(10, 9, wNoFilter).withReset(MemFormatField.PlainBytes) // todo: fix
-  val AsyncFreq  = RW(14, 12)                                                            // todo: fix
+  val MemFormat  = RO(10, 9).withReset(0.U)  // only the plain byte format is implemented
+  val AsyncFreq  = RO(14, 12).withReset(0.U) // todo: fix
 }
 
 object RAMModeROField extends CSREnum with ROApply {
@@ -64,7 +64,7 @@ object MemFormatField extends CSREnum with WARLApply {
 
 class RAMImplBundle extends CSRBundle with TraceParameters {
   val VerMajor = MajorVersion(3, 0).withReset(MajorVersion.Default)
-  val VerMinor = MinorVersion(7, 0).withReset(MinorVersion.Default)
+  val VerMinor = MinorVersion(7, 4).withReset(MinorVersion.Default)
   val CompType = TrcompTypeField(11, 8).withReset(TrcompTypeField.RAM)
   val HasSRAM  = RO(12).withReset(supportSRAM.B)
   val HasSMEM  = RO(13).withReset((!supportSRAM).B)
