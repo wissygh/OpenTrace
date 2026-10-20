@@ -112,8 +112,8 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
 
   val filterEnableVec = Wire(Vec(filter_num, Bool()))
   val privMatchVec   = Wire(Vec(filter_num, Bool()))
-  val ecauseMatchVec = Wire(Vec(filter_num, Bool()))
-  val intExpMatchVec = Wire(Vec(filter_num, Bool()))
+  val trapMatchVec = Wire(Vec(filter_num, Bool()))
+  val filterSelection = teInstFilters.regOut.InstFilters.asUInt
   val comp1MatchVec  = Wire(Vec(filter_num, Bool()))
   val comp2MatchVec  = Wire(Vec(filter_num, Bool()))
   val comp3MatchVec  = Wire(Vec(filter_num, Bool()))
@@ -140,19 +140,18 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
       true.B
     )
 
-    // todo: Add count to hand nested trap.
-    ecauseMatchVec(i) := Mux(
-      ctrlReg.Enable.asBool && ctrlReg.MatchEcause.asBool,
-      TraceFilterLogic.cause(ecauseReg, block.cause),
-      true.B
-    )
-
-    // todo: Add count to hand nested trap.
-    intExpMatchVec(i) := Mux(
-      ctrlReg.Enable.asBool && ctrlReg.MatchInterrupt.asBool,
-      Mux(instReg.MatchValueInterrupt.asBool, Itype.isInt(block.itype), Itype.isExp(block.itype)),
-      true.B
-    )
+    val scope = Module(new TraceTrapFilterScope(filter_trap_depth_bits_p))
+    val trapCondition = ctrlReg.MatchEcause.asBool || ctrlReg.MatchInterrupt.asBool
+    scope.io.kind := block.itype
+    scope.io.trigger := TraceFilterLogic.trap(ecauseReg, block.cause, block.itype,
+      ctrlReg.MatchEcause.asBool, ctrlReg.MatchInterrupt.asBool, instReg.MatchValueInterrupt.asBool)
+    scope.io.advance := block.valid && packetGen.io.blockReady && teControl.regOut.Enable.asBool
+    scope.io.clear := !teControl.regOut.Enable.asBool || !ctrlReg.Enable.asBool ||
+      !filterSelection(i) || !trapCondition || teInstFilters.w.wen ||
+      teFilterControlVec(i).w.wen || teFilterMatchInstVec(i).w.wen ||
+      teFilterMatchEcauseLowVec(i).w.wen || teFilterMatchEcauseHighVec(i).w.wen ||
+      (scope.io.advance && block.traceLost)
+    trapMatchVec(i) := !trapCondition || scope.io.matched
 
     impdefMatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchImpdef.asBool,
@@ -182,14 +181,12 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   // Several conditions for single filter act as logical AND.
   val allFiltersMatchVec = Seq(
     privMatchVec,
-    ecauseMatchVec,
-    intExpMatchVec,
+    trapMatchVec,
     comp1MatchVec,
     comp2MatchVec,
     comp3MatchVec,
     impdefMatchVec
   ).map(_.asUInt).reduce(_ & _)
-  val filterSelection = teInstFilters.regOut.InstFilters.asUInt
   val filterRes = TraceFilterLogic.selected(filterSelection, filterEnableVec.asUInt, allFiltersMatchVec)
 
   /**

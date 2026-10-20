@@ -78,6 +78,7 @@ trait TraceParameters {
     "filter_num can not be greater 16, because " +
       "the addres of trTeFilter is [0x400 ... 0x5ff].\n"
   )
+  def filter_trap_depth_bits_p = 4
   def comparator_num = 1
   require(
     comparator_num <= 8,
