@@ -11,7 +11,10 @@ import utility.HasCircularQueuePtrHelper
 import utils.Compress
 import utils.Lzc
 
-class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHelper {
+class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParameters with HasCircularQueuePtrHelper {
+  require(stallResponseCycles >= 0)
+  private val stallReserve = BlockNum * (stallResponseCycles + 1)
+  require(stallReserve <= block_buffer_depth_p, "BlockBuffer cannot cover configured core stall latency")
 
   val io = IO(new Bundle {
     val fromCore     = Input(new FromCore)
@@ -26,6 +29,23 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   val inValidVec = VecInit(io.fromCore.blocks.map(block => block.valid &&
     (block.bits.iretire =/= 0.U || Itype.isTrap(block.bits.itype))))
   val inTypeIsNotNoneVec = VecInit(io.fromCore.blocks.map(block => Itype.isNotNone(block.bits.itype)))
+  for (i <- 0 until BlockNum) {
+    val block = io.fromCore.blocks(i)
+    when(block.valid) {
+      if (i > 0) assert(io.fromCore.blocks(i - 1).valid, "core blocks must be contiguous from index zero")
+      when(block.bits.iretire =/= 0.U) {
+        assert(block.bits.iretire >= (1.U << block.bits.ilastsize), "iretire must include the last instruction")
+      }
+      when(block.bits.iretire =/= 0.U || Itype.isExp(block.bits.itype)) {
+        assert(!block.bits.iaddr(0), "instruction addresses must be halfword aligned")
+      }
+      if (i < BlockNum - 1) {
+        when(Itype.isTrap(block.bits.itype)) {
+          assert(!inValidVec.asUInt(BlockNum - 1, i + 1).orR, "trap must terminate the newest valid block")
+        }
+      }
+    }
+  }
   val needPcVec          = Wire(Vec(BlockNum, Bool()))
   for (i <- 0 until BlockNum) { // todo: tail of fifo
     val rightHasValid = if (i == BlockNum - 1) false.B else inValidVec.asUInt(BlockNum - 1, i + 1).orR
@@ -38,9 +58,9 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   for (i <- 1 until BlockNum) {
     when(inValidVec(i - 1) && !needPcVec(i - 1)) {
       // itype, ilastsize, sijump is belong to block which need pc.
-      blocksCompressed(i).bits.iretire := blocksCompressed(i - 1).bits.iretire +& io.fromCore.blocks(
-        i
-      ).bits.iretire // todo：fix width
+      val retired = blocksCompressed(i - 1).bits.iretire +& io.fromCore.blocks(i).bits.iretire
+      assert(!retired(IretireWidthCompressed), "compacted iretire exceeds ingress field width")
+      blocksCompressed(i).bits.iretire := retired
       blocksCompressed(i).bits.trigNotify := blocksCompressed(i - 1).bits.trigNotify | io.fromCore.blocks(
         i
       ).bits.trigNotify
@@ -76,7 +96,10 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   val metadataOnly = !needPcVec.asUInt.orR && (io.fromCore.trigger.traceOn || io.fromCore.trigger.traceOff)
   val enqCount = Mux(metadataOnly, 1.U, PopCount(needPcVec.asUInt))
   val freeEntries = hasFreeEntries(enqPtr, deqPtr)
-  val canEnq = enqCount <= freeEntries
+  val dequeue = io.deqReady && !fifoIsEmpty
+  // A register FIFO may replace the entry read on this edge even when full.
+  val available = freeEntries +& dequeue.asUInt
+  val canEnq = enqCount <= available
   // Stop admitting post-gap data until an ordered marker has been written at
   // the old tail. Keep draining all previously accepted entries normally.
   val lossPending = RegInit(false.B)
@@ -84,7 +107,7 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   val incomingTrigger = Mux(io.fromCore.trigger.traceOff, TriggerAction.TraceOff,
     Mux(io.fromCore.trigger.traceOn, TriggerAction.TraceOn, TriggerAction.None))
   val markerTrigger = Mux(incomingTrigger =/= TriggerAction.None, incomingTrigger, lostTrigger)
-  val insertMarker = lossPending && freeEntries =/= 0.U
+  val insertMarker = lossPending && available =/= 0.U
   val admit = !lossPending && canEnq
   val dropped = enqCount =/= 0.U && !admit
   when(dropped && !lossPending) { lossPending := true.B }
@@ -99,7 +122,7 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
     lostTrigger := TriggerAction.None
   }
   enqPtrNext := Mux(insertMarker, enqPtr + 1.U, Mux(admit, enqPtr + enqCount, enqPtr))
-  deqPtrNext := deqPtr + Mux(io.deqReady && !fifoIsEmpty, 1.U, 0.U)
+  deqPtrNext := deqPtr + dequeue.asUInt
 
   // enqueue
   for (i <- 0 until BlockNum) {
@@ -135,7 +158,7 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
 
   // dequeue
   io.deqEntry     := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
-  io.bufferIsFull := lossPending || freeEntries < BlockNum.U
+  io.bufferIsFull := lossPending || freeEntries < stallReserve.U
   io.overflow := dropped
   io.empty := fifoIsEmpty && !lossPending
 }

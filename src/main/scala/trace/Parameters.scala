@@ -91,6 +91,8 @@ trait TraceParameters {
 
   // block buffer parameters
   def block_buffer_depth_p = 16 // in entries
+  // Maximum additional core input cycles after it observes toCore.stall.
+  def core_stall_response_cycles_p = 1
 
   /**
    * timestamp parameters

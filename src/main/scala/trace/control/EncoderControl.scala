@@ -21,11 +21,13 @@ class EncoderTraceControlRegister extends CSRModule("TeControl", new TeControlBu
     reg.InstTracing := traceOn && !traceOff
   }
 
+  // RW1C: a zero write preserves the sticky status. A new hardware event wins
+  // a simultaneous clear, so software cannot erase an ongoing stall/loss.
+  reg.InstStallOrOverflow := reg.InstStallOrOverflow
   when(wen && (wdata.Enable || wdata.InstStallOrOverflow)) {
     reg.InstStallOrOverflow := false.B
-  }.elsewhen(fifoIsFull) {
-    reg.InstStallOrOverflow := fifoIsFull
   }
+  when(fifoIsFull) { reg.InstStallOrOverflow := true.B }
 
   regOut.Emptry := fifoIsEmpty
 }

@@ -40,7 +40,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     deqDataBytes = encoderAtbDataBeats
   )
 
-  val blockBuffer = Module(new BlockBuffer)
+  val blockBuffer = Module(new BlockBuffer(core_stall_response_cycles_p))
   val packetGen   = Module(new PacketGen)
   val fifo        = Module(new Fifo(fifoParam))
 
@@ -305,7 +305,6 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   /**
    * control reg io
    */
-  val fifoIsFull  = fifo.io.ctrl.fifoIsFull
   val fifoIsEmpty = blockBuffer.io.empty && fifo.io.ctrl.fifoIsEmpty && packetGen.io.empty
   controlMods.foreach { mod =>
     mod match {
@@ -328,7 +327,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     mod match {
       case m: HasCtrlBundle =>
         m.fifoIsEmpty := fifoIsEmpty
-        m.fifoIsFull  := fifoIsFull
+        m.fifoIsFull  := stallHart || blockBuffer.io.overflow
       case _ =>
     }
   }
