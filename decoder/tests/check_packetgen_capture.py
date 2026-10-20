@@ -19,7 +19,7 @@ def main(directory, stem='packetgen-execution'):
     for offset in range(0, len(capture), 3):
         events.extend(decoder.feed(capture[offset:offset + 3]))
     decoder.finish()
-    print('[encoder->decoder][2/3] 解析循环、taken/non-taken、间接调用、压缩指令和返回', file=sys.stderr)
+    print('[encoder->decoder][2/3] 按 srcID 解码采集流，比较指令、停止、丢失及异常事件', file=sys.stderr)
     instructions = [event for event in events if event['kind'] == 'instruction']
     actual = [event['pc'] for event in instructions]
     expected = json.loads((directory / f'{stem}-expected.json').read_text())
@@ -36,7 +36,13 @@ def main(directory, stem='packetgen-execution'):
         sync = [e for e in events if e['kind'] == 'instruction' and e['pc'] == 0x3000]
         if len(lost) != 1 or len(sync) != 1 or not decoder.decoders[3].start_of_trace:
             raise SystemExit('loss capture did not report one gap and finish the recovered segment')
-    extent = '保留下来的全部退休指令' if stem == 'packetgen-loss' else '全部退休指令' if stem == 'packetgen-lifecycle' else '至最后 trace 锚点的退休前缀'
+    if stem == 'packetgen-traps':
+        epcs = [e['pc'] for e in events if e['kind'] == 'exception_pc']
+        causes = [e['ecause'] for e in events if e['kind'] == 'trap']
+        if epcs != [0x100c, 0x2008] or causes != [2, 12]:
+            raise SystemExit(f'trap capture EPC/cause mismatch: {epcs!r}, {causes!r}')
+    extent = ('保留下来的全部退休指令' if stem == 'packetgen-loss' else '全部退休指令'
+              if stem in ('packetgen-lifecycle', 'packetgen-traps') else '至最后 trace 锚点的退休前缀')
     print(f'[encoder->decoder][3/3] {len(actual)} 条指令与{extent}逐条一致：' +
           ', '.join(f'0x{pc:x}' for pc in actual), file=sys.stderr)
     print(f'{stem} capture decoded successfully: {len(actual)} instructions')

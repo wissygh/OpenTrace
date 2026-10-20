@@ -200,6 +200,24 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(self.pcs(events), [])
         self.assertEqual(self.pcs(d.consume(Packet(0, sync(0x2000)))), [0x2000])
 
+    def test_consecutive_traps_without_handler_retirement(self):
+        image = program(0x1000, [0x13, 0x13], [(0x2000, b'\x13\x00\x00\x00')])
+        d = self.decoder(image)
+        d.consume(Packet(0, sync(0x1000)))
+        # No retired handler instructions between these traps; their address
+        # fields are undefined and must not be loaded from the program image.
+        def trap(cause):
+            return payload([(3, 2), (1, 2), (1, 1), (3, 2), (cause, 8),
+                            (0, 1), (0, 1), (0x7000 >> 1, 31), (0, 32)])
+        first = d.consume(Packet(0, trap(2)))
+        self.assertEqual(self.pcs(first), [])
+        self.assertEqual([e['pc'] for e in first if e['kind'] == 'exception_pc'], [0x1004])
+        second = d.consume(Packet(0, trap(12)))
+        self.assertEqual(self.pcs(second), [])
+        self.assertEqual([e['pc'] for e in second if e['kind'] == 'exception_pc'], [None])
+        self.assertEqual(self.pcs(d.consume(Packet(0, sync(0x2000)))), [0x2000])
+        self.assertFalse(d.awaiting_handler)
+
     def test_interrupt_and_trap_return(self):
         image = program(0x1000, [0x13], [(0x2000, (0x30200073).to_bytes(4, 'little')),
                                        (0x1004, b'\x13\x00\x00\x00')])
