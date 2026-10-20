@@ -82,6 +82,7 @@ class PacketGen extends Module with TraceParameters {
   val previousQualified = RegInit(false.B)
   val tail = RegInit(false.B)
   val trapPhase = RegInit(false.B)
+  val contextReported = RegInit(false.B)
   val replayCurrent = WireDefault(false.B)
   val lastHalfwords = 1.U << cur.ilastsize
   val lastPC = cur.iaddr + ((cur.iretire - lastHalfwords) << 1)
@@ -109,7 +110,8 @@ class PacketGen extends Module with TraceParameters {
   val previousJump = previousQualified && !tail && !trapPhase &&
     (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
   val endCurrent = cur.valid && qualified && !internalStep &&
-    (closing || (io.block.valid && !io.block.traceLost && !nextQualifiedInput))
+    (closing || (io.block.valid && !io.block.traceLost &&
+      (!nextQualifiedInput || io.block.ctype === Ctype.AsyncDiscontinuity)))
   val lossWanted = cur.valid && cur.traceLost
   val supportWanted = lossWanted || endPending || ((!cur.valid || !qualified) && (configPending || configurationChanged))
   io.blockReady := canAdvance && !internalStep && !replayCurrent && !supportWanted && (!closing || !qualified) && !endCurrent
@@ -120,6 +122,7 @@ class PacketGen extends Module with TraceParameters {
     previous := cur
     qualified := nextQualifiedInput
     previousQualified := qualified
+    contextReported := false.B
   }
 
   val syncRequested = RegInit(false.B)
@@ -223,6 +226,18 @@ class PacketGen extends Module with TraceParameters {
       }
     }.elsewhen(syncRequired && branchCount === 0.U) {
       synchronization()
+    }.elsewhen(!tail && !trapPhase && !contextReported && cur.ctype === Ctype.Imprecisely) {
+      // A higher-priority address/notify must not swallow an imprecise event.
+      // Serialize the metadata, then replay the same logical instruction.
+      val packet = Wire(new Format32)
+      packet.format := 3.U
+      packet.subformat := 2.U
+      packet.privilege := cur.priv
+      packet.time.foreach(_ := cur.time)
+      packet.context.foreach(_ := cur.context)
+      emitPayload(packet.asUInt)
+      replayCurrent := true.B
+      when(generated.fire) { contextReported := true.B }
     }.elsewhen(previousJump) {
       addressPacket(false.B, nextTrap || nextBoundary || syncRequired || endCurrent)
     }.elsewhen(curNotify || nextTrap || nextBoundary || !nextQualified || syncRequired || endCurrent) {
@@ -232,14 +247,6 @@ class PacketGen extends Module with TraceParameters {
       payload := ETracePacketCodec.branchOnly(map(30, 0), payload_max_width)
       emit := true.B
       consumesBranches := true.B
-    }.elsewhen(!tail && cur.ctype === Ctype.Imprecisely) {
-      val packet = Wire(new Format32)
-      packet.format := 3.U
-      packet.subformat := 2.U
-      packet.privilege := cur.priv
-      packet.time.foreach(_ := cur.time)
-      packet.context.foreach(_ := cur.context)
-      emitPayload(packet.asUInt)
     }
     finishesCurrent := endCurrent && !replayCurrent
   }.elsewhen(supportWanted) {

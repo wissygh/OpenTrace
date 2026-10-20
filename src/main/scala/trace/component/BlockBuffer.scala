@@ -132,7 +132,7 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
         entry.priv        := enq.priv
         entry.time        := enq.time
         entry.context     := enq.context
-        entry.ctype       := enq.ctype
+        entry.ctype       := Mux((i == 0).B, enq.ctype, Ctype.None)
         entry.cause       := enq.cause
         entry.tval        := enq.tval
         entry.impdef      := enq.impdef
