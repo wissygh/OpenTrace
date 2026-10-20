@@ -38,18 +38,18 @@ class ToCore extends Bundle {
 
 class BlockBufferEntry extends Bundle with TraceParameters {
   // side band signals
-  val priv        = Priv()
-  val time        = UInt(Xlen.W)
-  val context     = UInt(32.W)
-  val ctype       = UInt(2.W)
-  val cause       = UInt(CauseWidth.W)
-  val tval        = UInt(TvalWidth.W)
-  val impdef      = UInt(ImpdefWidth.W)
-  val hartIsReset = Bool()
-  val trigger = UInt(2.W) // None, traceOn, traceOff, notify
-  val traceOffAfter = Bool() // simultaneous trace-on/off: trace this entire block, then stop
-  val notifyRequested = Bool() // notification is independent of trace-on/off actions
-  val traceLost = Bool() // ordered gap marker, never an instruction
+  val priv            = Priv()
+  val time            = UInt(Xlen.W)
+  val context         = UInt(32.W)
+  val ctype           = UInt(2.W)
+  val cause           = UInt(CauseWidth.W)
+  val tval            = UInt(TvalWidth.W)
+  val impdef          = UInt(ImpdefWidth.W)
+  val hartIsReset     = Bool()
+  val trigger         = UInt(2.W) // None, traceOn, traceOff, notify
+  val traceOffAfter   = Bool()    // simultaneous trace-on/off: trace this entire block, then stop
+  val notifyRequested = Bool()    // notification is independent of trace-on/off actions
+  val traceLost       = Bool()    // ordered gap marker, never an instruction
   // group signals of a block
   val valid     = Bool()
   val iaddr     = UInt(IaddrWidth.W)

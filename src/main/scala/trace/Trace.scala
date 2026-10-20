@@ -20,8 +20,8 @@ class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false) extends Bundle 
   val fromCore    = Input(Vec(numHarts, new FromCore))
   val toCore      = Output(Vec(numHarts, new ToCore))
   val hpm         = Option.when(supportHPM)(Vec(numHarts, new Hpm))
-  val atbm = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
-  val clock_atb = Option.when(useAtbSink)(Input(Clock()))
+  val atbm        = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
+  val clock_atb   = Option.when(useAtbSink)(Input(Clock()))
   val reset_atb_n = Option.when(useAtbSink)(Input(Bool()))
   val clock_core  = Input(Clock())
   val reset_core  = Input(Reset())
@@ -31,12 +31,17 @@ class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false) extends Bundle 
   val reset_trace = Input(Reset())
 }
 
-class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
-    val numHarts: Int = 1, val useAtbSink: Boolean = false)(implicit p: Parameters) extends LazyModule
+class Trace(
+    busType:        BusType = BusType.TL,
+    xs_socmisc:     Boolean = false,
+    val numHarts:   Int = 1,
+    val useAtbSink: Boolean = false
+)(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
   require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
   override def hart_num = numHarts
+  validateImplementationParameters()
 
   val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i)))
   val funnel     = LazyModule(new Funnel(funnelBaseAddr, numHarts))
@@ -176,8 +181,8 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
       val crossing = Module(new TraceAsyncBridge(new TraceBeat(encoderAtbDataBeats)))
       crossing.io.sourceClock := io.clock_core
       crossing.io.sourceReset := encoder.reset.asAsyncReset
-      crossing.io.sinkClock := io.clock_trace
-      crossing.io.sinkReset := funnelMod.reset.asAsyncReset
+      crossing.io.sinkClock   := io.clock_trace
+      crossing.io.sinkReset   := funnelMod.reset.asAsyncReset
       crossing.io.in <> encoder.io.out
       encoder.io.control <> crossing.io.sourceControl
       funnelMod.io.in(i) <> crossing.io.out
@@ -189,29 +194,29 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
       val crossing = Module(new ATBAsyncBridge(funnelAtbDataBeats))
       crossing.io.sourceClock := io.clock_trace
       crossing.io.sourceReset := atbMod.reset.asAsyncReset
-      crossing.io.sinkClock := io.clock_atb.get
-      crossing.io.sinkReset := (!io.reset_atb_n.get).asAsyncReset
+      crossing.io.sinkClock   := io.clock_atb.get
+      crossing.io.sinkReset   := (!io.reset_atb_n.get).asAsyncReset
       crossing.io.slave.at <> atbMod.io.atbm.at
       atbMod.io.atbm.af <> crossing.io.slave.af
-      atbMod.io.atbm.syncReq := crossing.io.slave.syncReq
-      crossing.io.slave.wakeup := atbMod.io.atbm.wakeup
+      atbMod.io.atbm.syncReq    := crossing.io.slave.syncReq
+      crossing.io.slave.wakeup  := atbMod.io.atbm.wakeup
       crossing.io.slave.atclken := true.B
-      atbMod.io.atbm.atclken := true.B
+      atbMod.io.atbm.atclken    := true.B
       io.atbm.get <> crossing.io.master
       ramMod.io.in.valid := false.B
-      ramMod.io.in.bits := 0.U.asTypeOf(ramMod.io.in.bits)
+      ramMod.io.in.bits  := 0.U.asTypeOf(ramMod.io.in.bits)
     } else {
       ramMod.io.in <> funnelMod.io.out
-      atbMod.io.in.valid := false.B
-      atbMod.io.in.bits := 0.U.asTypeOf(atbMod.io.in.bits)
-      atbMod.io.atbm.at.ready := false.B
-      atbMod.io.atbm.atclken := true.B
-      atbMod.io.atbm.af.valid := false.B
-      atbMod.io.atbm.af.bits := 0.U.asTypeOf(atbMod.io.atbm.af.bits)
-      atbMod.io.atbm.syncReq := false.B
-      atbMod.io.upstream.flushAck := true.B
+      atbMod.io.in.valid            := false.B
+      atbMod.io.in.bits             := 0.U.asTypeOf(atbMod.io.in.bits)
+      atbMod.io.atbm.at.ready       := false.B
+      atbMod.io.atbm.atclken        := true.B
+      atbMod.io.atbm.af.valid       := false.B
+      atbMod.io.atbm.af.bits        := 0.U.asTypeOf(atbMod.io.atbm.af.bits)
+      atbMod.io.atbm.syncReq        := false.B
+      atbMod.io.upstream.flushAck   := true.B
       funnelMod.io.control.flushReq := false.B
-      funnelMod.io.control.syncReq := false.B
+      funnelMod.io.control.syncReq  := false.B
     }
 
     // hpm

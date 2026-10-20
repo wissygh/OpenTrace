@@ -11,18 +11,18 @@ import trace.control.TsControlBundle
 class EncoderTimestampCounter(width: Int = 63) extends Module with TraceParameters {
   require(width > 0 && width <= 63)
   val io = IO(new Bundle {
-    val control = Input(new TsControlBundle)
+    val control    = Input(new TsControlBundle)
     val resetCount = Input(Bool())
-    val debug = Input(Bool())
-    val value = Output(UInt(width.W))
-    val traceTime = Output(UInt(time_width_p.W))
+    val debug      = Input(Bool())
+    val value      = Output(UInt(width.W))
+    val traceTime  = Output(UInt(time_width_p.W))
   })
-  val count = RegInit(0.U(width.W))
-  val phase = RegInit(0.U(6.W))
-  val prescale = io.control.Prescale.asUInt
+  val count         = RegInit(0.U(width.W))
+  val phase         = RegInit(0.U(6.W))
+  val prescale      = io.control.Prescale.asUInt
   val priorPrescale = RegNext(prescale, ts_prescale_p.U(2.W))
-  val period = (1.U(7.W) << (prescale << 1)) - 1.U
-  val running = io.control.Count.asBool && (!io.debug || io.control.RunInDebug.asBool)
+  val period        = (1.U(7.W) << (prescale << 1)) - 1.U
+  val running       = io.control.Count.asBool && (!io.debug || io.control.RunInDebug.asBool)
   when(io.resetCount) {
     count := 0.U
     phase := 0.U

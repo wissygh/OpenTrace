@@ -8,6 +8,31 @@ import trace.component.FifoParam
 
 trait TraceParameters {
 
+  /** Fail before RTL generation if a configuration exceeds the implemented
+    * instruction profile or contradicts a public CSR/transport field.
+    */
+  def validateImplementationParameters(): Unit = {
+    require(hart_num >= 1 && hart_num <= 16, "implemented funnel supports 1..16 harts")
+    require(filter_num >= 1 && comparator_num >= 1)
+    require(src_bits_p == 8, "hardware profile uses one in-band source byte and trTeSrcBits=8")
+    require(packet_header_time_p == 0 && trace_type_width == 0, "instruction packets use a fixed base header")
+    require(iaddress_width_p == IaddrWidth && IaddrWidth >= 2 && IaddrWidth <= 64 && iaddress_lsb_p == 1)
+    require(privilege_width_p == PrivWidth && PrivWidth == 3 && ItypeWidth == 4)
+    require(contextWidth == 32 && time_width_p == 64 && ts_width_p > 0 && ts_width_p <= 63)
+    val trapBits = 7 + privilege_width_p + ecause_width_p + 2 * IaddrWidth - iaddress_lsb_p +
+      (if (notime_p) 0 else time_width_p) + (if (nocontext_p) 0 else contextWidth)
+    require(payload_max_width >= trapBits && payload_max_width <= 248 && payload_max_width % 8 == 0)
+    require(maxPackets >= 1 + src_bits_p / 8 + payload_max_width / 8)
+    def powerOfTwo(n: Int): Boolean = n > 0 && (n & (n - 1)) == 0
+    require(atbIdWidth == 7)
+    require(Seq(encoderAtbDataWidth, funnelAtbDataWidth).forall(w => w >= 8 && powerOfTwo(w)))
+    require(funnelAtbDataWidth == 32, "implemented SRAM and control data words are 32 bits")
+    require(powerOfTwo(buffer_num) && buffer_num > 1 && buffer_ptr_width == log2Up(buffer_num))
+    require(core_stall_response_cycles_p >= 0 && BlockNum > 0 &&
+      block_buffer_depth_p >= BlockNum * (core_stall_response_cycles_p + 1))
+    require(filter_trap_depth_bits_p > 0 && filter_trap_depth_bits_p <= 16)
+  }
+
   /**
     * soc
     */
@@ -79,7 +104,7 @@ trait TraceParameters {
       "the addres of trTeFilter is [0x400 ... 0x5ff].\n"
   )
   def filter_trap_depth_bits_p = 4
-  def comparator_num = 1
+  def comparator_num           = 1
   require(
     comparator_num <= 8,
     "comparator_num can not be greater 8, " +
@@ -209,12 +234,12 @@ object BusType {
 }
 
 case class NodeType(
-  nodetype: Int = 0
+    nodetype: Int = 0
 ) {
-  def isSource    = nodetype == 0
-  def isFunnel  = nodetype == 1
+  def isSource = nodetype == 0
+  def isFunnel = nodetype == 1
   def isSink   = nodetype == 2
-  def isOther = nodetype >= 3
+  def isOther  = nodetype >= 3
   def NodeName: String = nodetype match {
     case 0 => "Source"
     case 1 => "Funnel"
@@ -224,7 +249,7 @@ case class NodeType(
 }
 
 object NodeType {
-  def source:  NodeType = new NodeType(0)
+  def source: NodeType = new NodeType(0)
   def funnel: NodeType = new NodeType(1)
-  def sink: NodeType = new NodeType(2)
+  def sink:   NodeType = new NodeType(2)
 }

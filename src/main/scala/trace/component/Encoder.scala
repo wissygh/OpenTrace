@@ -22,11 +22,11 @@ class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseA
 class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with EncoderControl {
   val io = IO(new Bundle {
-    val fromCore  = Input(new FromCore)
-    val toCore    = Output(new ToCore)
-    val hpm       = Option.when(supportHPM)(new Hpm)
-    val out = Decoupled(new TraceBeat(encoderAtbDataBeats))
-    val control = new TraceControl
+    val fromCore = Input(new FromCore)
+    val toCore   = Output(new ToCore)
+    val hpm      = Option.when(supportHPM)(new Hpm)
+    val out      = Decoupled(new TraceBeat(encoderAtbDataBeats))
+    val control  = new TraceControl
   })
 
   /**
@@ -48,7 +48,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   // connection
   val ingressEnabled = teControl.regOut.Enable.asBool &&
     (teControl.regOut.InstTracing.asBool || teControl.regOut.InstTrigEnable.asBool)
-  blockBuffer.io.fromCore := io.fromCore
+  blockBuffer.io.fromCore      := io.fromCore
   blockBuffer.io.fromCore.time := timestamp.io.traceTime
   blockBuffer.io.fromCore.blocks.zip(io.fromCore.blocks).foreach { case (buffered, incoming) =>
     buffered.valid := incoming.valid && ingressEnabled
@@ -60,10 +60,10 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val blockBufferIsFull  = blockBuffer.io.bufferIsFull
   val deqFromBlockBuffer = blockBuffer.io.deqEntry
 
-  packetGen.io.block := deqFromBlockBuffer
-  packetGen.io.syncReq := io.control.syncReq
-  packetGen.io.flushReq := io.control.flushReq
-  packetGen.io.stopReq := io.fromCore.hartIsReset || io.fromCore.priv === Priv.D
+  packetGen.io.block      := deqFromBlockBuffer
+  packetGen.io.syncReq    := io.control.syncReq
+  packetGen.io.flushReq   := io.control.flushReq
+  packetGen.io.stopReq    := io.fromCore.hartIsReset || io.fromCore.priv === Priv.D
   blockBuffer.io.deqReady := packetGen.io.blockReady
 
   /**
@@ -89,7 +89,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * todo: data trace match
    */
   val block         = deqFromBlockBuffer
-  val compMatchVec = Wire(Vec(comparator_num, Bool()))
+  val compMatchVec  = Wire(Vec(comparator_num, Bool()))
   val compNotifyVec = Wire(Vec(comparator_num, Bool()))
 
   def comparatorMatch(index: UInt): Bool =
@@ -97,27 +97,27 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
 
   for (i <- 0 until comparator_num) {
     val comparator = Module(new TraceComparator)
-    comparator.io.block := block
-    comparator.io.control := teCompControlVec(i).rdata
-    comparator.io.primary := Cat(teCompPMatchHighVec(i).rdata, teCompPMatchLowVec(i).rdata)
+    comparator.io.block     := block
+    comparator.io.control   := teCompControlVec(i).rdata
+    comparator.io.primary   := Cat(teCompPMatchHighVec(i).rdata, teCompPMatchLowVec(i).rdata)
     comparator.io.secondary := Cat(teCompSMatchHighVec(i).rdata, teCompSMatchLowVec(i).rdata)
     // Prime from the new control word on its actual CSR write edge.
     comparator.io.configure := teCompControlVec(i).w.wen
-    when(teCompControlVec(i).w.wen) { comparator.io.control := teCompControlVec(i).w.wdata }
+    when(teCompControlVec(i).w.wen)(comparator.io.control := teCompControlVec(i).w.wdata)
     comparator.io.advance := block.valid && packetGen.io.blockReady && teControl.regOut.Enable.asBool
-    compMatchVec(i) := comparator.io.matched
-    compNotifyVec(i) := comparator.io.notification
+    compMatchVec(i)       := comparator.io.matched
+    compNotifyVec(i)      := comparator.io.notification
   }
   packetGen.io.block.notifyRequested := block.notifyRequested || compNotifyVec.asUInt.orR
 
   val filterEnableVec = Wire(Vec(filter_num, Bool()))
-  val privMatchVec   = Wire(Vec(filter_num, Bool()))
-  val trapMatchVec = Wire(Vec(filter_num, Bool()))
+  val privMatchVec    = Wire(Vec(filter_num, Bool()))
+  val trapMatchVec    = Wire(Vec(filter_num, Bool()))
   val filterSelection = teInstFilters.regOut.InstFilters.asUInt
-  val comp1MatchVec  = Wire(Vec(filter_num, Bool()))
-  val comp2MatchVec  = Wire(Vec(filter_num, Bool()))
-  val comp3MatchVec  = Wire(Vec(filter_num, Bool()))
-  val impdefMatchVec = Wire(Vec(filter_num, Bool()))
+  val comp1MatchVec   = Wire(Vec(filter_num, Bool()))
+  val comp2MatchVec   = Wire(Vec(filter_num, Bool()))
+  val comp3MatchVec   = Wire(Vec(filter_num, Bool()))
+  val impdefMatchVec  = Wire(Vec(filter_num, Bool()))
   //  val dtypeMatchVec  = Wire(Vec(filter_num, Bool()))
   //  val dsizeMatchVec  = Wire(Vec(filter_num, Bool()))
 
@@ -140,11 +140,17 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
       true.B
     )
 
-    val scope = Module(new TraceTrapFilterScope(filter_trap_depth_bits_p))
+    val scope         = Module(new TraceTrapFilterScope(filter_trap_depth_bits_p))
     val trapCondition = ctrlReg.MatchEcause.asBool || ctrlReg.MatchInterrupt.asBool
     scope.io.kind := block.itype
-    scope.io.trigger := TraceFilterLogic.trap(ecauseReg, block.cause, block.itype,
-      ctrlReg.MatchEcause.asBool, ctrlReg.MatchInterrupt.asBool, instReg.MatchValueInterrupt.asBool)
+    scope.io.trigger := TraceFilterLogic.trap(
+      ecauseReg,
+      block.cause,
+      block.itype,
+      ctrlReg.MatchEcause.asBool,
+      ctrlReg.MatchInterrupt.asBool,
+      instReg.MatchValueInterrupt.asBool
+    )
     scope.io.advance := block.valid && packetGen.io.blockReady && teControl.regOut.Enable.asBool
     scope.io.clear := !teControl.regOut.Enable.asBool || !ctrlReg.Enable.asBool ||
       !filterSelection(i) || !trapCondition || teInstFilters.w.wen ||
@@ -193,9 +199,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * filters match_end
    */
 
-  timestamp.io.control := tsControl.regOut
+  timestamp.io.control    := tsControl.regOut
   timestamp.io.resetCount := tsControl.w.wen && tsControl.w.wdataFields.Reset.asBool
-  timestamp.io.debug := io.fromCore.priv === Priv.D
+  timestamp.io.debug      := io.fromCore.priv === Priv.D
 
   /**
    * packets
@@ -229,16 +235,16 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    * interface -> packetGen -> fifo -> atb
    */
 
-  packetGen.io.fromCtrl.filterRes         := filterRes
-  packetGen.io.fromCtrl.fifoIsFull        := fifo.io.ctrl.fifoIsFull
-  packetGen.io.fromCtrl.teCtrl            := teControl.regOut
-  packetGen.io.fromCtrl.teInstFeat        := teInstFeatures.regOut
-  packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut
+  packetGen.io.fromCtrl.filterRes  := filterRes
+  packetGen.io.fromCtrl.fifoIsFull := fifo.io.ctrl.fifoIsFull
+  packetGen.io.fromCtrl.teCtrl     := teControl.regOut
+  packetGen.io.fromCtrl.teInstFeat := teInstFeatures.regOut
+  packetGen.io.fromCtrl.teDataCtrl := teDataControl.regOut
   fifo.io.packetEnq <> packetGen.io.packet
   io.out <> fifo.io.atbm
   fifo.io.control.flushReq := io.control.flushReq && packetGen.io.flushAck
-  fifo.io.control.syncReq := false.B
-  io.control.flushAck := fifo.io.control.flushAck
+  fifo.io.control.syncReq  := false.B
+  io.control.flushAck      := fifo.io.control.flushAck
 
   /**
    * encoder IO
@@ -258,7 +264,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     }
     mod match {
       case m: HasTeCtrlBundle => // trace all blocks of "traceOn or traceOff cycle"
-        m.traceOn  := block.valid && packetGen.io.blockReady && block.trigger === TriggerAction.TraceOn
+        m.traceOn := block.valid && packetGen.io.blockReady && block.trigger === TriggerAction.TraceOn
         m.traceOff := block.valid && packetGen.io.blockReady &&
           (block.trigger === TriggerAction.TraceOff || block.traceOffAfter)
       case _ =>

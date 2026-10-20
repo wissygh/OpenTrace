@@ -27,7 +27,7 @@ class EncoderTraceControlRegister extends CSRModule("TeControl", new TeControlBu
   when(wen && (wdata.Enable || wdata.InstStallOrOverflow)) {
     reg.InstStallOrOverflow := false.B
   }
-  when(fifoIsFull) { reg.InstStallOrOverflow := true.B }
+  when(fifoIsFull)(reg.InstStallOrOverflow := true.B)
 
   regOut.Emptry := fifoIsEmpty
 }
@@ -193,17 +193,17 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
 }
 
 class TeControlBundle extends CSRBundle with TraceParameters {
-  val Active      = RW(0).withReset(0.U)
-  val Enable      = RW(1).withReset(0.U)
-  val InstTracing = if (test_xsEmu) RW(2).withReset(1.U) else RW(2).withReset(0.U)
-  val Emptry      = RO(3).withReset(1.U) // Reads as 1 when all generated trace have been emitted.
+  val Active              = RW(0).withReset(0.U)
+  val Enable              = RW(1).withReset(0.U)
+  val InstTracing         = if (test_xsEmu) RW(2).withReset(1.U) else RW(2).withReset(0.U)
+  val Emptry              = RO(3).withReset(1.U)  // Reads as 1 when all generated trace have been emitted.
   val InstMode            = InstModeROField(6, 4).withReset(InstModeROField.VendorDef)
-  val Context             = RO(9).withReset(0.U) // E-Trace Chapter 2, Table 2
+  val Context             = RO(9).withReset(0.U)  // E-Trace Chapter 2, Table 2
   val InstTrigEnable      = RW(11).withReset(0.U)
   val InstStallOrOverflow = RW(12).withReset(0.U)
-  val InstStallEna        = RW(13).withReset(0.U)                                              // 0: drop 1: stall
+  val InstStallEna        = RW(13).withReset(0.U) // 0: drop 1: stall
   val InhibitSrc          = RO(15).withReset(0.U)
-  val InstSyncMode        = InstSyncModeROField(17, 16).withReset(InstSyncModeROField.Packets) // only support Packets
+  val InstSyncMode = InstSyncModeROField(17, 16).withReset(InstSyncModeROField.Packets) // only support Packets
   val InstSyncMax =
     InstSyncMaxField(23, 20, wNoFilter).withReset(
       InstSyncMaxField.Default

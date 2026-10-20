@@ -13,17 +13,17 @@ class ATBBridge(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(bas
 class ATBBridgeImp(wrapper: ATBBridge)(baseAddr: Int)(implicit p: Parameters)
     extends ComponentBaseImp(wrapper)(baseAddr) with ATBBridgeControl {
   val io = IO(new Bundle {
-    val in = Flipped(Decoupled(new TraceBeat(funnelAtbDataBeats)))
-    val atbm = new ATBMaster(funnelAtbDataBeats)
+    val in       = Flipped(Decoupled(new TraceBeat(funnelAtbDataBeats)))
+    val atbm     = new ATBMaster(funnelAtbDataBeats)
     val upstream = Flipped(new TraceControl)
   })
   val adapter = Module(new TraceATBAdapter(funnelAtbDataBeats))
   adapter.io.in <> io.in
   adapter.io.enable := ATBControl.regOut.Enable.asBool
-  adapter.io.id := ATBControl.regOut.ID.asUInt
+  adapter.io.id     := ATBControl.regOut.ID.asUInt
   io.atbm <> adapter.io.atbm
   io.upstream <> adapter.io.upstream
   ATBControl.fifoIsEmpty := adapter.io.empty
-  ATBControl.fifoIsFull := false.B
+  ATBControl.fifoIsFull  := false.B
   connectCtrlReg()
 }

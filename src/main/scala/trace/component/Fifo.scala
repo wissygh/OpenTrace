@@ -27,35 +27,35 @@ class CtrlInterface extends Bundle with TraceParameters {
 
 /** Stores complete packets and serializes them without interpreting their contents. */
 class Fifo(param: FifoParam) extends Module with HasCircularQueuePtrHelper with TraceParameters {
-  private val depth = param.fifoDepth
-  private val inBytes = param.enqDataBytes
+  private val depth    = param.fifoDepth
+  private val inBytes  = param.enqDataBytes
   private val outBytes = param.deqDataBytes
   require(depth >= inBytes && inBytes > 0)
   require(outBytes > 0 && isPow2(outBytes))
 
   val io = IO(new Bundle {
-    val packetEnq = Flipped(Decoupled(new PacketEnq(inBytes)))
-    val ctrl = new CtrlInterface
+    val packetEnq      = Flipped(Decoupled(new PacketEnq(inBytes)))
+    val ctrl           = new CtrlInterface
     val sourceFlushAll = Option.when(!param.isLeaf)(Input(Bool()))
-    val atbm = Decoupled(new TraceBeat(outBytes))
-    val control = new TraceControl
+    val atbm           = Decoupled(new TraceBeat(outBytes))
+    val control        = new TraceControl
   })
 
-  val data = Reg(Vec(depth, UInt(8.W)))
-  val lengths = Module(new Queue(UInt(log2Ceil(inBytes + 1).W), depth))
-  val writePtr = RegInit(FifoPtr(depth, false.B, 0.U))
-  val readPtr = RegInit(FifoPtr(depth, false.B, 0.U))
-  val used = RegInit(0.U(log2Ceil(depth + 1).W))
-  val remaining = RegInit(0.U(log2Ceil(inBytes + 1).W))
-  val packetSize = lengths.io.deq.bits
-  val available = Mux(remaining === 0.U, packetSize, remaining)
-  val count = Mux(available > outBytes.U, outBytes.U, available)
-  val last = available <= outBytes.U
+  val data        = Reg(Vec(depth, UInt(8.W)))
+  val lengths     = Module(new Queue(UInt(log2Ceil(inBytes + 1).W), depth))
+  val writePtr    = RegInit(FifoPtr(depth, false.B, 0.U))
+  val readPtr     = RegInit(FifoPtr(depth, false.B, 0.U))
+  val used        = RegInit(0.U(log2Ceil(depth + 1).W))
+  val remaining   = RegInit(0.U(log2Ceil(inBytes + 1).W))
+  val packetSize  = lengths.io.deq.bits
+  val available   = Mux(remaining === 0.U, packetSize, remaining)
+  val count       = Mux(available > outBytes.U, outBytes.U, available)
+  val last        = available <= outBytes.U
   val legalLength = io.packetEnq.bits.len > 0.U && io.packetEnq.bits.len <= inBytes.U
 
-  io.packetEnq.ready := lengths.io.enq.ready && legalLength && io.packetEnq.bits.len <= depth.U - used
+  io.packetEnq.ready   := lengths.io.enq.ready && legalLength && io.packetEnq.bits.len <= depth.U - used
   lengths.io.enq.valid := io.packetEnq.fire
-  lengths.io.enq.bits := io.packetEnq.bits.len
+  lengths.io.enq.bits  := io.packetEnq.bits.len
   when(io.packetEnq.valid) {
     assert(legalLength, "PacketEnq.len must describe a nonempty complete packet")
   }
@@ -84,22 +84,22 @@ class Fifo(param: FifoParam) extends Module with HasCircularQueuePtrHelper with 
     assert(count <= oldBytes)
     oldBytes := oldBytes - count
   }
-  when(!io.control.flushReq) { flushing := false.B }
-  io.control.flushAck := reset.asBool || (flushing && oldBytes === 0.U)
-  io.atbm.valid := lengths.io.deq.valid && !(flushing && oldBytes === 0.U)
-  io.atbm.bits.data := beat.asUInt
-  io.atbm.bits.bytes := count - 1.U
+  when(!io.control.flushReq)(flushing := false.B)
+  io.control.flushAck      := reset.asBool || (flushing && oldBytes === 0.U)
+  io.atbm.valid            := lengths.io.deq.valid && !(flushing && oldBytes === 0.U)
+  io.atbm.bits.data        := beat.asUInt
+  io.atbm.bits.bytes       := count - 1.U
   io.atbm.bits.packetBytes := packetSize
-  io.atbm.bits.last := last
-  lengths.io.deq.ready := io.atbm.fire && last
+  io.atbm.bits.last        := last
+  lengths.io.deq.ready     := io.atbm.fire && last
   when(io.atbm.fire) {
-    readPtr := readPtr + count
+    readPtr   := readPtr + count
     remaining := Mux(last, 0.U, available - count)
   }
   used := used + Mux(io.packetEnq.fire, io.packetEnq.bits.len, 0.U) - Mux(io.atbm.fire, count, 0.U)
   assert(used <= depth.U)
   io.ctrl.fifoIsEmpty := !lengths.io.deq.valid
-  io.ctrl.fifoIsFull := used === depth.U || !lengths.io.enq.ready
+  io.ctrl.fifoIsFull  := used === depth.U || !lengths.io.enq.ready
 }
 
 class FifoPtr(entries: Int) extends CircularQueuePtr[FifoPtr](entries) {}

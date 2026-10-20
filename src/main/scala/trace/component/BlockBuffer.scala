@@ -26,8 +26,10 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
   })
 
   // trace compress: Nxt -> Cur
-  val inValidVec = VecInit(io.fromCore.blocks.map(block => block.valid &&
-    (block.bits.iretire =/= 0.U || Itype.isTrap(block.bits.itype))))
+  val inValidVec = VecInit(io.fromCore.blocks.map(block =>
+    block.valid &&
+      (block.bits.iretire =/= 0.U || Itype.isTrap(block.bits.itype))
+  ))
   val inTypeIsNotNoneVec = VecInit(io.fromCore.blocks.map(block => Itype.isNotNone(block.bits.itype)))
   for (i <- 0 until BlockNum) {
     val block = io.fromCore.blocks(i)
@@ -46,7 +48,7 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
       }
     }
   }
-  val needPcVec          = Wire(Vec(BlockNum, Bool()))
+  val needPcVec = Wire(Vec(BlockNum, Bool()))
   for (i <- 0 until BlockNum) { // todo: tail of fifo
     val rightHasValid = if (i == BlockNum - 1) false.B else inValidVec.asUInt(BlockNum - 1, i + 1).orR
     needPcVec(i) := inValidVec(i) & (inTypeIsNotNoneVec(i) || io.fromCore.blocks(i).bits.trigNotify || !rightHasValid)
@@ -54,7 +56,7 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
 
   val blocksCompressed = WireInit(io.fromCore.blocks)
   blocksCompressed.zip(inValidVec).foreach { case (block, valid) => block.valid := valid }
-  val enq              = WireInit(io.fromCore)
+  val enq = WireInit(io.fromCore)
   for (i <- 1 until BlockNum) {
     when(inValidVec(i - 1) && !needPcVec(i - 1)) {
       // itype, ilastsize, sijump is belong to block which need pc.
@@ -92,34 +94,37 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
   enqPtr := enqPtrNext
   deqPtr := deqPtrNext
 
-  val fifoIsEmpty = isEmpty(enqPtr, deqPtr)
+  val fifoIsEmpty  = isEmpty(enqPtr, deqPtr)
   val metadataOnly = !needPcVec.asUInt.orR && (io.fromCore.trigger.traceOn || io.fromCore.trigger.traceOff)
-  val enqCount = Mux(metadataOnly, 1.U, PopCount(needPcVec.asUInt))
-  val freeEntries = hasFreeEntries(enqPtr, deqPtr)
-  val dequeue = io.deqReady && !fifoIsEmpty
+  val enqCount     = Mux(metadataOnly, 1.U, PopCount(needPcVec.asUInt))
+  val freeEntries  = hasFreeEntries(enqPtr, deqPtr)
+  val dequeue      = io.deqReady && !fifoIsEmpty
   // A register FIFO may replace the entry read on this edge even when full.
   val available = freeEntries +& dequeue.asUInt
-  val canEnq = enqCount <= available
+  val canEnq    = enqCount <= available
   // Stop admitting post-gap data until an ordered marker has been written at
   // the old tail. Keep draining all previously accepted entries normally.
   val lossPending = RegInit(false.B)
   val lostTrigger = RegInit(TriggerAction.None)
-  val incomingTrigger = Mux(io.fromCore.trigger.traceOff, TriggerAction.TraceOff,
-    Mux(io.fromCore.trigger.traceOn, TriggerAction.TraceOn, TriggerAction.None))
+  val incomingTrigger = Mux(
+    io.fromCore.trigger.traceOff,
+    TriggerAction.TraceOff,
+    Mux(io.fromCore.trigger.traceOn, TriggerAction.TraceOn, TriggerAction.None)
+  )
   val markerTrigger = Mux(incomingTrigger =/= TriggerAction.None, incomingTrigger, lostTrigger)
-  val insertMarker = lossPending && available =/= 0.U
-  val admit = !lossPending && canEnq
-  val dropped = enqCount =/= 0.U && !admit
-  when(dropped && !lossPending) { lossPending := true.B }
-  when(dropped) { lostTrigger := markerTrigger }
+  val insertMarker  = lossPending && available =/= 0.U
+  val admit         = !lossPending && canEnq
+  val dropped       = enqCount =/= 0.U && !admit
+  when(dropped && !lossPending)(lossPending := true.B)
+  when(dropped)(lostTrigger := markerTrigger)
   when(insertMarker) {
     val marker = WireInit(0.U.asTypeOf(new BlockBufferEntry))
-    marker.valid := true.B
-    marker.traceLost := true.B
-    marker.trigger := markerTrigger
+    marker.valid       := true.B
+    marker.traceLost   := true.B
+    marker.trigger     := markerTrigger
     fifo(enqPtr.value) := marker
-    lossPending := false.B
-    lostTrigger := TriggerAction.None
+    lossPending        := false.B
+    lostTrigger        := TriggerAction.None
   }
   enqPtrNext := Mux(insertMarker, enqPtr + 1.U, Mux(admit, enqPtr + enqCount, enqPtr))
   deqPtrNext := deqPtr + dequeue.asUInt
@@ -140,17 +145,20 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
         entry.trigger := Mux(
           enq.trigger.traceOn && (i == 0).B,
           1.U,
-          Mux(enq.trigger.traceOff && i.U === enqCount - 1.U, 2.U,
-            Mux(!metadataOnly && enq.blocks(i).bits.trigNotify, 3.U, 0.U))
+          Mux(
+            enq.trigger.traceOff && i.U === enqCount - 1.U,
+            2.U,
+            Mux(!metadataOnly && enq.blocks(i).bits.trigNotify, 3.U, 0.U)
+          )
         )
-        entry.traceOffAfter := enq.trigger.traceOn && enq.trigger.traceOff && enqCount === 1.U
+        entry.traceOffAfter   := enq.trigger.traceOn && enq.trigger.traceOff && enqCount === 1.U
         entry.notifyRequested := !metadataOnly && enq.blocks(i).bits.trigNotify
-        entry.traceLost := false.B
-        entry.valid     := true.B
-        entry.iaddr     := Mux(metadataOnly, 0.U, enq.blocks(i).bits.iaddr)
-        entry.itype     := Mux(metadataOnly, Itype.None, enq.blocks(i).bits.itype)
-        entry.iretire   := Mux(metadataOnly, 0.U, enq.blocks(i).bits.iretire)
-        entry.ilastsize := Mux(metadataOnly, Ilastsize.HalfWord, enq.blocks(i).bits.ilastsize)
+        entry.traceLost       := false.B
+        entry.valid           := true.B
+        entry.iaddr           := Mux(metadataOnly, 0.U, enq.blocks(i).bits.iaddr)
+        entry.itype           := Mux(metadataOnly, Itype.None, enq.blocks(i).bits.itype)
+        entry.iretire         := Mux(metadataOnly, 0.U, enq.blocks(i).bits.iretire)
+        entry.ilastsize       := Mux(metadataOnly, Ilastsize.HalfWord, enq.blocks(i).bits.ilastsize)
         entry
       }
     }
@@ -159,8 +167,8 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
   // dequeue
   io.deqEntry     := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
   io.bufferIsFull := lossPending || freeEntries < stallReserve.U
-  io.overflow := dropped
-  io.empty := fifoIsEmpty && !lossPending
+  io.overflow     := dropped
+  io.empty        := fifoIsEmpty && !lossPending
 }
 
 class BlockPtr(entries: Int) extends CircularQueuePtr[BlockPtr](entries) {}

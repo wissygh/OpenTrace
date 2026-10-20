@@ -10,7 +10,7 @@ import chisel3.util._
 import trace._
 
 class TsControlBundle extends CSRBundle {
-  val Active = RO(0).withReset(0.U) // aliases the encoder's component reset
+  val Active = RO(0).withReset(0.U)                                        // aliases the encoder's component reset
   val Count  = TsCountEnField(1, wNoFilter).withReset(TsCountEnField.Stop) // InternalSystem/InternalCore
   val Reset = RW(2).withReset(0.U) // InternalSystem/InternalCore, W1 to clear timestamp counter.
   val RunInDebug = TsCountEnField(3, wNoFilter).withReset(TsCountEnField.Stop) // InternalCore clock.
@@ -48,5 +48,5 @@ object TsPrescaleField extends CSREnum with WARLApply with TraceParameters {
 
 class EncoderTimestampControlRegister extends CSRModule("TsControl", new TsControlBundle) {
   regOut.Active := !reset.asBool
-  regOut.Reset := false.B // W1 command, never a stored reset request on readback
+  regOut.Reset  := false.B // W1 command, never a stored reset request on readback
 }

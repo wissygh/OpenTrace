@@ -12,8 +12,7 @@ object TraceFilterLogic {
     cause < 64.U && choices(cause(5, 0))
   }
 
-  def trap(choices: UInt, code: UInt, kind: UInt, matchCause: Bool,
-      matchType: Bool, interrupt: Bool): Bool =
+  def trap(choices: UInt, code: UInt, kind: UInt, matchCause: Bool, matchType: Bool, interrupt: Bool): Bool =
     Itype.isTrap(kind) && (!matchCause || cause(choices, code)) &&
       (!matchType || Mux(interrupt, Itype.isInt(kind), Itype.isExp(kind)))
 

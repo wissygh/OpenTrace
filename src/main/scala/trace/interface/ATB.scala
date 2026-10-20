@@ -20,16 +20,16 @@ class ATData(dataBeats: Int) extends Bundle with TraceParameters {
 class ATBMaster(dataBeats: Int) extends Bundle {
   // ATCLK and ATRESETn are supplied by the enclosing clock/reset ports.
   val atclken = Input(Bool())
-  val at = DecoupledIO(new ATData(dataBeats))
-  val af = Flipped(DecoupledIO(new Bundle {}))
+  val at      = DecoupledIO(new ATData(dataBeats))
+  val af      = Flipped(DecoupledIO(new Bundle {}))
   val syncReq = Input(Bool())
-  val wakeup = Output(Bool())
+  val wakeup  = Output(Bool())
 }
 
 class ATBSlave(dataBeats: Int) extends Bundle {
   val atclken = Input(Bool())
-  val at = Flipped(DecoupledIO(new ATData(dataBeats)))
-  val af = DecoupledIO(new Bundle {})
+  val at      = Flipped(DecoupledIO(new ATData(dataBeats)))
+  val af      = DecoupledIO(new Bundle {})
   val syncReq = Output(Bool())
-  val wakeup = Input(Bool())
+  val wakeup  = Input(Bool())
 }

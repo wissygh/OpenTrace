@@ -12,10 +12,9 @@ object ETracePacketCodec {
     if (raw.getWidth == width) raw else Cat(Fill(width - raw.getWidth, raw.head(1)), raw)
   }
 
-  def address(count: UInt, map: UInt, alignedAddress: UInt,
-      notify: Bool, updiscon: Bool, width: Int): UInt = {
-    val n = alignedAddress.head(1).asBool ^ notify
-    val u = n ^ updiscon
+  def address(count: UInt, map: UInt, alignedAddress: UInt, notify: Bool, updiscon: Bool, width: Int): UInt = {
+    val n          = alignedAddress.head(1).asBool ^ notify
+    val u          = n ^ updiscon
     val withoutMap = extend(Cat(u, n, alignedAddress, 2.U(2.W)), width)
     val choices = Seq(1, 3, 7, 15, 31).map { size =>
       (count <= size.U) -> extend(Cat(u, n, alignedAddress, map(size - 1, 0), count, 1.U(2.W)), width)
@@ -30,9 +29,9 @@ object ETracePacketCodec {
     * payloads. valid is separate: payload value zero is not an absence marker.
     */
   def payloadBytes(payload: UInt): UInt = {
-    val width = payload.getWidth
+    val width     = payload.getWidth
     val different = payload ^ Fill(width, payload.head(1))
-    val bits = Mux(different.orR, (width + 1).U - PriorityEncoder(Reverse(different)), 1.U)
+    val bits      = Mux(different.orR, (width + 1).U - PriorityEncoder(Reverse(different)), 1.U)
     (bits + 7.U) >> 3
   }
 

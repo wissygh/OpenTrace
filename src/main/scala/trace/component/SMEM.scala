@@ -71,11 +71,11 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   /**
    * atb 2 system memory
    */
-  val traceWrite      = io.atbs.at.fire
+  val traceWrite = io.atbs.at.fire
   // This legacy sink does not initiate AF or synchronization requests.
   io.atbs.af.valid := false.B
-  io.atbs.af.bits := 0.U.asTypeOf(io.atbs.af.bits)
-  io.atbs.syncReq := false.B
+  io.atbs.af.bits  := 0.U.asTypeOf(io.atbs.af.bits)
+  io.atbs.syncReq  := false.B
   val bufferWriteData = io.atbs.at.bits.data
 
   val wpReg    = RegInit(0.U(62.W))
