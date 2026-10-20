@@ -81,34 +81,40 @@ class PacketGen extends Module with TraceParameters {
   val qualified = RegInit(false.B)
   val previousQualified = RegInit(false.B)
   val tail = RegInit(false.B)
+  val trapPhase = RegInit(false.B)
+  val replayCurrent = WireDefault(false.B)
   val lastHalfwords = 1.U << cur.ilastsize
   val lastPC = cur.iaddr + ((cur.iretire - lastHalfwords) << 1)
   // Chapter 9.3 applies the algorithm to a block's first and last instructions.
   // The prefix has no control discontinuity; only the tail owns itype/notify.
-  val firstOfMulti = cur.valid && qualified && !Itype.isTrap(cur.itype) &&
-    cur.iretire > lastHalfwords && !tail
-  val address = Mux(tail, lastPC, cur.iaddr)
-  val kind = Mux(firstOfMulti, Itype.None, cur.itype)
-  val curNotify = !firstOfMulti && (cur.trigger === TriggerAction.Notify || cur.notifyRequested)
+  val firstOfMulti = cur.valid && qualified && !trapPhase && cur.iretire > lastHalfwords && !tail
+  val retiringTrap = Itype.isTrap(cur.itype) && cur.iretire =/= 0.U && !trapPhase
+  val lastBeforeTrap = retiringTrap && !firstOfMulti
+  val internalStep = firstOfMulti || lastBeforeTrap
+  val address = Mux(trapPhase, cur.iaddr + (cur.iretire << 1), Mux(tail, lastPC, cur.iaddr))
+  val kind = Mux(firstOfMulti || retiringTrap, Itype.None, cur.itype)
+  val curNotify = !firstOfMulti && !trapPhase && (cur.trigger === TriggerAction.Notify || cur.notifyRequested)
   val branch = qualified && Itype.isBranchType(kind)
   val taken = Itype.isBranchTaken(kind)
   val closing = configPending || configurationChanged || stopPending || io.stopReq
-  val hasNext = firstOfMulti || io.block.valid || closing
+  val hasNext = internalStep || io.block.valid || closing
   val nextQualifiedInput = running && !closing && io.fromCtrl.filterRes && !io.block.traceLost &&
     !metadataOnly && !io.stopReq && !io.block.hartIsReset && io.block.priv =/= Priv.D
-  val nextQualified = Mux(firstOfMulti, qualified, nextQualifiedInput)
-  val nextTrap = !firstOfMulti && Itype.isTrap(io.block.itype)
-  val nextBoundary = !firstOfMulti && (cur.priv =/= io.block.priv ||
+  val nextQualified = Mux(internalStep, qualified, nextQualifiedInput)
+  val nextTrap = lastBeforeTrap || (!internalStep && io.block.valid &&
+    Itype.isTrap(io.block.itype) && io.block.iretire === 0.U)
+  val nextBoundary = !internalStep && (cur.priv =/= io.block.priv ||
     io.block.ctype === Ctype.Precisely || io.block.ctype === Ctype.AsyncDiscontinuity)
-  val previousTrap = previousQualified && !tail && Itype.isTrap(previous.itype)
-  val previousJump = previousQualified && !tail && (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
-  val endCurrent = cur.valid && qualified && !firstOfMulti &&
+  val previousTrap = previousQualified && !tail && !trapPhase && Itype.isTrap(previous.itype)
+  val previousJump = previousQualified && !tail && !trapPhase &&
+    (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
+  val endCurrent = cur.valid && qualified && !internalStep &&
     (closing || (io.block.valid && !io.block.traceLost && !nextQualifiedInput))
   val lossWanted = cur.valid && cur.traceLost
   val supportWanted = lossWanted || endPending || ((!cur.valid || !qualified) && (configPending || configurationChanged))
-  io.blockReady := canAdvance && !firstOfMulti && !supportWanted && (!closing || !qualified) && !endCurrent
-  val step = cur.valid && hasNext && canAdvance && !supportWanted
-  when(step) { tail := firstOfMulti }
+  io.blockReady := canAdvance && !internalStep && !replayCurrent && !supportWanted && (!closing || !qualified) && !endCurrent
+  val step = cur.valid && hasNext && canAdvance && !supportWanted && !replayCurrent
+  when(step) { tail := firstOfMulti; trapPhase := lastBeforeTrap }
   when(io.block.valid && io.blockReady) {
     cur := io.block
     previous := cur
@@ -122,7 +128,7 @@ class PacketGen extends Module with TraceParameters {
   when(canAdvance) { forceSync := syncRequested }
   val resyncCount = RegInit(0.U(20.W))
   val syncMax = (1.U(20.W) << (control.InstSyncMax.asUInt +& 4.U))(19, 0)
-  val syncRequired = (!tail && (!previousQualified || cur.priv =/= previous.priv ||
+  val syncRequired = (!tail && !trapPhase && (!previousQualified || cur.priv =/= previous.priv ||
     cur.ctype === Ctype.Precisely || cur.ctype === Ctype.AsyncDiscontinuity)) ||
     forceSync || resyncCount >= syncMax
   val trapReported = RegInit(false.B)
@@ -161,19 +167,21 @@ class PacketGen extends Module with TraceParameters {
     consumesBranches := true.B
     carriesAddress := true.B
   }
-  def trap(cause: UInt, interrupt: Bool, value: UInt, handler: Bool): Unit = {
+  def trap(cause: UInt, interrupt: Bool, value: UInt, handler: Bool,
+      pc: UInt = address, metadata: BlockBufferEntry = cur): Unit = {
     val packet = Wire(new Format31)
     packet.format := 3.U
     packet.subformat := 1.U
     packet.branch := !taken
-    packet.privilege := cur.priv
-    packet.time.foreach(_ := cur.time)
-    packet.context.foreach(_ := cur.context)
+    packet.privilege := metadata.priv
+    packet.time.foreach(_ := metadata.time)
+    packet.context.foreach(_ := metadata.context)
     packet.ecause := cause
     packet.interrupt := interrupt
     packet.thaddr := handler
-    packet.address := address >> iaddress_lsb_p
-    packet.tval := Mux(interrupt, Fill(iaddress_width_p, address.head(1)), value)
+    packet.address := pc >> iaddress_lsb_p
+    packet.tval := Mux(interrupt, Fill(iaddress_width_p, pc.head(1)), value)
+    reportedAddress := pc
     emitPayload(packet.asUInt)
     syncPacket := true.B
     consumesBranches := true.B
@@ -192,7 +200,15 @@ class PacketGen extends Module with TraceParameters {
   when(cur.valid && hasNext && qualified && running && !supportWanted) {
     when(previousTrap) {
       when(Itype.isTrap(kind)) {
-        trap(previous.cause, Itype.isInt(previous.itype), previous.tval, false.B)
+        when(!trapReported) {
+          // The prior handler never retired. Report that trap before consuming
+          // the new event; its cause/privilege must not be overwritten.
+          trap(previous.cause, Itype.isInt(previous.itype), previous.tval, false.B,
+            previous.iaddr, previous)
+          replayCurrent := true.B
+        }.otherwise {
+          trap(cur.cause, Itype.isInt(kind), cur.tval, false.B)
+        }
         when(generated.fire) { trapReported := true.B }
       }.elsewhen(trapReported) {
         synchronization()
@@ -201,7 +217,7 @@ class PacketGen extends Module with TraceParameters {
         trap(previous.cause, Itype.isInt(previous.itype), previous.tval, true.B)
       }
     }.elsewhen(Itype.isTrap(kind)) {
-      when(previousJump) {
+      when(previousJump || (!previousQualified && !trapPhase) || endCurrent) {
         trap(cur.cause, Itype.isInt(kind), cur.tval, false.B)
         when(generated.fire) { trapReported := true.B }
       }
@@ -225,7 +241,7 @@ class PacketGen extends Module with TraceParameters {
       packet.context.foreach(_ := cur.context)
       emitPayload(packet.asUInt)
     }
-    finishesCurrent := endCurrent
+    finishesCurrent := endCurrent && !replayCurrent
   }.elsewhen(supportWanted) {
       supportConfig := Mux(lossWanted, activeConfig, Mux(endPending, endingConfig, nextConfig))
       supportChangesConfig := !lossWanted && Mux(endPending, endingChangesConfig, true.B)
@@ -265,6 +281,7 @@ class PacketGen extends Module with TraceParameters {
       qualified := false.B
       previousQualified := false.B
       tail := false.B
+      trapPhase := false.B
       endPending := true.B
       endingConfig := Mux(configPending || configurationChanged, nextConfig, activeConfig)
       endingChangesConfig := configPending || configurationChanged
@@ -277,11 +294,13 @@ class PacketGen extends Module with TraceParameters {
       previousQualified := false.B
       branchMap := 0.U
       branchCount := 0.U
+      trapReported := false.B
       when(lossWanted) {
         // Consume the metadata exactly once, when its support packet is queued.
         cur.valid := false.B
         qualified := false.B
         tail := false.B
+        trapPhase := false.B
         trapReported := false.B
         reference := 0.U
         resyncCount := 0.U

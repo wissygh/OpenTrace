@@ -102,6 +102,7 @@ class ExecutionDecoder:
         self.mask = (1 << image.xlen) - 1
         self.pc = None
         self.last_pc = None
+        self.awaiting_handler = False
         self.address = 0
         self.branches = 0
         self.branch_map = 0
@@ -224,6 +225,7 @@ class ExecutionDecoder:
                         raise DecodeError('ended_ntr reconstruction exceeded max_steps')
                 if status or not packet['ienable']:
                     self.start_of_trace = True
+                    self.awaiting_handler = False
                     self.branches = self.branch_map = 0
                     self.inferred_address = False
                 self._emit('support', **packet)
@@ -237,7 +239,9 @@ class ExecutionDecoder:
             address = packet['address']
             if sf == 1:
                 if not packet['interrupt']:
-                    if self.start_of_trace or (self._instr(self.pc).kind in ('indirect', 'xret') and not packet['thaddr']):
+                    if self.awaiting_handler:
+                        epc = None
+                    elif self.start_of_trace or (self._instr(self.pc).kind in ('indirect', 'xret') and not packet['thaddr']):
                         epc = None if packet['thaddr'] else self._absolute(address)
                     elif self._instr(self.pc).kind == 'break':
                         epc = self.pc
@@ -250,6 +254,9 @@ class ExecutionDecoder:
                 self._emit('trap', ecause=packet['ecause'], interrupt=bool(packet['interrupt']),
                            tval=packet.get('tval'), handler=bool(packet['thaddr']))
                 if not packet['thaddr']:
+                    self.awaiting_handler = True
+                    self.inferred_address = False
+                    self.branches = self.branch_map = 0
                     return self.events
             if address is None:
                 vector = self.trap_vectors.get(packet['privilege'])
@@ -263,7 +270,7 @@ class ExecutionDecoder:
                 full_address = self._absolute(address)
             self.inferred_address = False
             self.address = full_address
-            if sf == 1 or self.start_of_trace:
+            if sf == 1 or self.start_of_trace or self.awaiting_handler:
                 self.branches = self.branch_map = 0
             # The synchronization instruction is in the new context; intermediate
             # instructions up to it still use the old image/context.
@@ -271,7 +278,7 @@ class ExecutionDecoder:
             if target_image.instruction(full_address).kind == 'branch':
                 self.branch_map |= packet['branch'] << self.branches
                 self.branches += 1
-            if sf == 0 and not self.start_of_trace:
+            if sf == 0 and not self.start_of_trace and not self.awaiting_handler:
                 self._follow(full_address, packet)
                 if self.events and self.events[-1]['kind'] == 'instruction':
                     self.events[-1].update(privilege=packet['privilege'], context=packet['context'], time=packet['time'])
@@ -281,6 +288,7 @@ class ExecutionDecoder:
                 self._report_pc()
             self.context, self.privilege, self.time = packet['context'], packet['privilege'], packet['time']
             self.start_of_trace = False
+            self.awaiting_handler = False
             return self.events
         if self.start_of_trace:
             # A circular capture may begin with packets preceding this hart's sync.
