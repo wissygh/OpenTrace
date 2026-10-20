@@ -77,6 +77,7 @@ class BlockBufferSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       d.io.deqReady.poke(false.B)
       d.reset.poke(true.B); d.clock.step(); d.reset.poke(false.B)
       d.io.fromCore.trigger.traceOn.poke(true.B)
+      d.io.fromCore.ctype.poke(Ctype.Precisely)
       d.io.fromCore.trigger.traceOff.poke(true.B); d.clock.step()
       d.io.fromCore.trigger.traceOn.poke(false.B)
       d.io.fromCore.trigger.traceOff.poke(false.B)
@@ -94,6 +95,7 @@ class BlockBufferSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         b.bits.itype.poke(Itype.NonTaken)
       }
       d.io.fromCore.trigger.traceOn.poke(true.B)
+      d.io.fromCore.ctype.poke(Ctype.Precisely)
       d.io.fromCore.trigger.traceOff.poke(true.B); d.clock.step()
       d.io.fromCore.blocks.foreach(_.valid.poke(false.B))
       d.io.fromCore.trigger.traceOn.poke(false.B)
@@ -102,6 +104,7 @@ class BlockBufferSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         d.io.deqEntry.iaddr.expect((0x1000 + 4 * i).U)
         d.io.deqEntry.trigger.expect((if (i == 0) 1 else if (i == 2) 2 else 0).U)
         d.io.deqEntry.traceOffAfter.expect(false.B)
+        d.io.deqEntry.ctype.expect((if (i == 0) Ctype.Precisely else Ctype.None))
         d.io.deqReady.poke(true.B); d.clock.step()
       }
       d.io.deqEntry.valid.expect(false.B)

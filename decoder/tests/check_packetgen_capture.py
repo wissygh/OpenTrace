@@ -41,8 +41,13 @@ def main(directory, stem='packetgen-execution'):
         causes = [e['ecause'] for e in events if e['kind'] == 'trap']
         if epcs != [0x100c, 0x2008] or causes != [2, 12]:
             raise SystemExit(f'trap capture EPC/cause mismatch: {epcs!r}, {causes!r}')
+    if stem == 'packetgen-context':
+        actual_contexts = [e['context'] for e in instructions]
+        contexts = [e for e in events if e['kind'] == 'context']
+        if actual_contexts != [0, 0, 1, 1, 1, 2, 2] or len(contexts) != 1 or contexts[0]['time'] != 0x1234:
+            raise SystemExit(f'context capture metadata mismatch: {actual_contexts!r}, {contexts!r}')
     extent = ('保留下来的全部退休指令' if stem == 'packetgen-loss' else '全部退休指令'
-              if stem in ('packetgen-lifecycle', 'packetgen-traps') else '至最后 trace 锚点的退休前缀')
+              if stem in ('packetgen-lifecycle', 'packetgen-traps', 'packetgen-context') else '至最后 trace 锚点的退休前缀')
     print(f'[encoder->decoder][3/3] {len(actual)} 条指令与{extent}逐条一致：' +
           ', '.join(f'0x{pc:x}' for pc in actual), file=sys.stderr)
     print(f'{stem} capture decoded successfully: {len(actual)} instructions')

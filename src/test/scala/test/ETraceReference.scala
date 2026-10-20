@@ -40,6 +40,9 @@ object ETraceReference {
     frame(source, payload(fields ++ (if (interrupt) Seq.empty else Seq((tval, AddressWidth)))))
   }
 
+  def context(source: Int, value: BigInt, time: BigInt = 0, privilege: Int = 3): Seq[Int] =
+    frame(source, payload(Seq[(BigInt, Int)]((3, 2), (2, 2), (privilege, 3), (time, 64), (value, 32))))
+
   def address(source: Int, pc: BigInt, reference: BigInt, outcomes: Seq[Boolean] = Seq.empty,
       notifyRequested: Boolean = false, beforeSync: Boolean = false, fullAddress: Boolean = false): Seq[Int] = {
     require(outcomes.size <= 31)
