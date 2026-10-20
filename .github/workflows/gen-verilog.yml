@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master ]
   pull_request:
-    branched: [ master ]
+    branches: [ master ]
 
 jobs:
   # changes: # Changes Detection
@@ -50,8 +50,17 @@ jobs:
       - name: check-format
         run: make check-format
 
-      - name: gen-verilog
-        run: make verilog
+      - name: Compile and validate all supported RTL profiles
+        run: make check-rtl
+
+      - name: Preserve RTL and profile manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opentrace-rtl
+          path: |
+            build/rtl/
+            build/validation/rtl-profile-manifest.json
 
       - name: clean
         run: make clean
