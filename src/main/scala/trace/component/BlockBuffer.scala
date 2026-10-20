@@ -15,7 +15,9 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
 
   val io = IO(new Bundle {
     val fromCore     = Input(new FromCore)
+    val deqReady     = Input(Bool())
     val bufferIsFull = Output(Bool())
+    val overflow     = Output(Bool())
     val deqEntry     = Output(new BlockBufferEntry)
   })
 
@@ -31,7 +33,7 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   val blocksCompressed = WireInit(io.fromCore.blocks)
   val enq              = WireInit(io.fromCore)
   for (i <- 1 until BlockNum) {
-    when(!needPcVec(i - 1)) {
+    when(io.fromCore.blocks(i - 1).valid && !needPcVec(i - 1)) {
       // itype, ilastsize, sijump is belong to block which need pc.
       blocksCompressed(i).bits.iretire := blocksCompressed(i - 1).bits.iretire +& io.fromCore.blocks(
         i
@@ -51,8 +53,9 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   enq.impdef      := io.fromCore.impdef
   enq.hartIsReset := io.fromCore.hartIsReset
   enq.trigger     := io.fromCore.trigger
-  enq.blocks      := blocksCompressed
-  Compress.compress(needPcVec, blocksCompressed, enq.blocks)
+  val compacted = WireInit(0.U.asTypeOf(chiselTypeOf(blocksCompressed)))
+  Compress.compress(needPcVec, blocksCompressed, compacted)
+  enq.blocks := compacted
 
   dontTouch(needPcVec)
   dontTouch(enq.blocks)
@@ -66,15 +69,17 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
   enqPtr := enqPtrNext
   deqPtr := deqPtrNext
 
-  val fifoIsEmpty        = isEmpty(enqPtr, deqPtr)
-  val fifoIsFullNxtCycle = isFull(enqPtrNext, deqPtrNext) // todo: lost
-  enqPtrNext := enqPtr + PopCount(needPcVec.asUInt)
-  deqPtrNext := deqPtr + !isEmpty(enqPtr, deqPtr).asUInt
+  val fifoIsEmpty = isEmpty(enqPtr, deqPtr)
+  val enqCount = PopCount(needPcVec.asUInt)
+  val freeEntries = hasFreeEntries(enqPtr, deqPtr)
+  val canEnq = enqCount <= freeEntries
+  enqPtrNext := Mux(canEnq, enqPtr + enqCount, enqPtr)
+  deqPtrNext := deqPtr + Mux(io.deqReady && !fifoIsEmpty, 1.U, 0.U)
 
   // enqueue
   for (i <- 0 until BlockNum) {
-    when(enq.blocks(i).valid) {
-      fifo(enqPtr.value + i.U) := {
+    when(canEnq && i.U < enqCount) {
+      fifo((enqPtr + i.U).value) := {
         val entry = Wire(new BlockBufferEntry)
         entry.priv        := enq.priv
         entry.time        := enq.time
@@ -101,7 +106,8 @@ class BlockBuffer extends Module with TraceParameters with HasCircularQueuePtrHe
 
   // dequeue
   io.deqEntry     := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
-  io.bufferIsFull := fifoIsFullNxtCycle
+  io.bufferIsFull := freeEntries < BlockNum.U
+  io.overflow := !canEnq && enqCount =/= 0.U
 }
 
 class BlockPtr(entries: Int) extends CircularQueuePtr[BlockPtr](entries) {}

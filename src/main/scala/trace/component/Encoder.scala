@@ -25,7 +25,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val fromCore  = Input(new FromCore)
     val toCore    = Output(new ToCore)
     val hpm       = Option.when(supportHPM)(new Hpm)
-    val asyncAtbm = new AsyncBundle(new ATData(encoderAtbDataBeats), compAsyncBridge)
+    val asyncAtbm = new AsyncBundle(new TraceBeat(encoderAtbDataBeats), compAsyncBridge)
   })
 
   /**
@@ -49,6 +49,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val deqFromBlockBuffer = blockBuffer.io.deqEntry
 
   packetGen.io.block := deqFromBlockBuffer
+  blockBuffer.io.deqReady := packetGen.io.blockReady
 
   /**
     * trace run control
@@ -76,6 +77,9 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val triggerNotify = block.trigger === TriggerAction.Notify
 
   val compMatchVec = Wire(Vec(comparator_num, Bool()))
+
+  def comparatorMatch(index: UInt): Bool =
+    MuxLookup(index, false.B)(compMatchVec.zipWithIndex.map { case (result, i) => i.U -> result })
 
   def matchFunc(isPfunc: Boolean)(compInput: UInt, CompFunc: UInt, matchRegData: UInt, notify: Bool): Bool = {
     val srcData = MuxLookup(compInput, block.iaddr)(Seq(
@@ -183,17 +187,17 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
 
     comp1MatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchComp1.asBool,
-      compMatchVec(ctrlReg.Comp1.asUInt),
+      comparatorMatch(ctrlReg.Comp1.asUInt),
       true.B
     )
     comp2MatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchComp2.asBool,
-      compMatchVec(ctrlReg.Comp2.asUInt),
+      comparatorMatch(ctrlReg.Comp2.asUInt),
       true.B
     )
     comp3MatchVec(i) := Mux(
       ctrlReg.Enable.asBool && ctrlReg.MatchComp3.asBool,
-      compMatchVec(ctrlReg.Comp3.asUInt),
+      comparatorMatch(ctrlReg.Comp3.asUInt),
       true.B
     )
   }
@@ -241,7 +245,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
 
   // todo：remove following two lines
-  val stallHart       = fifo.io.ctrl.fifoIsFull && teControl.regOut.InstStallEna.asBool
+  val stallHart       = (blockBufferIsFull || fifo.io.ctrl.fifoIsFull) && teControl.regOut.InstStallEna.asBool
   val instTraceEnable = teControl.regOut.InstTracing.asBool
 
   /**
@@ -268,15 +272,14 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
    */
 
   packetGen.io.fromCtrl.filterRes         := filterRes
-  packetGen.io.fromCtrl.blockBufferIsFull := blockBufferIsFull
+  packetGen.io.fromCtrl.blockBufferIsFull := blockBuffer.io.overflow
   packetGen.io.fromCtrl.fifoIsFull        := fifo.io.ctrl.fifoIsFull
   packetGen.io.fromCtrl.teCtrl            := teControl.regOut.asUInt
   packetGen.io.fromCtrl.teInstFeat        := teInstFeatures.regOut.asUInt
   packetGen.io.fromCtrl.teDataCtrl        := teDataControl.regOut.asUInt
-  fifo.io.ctrl.srcid                      := teInstFeatures.regOut.SrcID.asUInt
   fifo.io.packetEnq <> packetGen.io.packet
   // io.atbm <> fifo.io.atbm
-  io.asyncAtbm <> ToAsyncBundle(fifo.io.atbm.at, compAsyncBridge)
+  io.asyncAtbm <> ToAsyncBundle(fifo.io.atbm, compAsyncBridge)
 
   /**
    * encoder IO

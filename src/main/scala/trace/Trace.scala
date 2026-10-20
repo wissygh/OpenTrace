@@ -16,10 +16,11 @@ import trace.control._
 import trace.interface._
 import utils._
 
-class TraceTopIO extends Bundle with TraceParameters {
-  val fromCore    = Input(Vec(hart_num, new FromCore))
-  val toCore      = Output(Vec(hart_num, new ToCore))
-  val hpm         = Option.when(supportHPM)(Vec(hart_num, new Hpm))
+class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false) extends Bundle with TraceParameters {
+  val fromCore    = Input(Vec(numHarts, new FromCore))
+  val toCore      = Output(Vec(numHarts, new ToCore))
+  val hpm         = Option.when(supportHPM)(Vec(numHarts, new Hpm))
+  val atbm = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
   val clock_core  = Input(Clock())
   val reset_core  = Input(Reset())
   val clock_ctrl  = Input(Clock())
@@ -28,11 +29,15 @@ class TraceTopIO extends Bundle with TraceParameters {
   val reset_trace = Input(Reset())
 }
 
-class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit p: Parameters) extends LazyModule
+class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false,
+    val numHarts: Int = 1, val useAtbSink: Boolean = false)(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
+  require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
+  override def hart_num = numHarts
+
   val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i)))
-  val funnel     = LazyModule(new Funnel(funnelBaseAddr))
+  val funnel     = LazyModule(new Funnel(funnelBaseAddr, numHarts))
   val pib        = LazyModule(new PIB(pibBaseAddr))
   val atb        = LazyModule(new ATBBridge(atbbridgeBaseAddr))
   val ram        = LazyModule(new SRAM(ramSinkAddr))
@@ -129,7 +134,7 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyRawModuleImp(wrapper) {
-    val io = IO(new TraceTopIO)
+    val io = IO(new TraceTopIO(numHarts, useAtbSink))
 
     /**
      * io
@@ -167,7 +172,17 @@ class Trace(busType: BusType = BusType.TL, xs_socmisc: Boolean = false)(implicit
     }
     // encoderModVec.zip(funnelMod.io.atbsVec).map { case (encoder, atbs) => atbs <> encoder.io.atbm }
     encoderModVec.zip(funnelMod.io.asyncAtbsVec).map { case (encoder, atbs) => atbs <> encoder.io.asyncAtbm }
-    ramMod.io.atbs <> funnelMod.io.atbm
+    if (useAtbSink) {
+      atbMod.io.in <> funnelMod.io.out
+      io.atbm.get <> atbMod.io.atbm
+      ramMod.io.in.valid := false.B
+      ramMod.io.in.bits := 0.U.asTypeOf(ramMod.io.in.bits)
+    } else {
+      ramMod.io.in <> funnelMod.io.out
+      atbMod.io.in.valid := false.B
+      atbMod.io.in.bits := 0.U.asTypeOf(atbMod.io.in.bits)
+      atbMod.io.atbm.at.ready := false.B
+    }
 
     // hpm
     io.hpm.foreach(iohpm =>

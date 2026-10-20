@@ -21,121 +21,71 @@ class PacketEnq(enqDataBytes: Int) extends Bundle {
 }
 
 class CtrlInterface extends Bundle with TraceParameters {
-  val srcid       = Input(UInt(src_bits_p.W))
   val fifoIsEmpty = Output(Bool())
   val fifoIsFull  = Output(Bool())
 }
 
-class Fifo(param: FifoParam) extends Module
-    with HasCircularQueuePtrHelper
-    with TraceParameters {
+/** Stores complete packets and serializes them without interpreting their contents. */
+class Fifo(param: FifoParam) extends Module with HasCircularQueuePtrHelper with TraceParameters {
+  private val depth = param.fifoDepth
+  private val inBytes = param.enqDataBytes
+  private val outBytes = param.deqDataBytes
+  require(depth >= inBytes && inBytes > 0)
+  require(outBytes > 0 && isPow2(outBytes))
 
   val io = IO(new Bundle {
-    val packetEnq      = Flipped(Decoupled(new PacketEnq(param.enqDataBytes)))
-    val ctrl           = new CtrlInterface
+    val packetEnq = Flipped(Decoupled(new PacketEnq(inBytes)))
+    val ctrl = new CtrlInterface
     val sourceFlushAll = Option.when(!param.isLeaf)(Input(Bool()))
-    val atbm           = new ATBMaster(param.deqDataBytes)
+    val atbm = Decoupled(new TraceBeat(outBytes))
   })
 
-  /**
-    * parameters
-    */
-  private val fifoDepth     = param.fifoDepth
-  private val enqBytes      = param.enqDataBytes
-  private val enqLg2Bytes   = log2Up(enqBytes)        // bytes - 1
-  private val deqBytes      = param.deqDataBytes
-  private val deqLg2Bytes   = log2Up(deqBytes)        // bytes - 1
-  private val maxTransNum   = maxPackets / deqBytes + (if (maxPackets % deqBytes == 0) 0 else 1)
-  private val transCntWidth = log2Up(maxTransNum + 1) // 6
+  val data = Reg(Vec(depth, UInt(8.W)))
+  val lengths = Module(new Queue(UInt(log2Ceil(inBytes + 1).W), depth))
+  val writePtr = RegInit(FifoPtr(depth, false.B, 0.U))
+  val readPtr = RegInit(FifoPtr(depth, false.B, 0.U))
+  val used = RegInit(0.U(log2Ceil(depth + 1).W))
+  val remaining = RegInit(0.U(log2Ceil(inBytes + 1).W))
+  val packetSize = lengths.io.deq.bits
+  val available = Mux(remaining === 0.U, packetSize, remaining)
+  val count = Mux(available > outBytes.U, outBytes.U, available)
+  val last = available <= outBytes.U
+  val legalLength = io.packetEnq.bits.len > 0.U && io.packetEnq.bits.len <= inBytes.U
 
-  /**
-    * io
-    */
-  val packetEnq = io.packetEnq
-  val trans     = io.atbm.at
-
-  /**
-   * fifo
-   * todo: think of fifo is full
-   */
-  val fifo = Reg(Vec(fifoDepth, UInt(8.W)))
-  require(fifoDepth > 0, "Fifo depth must be > 0")
-  val enqPtr     = RegInit(FifoPtr(fifoDepth, false.B, 0.U))
-  val deqPtr     = RegInit(FifoPtr(fifoDepth, false.B, 0.U))
-  val enqPtrNext = WireInit(enqPtr)
-  val deqPtrNext = WireInit(deqPtr)
-  enqPtr := enqPtrNext
-  deqPtr := deqPtrNext
-
-  dontTouch(enqPtr)
-  dontTouch(enqPtrNext)
-  dontTouch(deqPtr)
-  dontTouch(deqPtrNext)
-
-  /**
-   * enq
-   */
-  enqPtrNext := enqPtr + Mux(packetEnq.fire, packetEnq.bits.len, 0.U)
-  (0 until enqBytes).foreach(i => fifo((enqPtr + i.U).value) := packetEnq.bits.data(i))
-
-  /**
-   * deq
-   */
-  // todo: think about the case that a packet is finished and the next packet starts immediately
-  val deqData        = Wire(Vec(deqBytes, UInt(8.W)))
-  val firstBeatValid = RegNext(!trans.fire) && trans.fire
-
-  val header      = deqData(0).asTypeOf(new PacketHeader)
-  val payloadLen  = header.length
-  val timeStampEn = header.extend
-
-  // todo: think null packet
-  val deqPacketLen =
-    Mux(payloadLen === 0.U, 0.U, 2.U +& payloadLen +& (timeStampEn << log2Ceil(time_width_p / 8)).asUInt)
-  val packetLenTail = deqPacketLen(deqLg2Bytes - 1, 0)
-  val align         = !packetLenTail.orR
-
-  val lastBytesNext = Mux(align, deqBytes.U, packetLenTail) // trans.fire cycle
-  val lastBytes     = RegEnable(lastBytesNext, firstBeatValid)
-  val counter       = RegInit(0.U(transCntWidth.W))         // count deqBytes in a packet
-  val counterNext   = WireInit(counter)                     // Trans is last cycle when counterNext === 0.U
-  counter := counterNext
-  // - Mux(align, 1.U, 0.U), first deq in trans.fire cycle
-  when(firstBeatValid && counter === 0.U) { // todo: fix control
-    counterNext := (deqPacketLen >> deqLg2Bytes) - Mux(align, 1.U, 0.U)
-  }.elsewhen(!firstBeatValid && counter > 0.U && trans.fire) {
-    counterNext := counter - 1.U
-  }.otherwise {
-    counterNext := counter
+  io.packetEnq.ready := lengths.io.enq.ready && legalLength && io.packetEnq.bits.len <= depth.U - used
+  lengths.io.enq.valid := io.packetEnq.fire
+  lengths.io.enq.bits := io.packetEnq.bits.len
+  when(io.packetEnq.valid) {
+    assert(legalLength, "PacketEnq.len must describe a nonempty complete packet")
+  }
+  when(io.packetEnq.fire) {
+    for (i <- 0 until inBytes) {
+      when(i.U < io.packetEnq.bits.len) {
+        data((writePtr + i.U).value) := io.packetEnq.bits.data(i)
+      }
+    }
+    writePtr := writePtr + io.packetEnq.bits.len
   }
 
-  val deqNum = WireInit(0.U((deqLg2Bytes + 1).W))
-  deqPtrNext := deqPtr + Mux(trans.fire, deqNum, 0.U)
-  deqNum := Mux(
-    firstBeatValid && counterNext === 0.U, // only one beat
-    lastBytesNext,
-    Mux(!firstBeatValid && trans.fire && counterNext === 0.U, lastBytes, deqBytes.U)
-  )
-
-  (0 until deqBytes).foreach(i =>
-    deqData(i) := fifo(deqPtr.value + i.U)
-  )
-
-  val fifoValidLen = distanceBetween(enqPtr, deqPtr)
-  val fifoIsEmpty  = isEmpty(enqPtr, deqPtr)
-  val fifoIsFull   = isFull(enqPtr, deqPtr)
-
-  /**
-    * atb
-    */
-  // wait a cycle after a packet is transmitted, which is reasonable because funnel needs to arbitrate packets from different src
-  io.atbm.at.valid      := !fifoIsEmpty
-  io.atbm.at.bits.data  := deqData.asUInt
-  io.atbm.at.bits.bytes := deqNum - 1.U
-  io.atbm.at.bits.id    := (io.ctrl.srcid + 1.U) & 0x7f.U // id 0 is reserved
-  io.packetEnq.ready    := !fifoIsFull                    // todo: Full is not only encough.
-  io.ctrl.fifoIsEmpty   := fifoIsEmpty
-  io.ctrl.fifoIsFull    := fifoIsFull
+  val beat = Wire(Vec(outBytes, UInt(8.W)))
+  for (i <- 0 until outBytes) {
+    // Zero unused lanes so a concurrent enqueue cannot change stalled bits.
+    beat(i) := Mux(i.U < count, data((readPtr + i.U).value), 0.U)
+  }
+  io.atbm.valid := lengths.io.deq.valid
+  io.atbm.bits.data := beat.asUInt
+  io.atbm.bits.bytes := count - 1.U
+  io.atbm.bits.packetBytes := packetSize
+  io.atbm.bits.last := last
+  lengths.io.deq.ready := io.atbm.fire && last
+  when(io.atbm.fire) {
+    readPtr := readPtr + count
+    remaining := Mux(last, 0.U, available - count)
+  }
+  used := used + Mux(io.packetEnq.fire, io.packetEnq.bits.len, 0.U) - Mux(io.atbm.fire, count, 0.U)
+  assert(used <= depth.U)
+  io.ctrl.fifoIsEmpty := !lengths.io.deq.valid
+  io.ctrl.fifoIsFull := used === depth.U || !lengths.io.enq.ready
 }
 
 class FifoPtr(entries: Int) extends CircularQueuePtr[FifoPtr](entries) {}

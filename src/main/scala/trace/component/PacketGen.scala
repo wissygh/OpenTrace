@@ -21,6 +21,7 @@ class PacketGen extends Module with TraceParameters {
 
   val io = IO(new Bundle {
     val block    = Input(new BlockBufferEntry)
+    val blockReady = Output(Bool())
     val fromCtrl = Input(new EncoderCtrlInterface)
     val packet   = DecoupledIO(new PacketEnq(maxPackets))
   })
@@ -29,13 +30,15 @@ class PacketGen extends Module with TraceParameters {
 
   private val nextBlock = io.block
   private val hasTrace  = io.block.valid
-  private val curBlock  = RegEnable(nextBlock, 0.U.asTypeOf(new BlockBufferEntry), hasTrace)
-  private val preBlock  = RegEnable(curBlock, 0.U.asTypeOf(new BlockBufferEntry), hasTrace)
+  private val blockReady = !io.packet.valid || io.packet.ready
+  io.blockReady := blockReady
+  private val curBlock  = RegEnable(nextBlock, 0.U.asTypeOf(new BlockBufferEntry), hasTrace && blockReady)
+  private val preBlock  = RegEnable(curBlock, 0.U.asTypeOf(new BlockBufferEntry), hasTrace && blockReady)
 
   private val nextQualified = io.fromCtrl.filterRes && teCtrl.InstTracing.asBool &&
     !io.block.hartIsReset && !(io.block.priv === Priv.D)
-  private val curQualified = RegEnable(nextQualified, hasTrace)
-  private val preQualified = RegEnable(curQualified, hasTrace)
+  private val curQualified = RegEnable(nextQualified, false.B, hasTrace && blockReady)
+  private val preQualified = RegEnable(curQualified, false.B, hasTrace && blockReady)
 
   /**
     * next
@@ -95,8 +98,10 @@ class PacketGen extends Module with TraceParameters {
   private val enqBrhMap   = nextIsBrh && nextQualified
   private val issueBrhMap = false.B         // todo: fix
   private val nextCmtIsOf = brhCnt === 31.U // if overflow issue else store into brhMap
-  brhCnt := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, brhCnt + enqBrhMap)
-  brhMap := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, (nextIsTaken << brhCnt) | brhMap)
+  when(hasTrace && blockReady) {
+    brhCnt := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, brhCnt + enqBrhMap)
+    brhMap := Mux(issueBrhMap || nextCmtIsOf, enqBrhMap, (nextIsTaken << brhCnt) | brhMap)
+  }
 
   dontTouch(brhCnt)
   dontTouch(brhMap)
@@ -141,7 +146,7 @@ class PacketGen extends Module with TraceParameters {
         f31.ecause    := preCause
         f31.interrupt := preIsInt
         f31.thaddr    := false.B
-        f31.address   := curBlock.iaddr
+        f31.address   := curBlock.iaddr >> iaddress_lsb_p
         f31.tval := Mux(
           preIsInt,
           Fill(iaddress_width_p, curBlock.iaddr.head(1)),
@@ -160,7 +165,7 @@ class PacketGen extends Module with TraceParameters {
           f30.privilege := curPriv
           f30.time.foreach(_ := curTime)
           f30.context.foreach(_ := curContext)
-          f30.address  := curBlock.iaddr
+          f30.address  := curBlock.iaddr >> iaddress_lsb_p
           payload      := extend(f30.asUInt)
           excpReported := false.B
         }.otherwise {
@@ -174,7 +179,7 @@ class PacketGen extends Module with TraceParameters {
           f31.ecause    := preCause
           f31.interrupt := preIsInt
           f31.thaddr    := true.B
-          f31.address   := curBlock.iaddr
+          f31.address   := curBlock.iaddr >> iaddress_lsb_p
           f31.tval := Mux(
             preIsInt,
             Fill(iaddress_width_p, curBlock.iaddr.head(1)),
@@ -195,7 +200,7 @@ class PacketGen extends Module with TraceParameters {
         f30.privilege := curPriv
         f30.time.foreach(_ := curTime)
         f30.context.foreach(_ := curContext)
-        f30.address := curBlock.iaddr
+        f30.address := curBlock.iaddr >> iaddress_lsb_p
         payload     := extend(f30.asUInt)
         resyncCnt   := 0.U
       }.otherwise {
@@ -211,7 +216,7 @@ class PacketGen extends Module with TraceParameters {
             f31.ecause    := curCause
             f31.interrupt := curIsInt
             f31.thaddr    := false.B
-            f31.address   := curBlock.iaddr
+            f31.address   := curBlock.iaddr >> iaddress_lsb_p
             f31.tval := Mux(
               curIsInt,
               Fill(iaddress_width_p, curBlock.iaddr.head(1)),
@@ -225,7 +230,7 @@ class PacketGen extends Module with TraceParameters {
             when(brhCnt === 0.U) {
               val f2 = Wire(new Format2)
               f2.format        := 2.U
-              f2.diffAddress   := curBlock.iaddr
+              f2.diffAddress   := curBlock.iaddr >> iaddress_lsb_p
               f2.notifyTrigger := f2.diffAddress.head(1).asBool // todo: fix
               f2.updiscon      := !f2.notifyTrigger
               payload          := extend(f2.asUInt)
@@ -234,7 +239,7 @@ class PacketGen extends Module with TraceParameters {
               f1.format        := 1.U
               f1.branches      := brhCnt
               f1.branch_map    := brhMap
-              f1.diffAddress   := curBlock.iaddr
+              f1.diffAddress   := curBlock.iaddr >> iaddress_lsb_p
               f1.notifyTrigger := f1.diffAddress.head(1).asBool // todo: fix
               f1.updiscon      := !f1.notifyTrigger
               payload          := extend(f1.asUInt)
@@ -344,6 +349,11 @@ class PacketGen extends Module with TraceParameters {
     val supportEn = qual_stausEnVec.asUInt.orR
     payload   := extend(Mux(supportEn, f33.asUInt, 0.U))
     resyncCnt := Mux(supportEn, 0.U, resyncCnt)
+  }
+
+  when(!blockReady) {
+    resyncCnt := resyncCnt
+    excpReported := excpReported
   }
 
   // wrap payload into packet
