@@ -8,7 +8,7 @@ import trace.interface.TraceBeat
   * words. Packet admission reserves the space to the end when StopOnWrap is set.
   */
 class SRAMSinkCore(bufferWords: Int, wordBytes: Int = 4) extends Module {
-  require(bufferWords > 1 && isPow2(bufferWords) && wordBytes == 4)
+  require(bufferWords > 1 && wordBytes == 4)
   private val ptrWidth = log2Ceil(bufferWords)
   val io = IO(new Bundle {
     val in           = Flipped(Decoupled(new TraceBeat(wordBytes)))

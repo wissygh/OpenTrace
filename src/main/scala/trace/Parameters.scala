@@ -27,7 +27,7 @@ trait TraceParameters {
     require(atbIdWidth == 7)
     require(Seq(encoderAtbDataWidth, funnelAtbDataWidth).forall(w => w >= 8 && powerOfTwo(w)))
     require(funnelAtbDataWidth == 32, "implemented SRAM and control data words are 32 bits")
-    require(powerOfTwo(buffer_num) && buffer_num > 1 && buffer_ptr_width == log2Up(buffer_num))
+    require(buffer_num > 1 && buffer_ptr_width == log2Up(buffer_num))
     require(core_stall_response_cycles_p >= 0 && BlockNum > 0 &&
       block_buffer_depth_p >= BlockNum * (core_stall_response_cycles_p + 1))
     require(filter_trap_depth_bits_p > 0 && filter_trap_depth_bits_p <= 16)
