@@ -26,7 +26,13 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb
+.PHONY: test-trace test-decoder test-atb test-encoder
+
+test-encoder:
+	@echo "[encoder-golden] 1/2 独立位布局参考与实际 PacketGen 对拍"
+	mill -i OpenTrace.test.testOnly trace.component.ETraceCodecSpec trace.component.PacketGenSpec trace.component.PacketEncodingSpec
+	@echo "[encoder-golden] 2/2 实际 RTL 捕获交给 decoder，比较退休 PC 序列"
+	python3 -m decoder.tests.check_packetgen_capture build/validation
 
 test-atb:
 	@echo "[ATB-test] AF/SYNCREQ/ATCLKEN/ATWAKEUP 与多时钟端到端验证"
@@ -37,9 +43,11 @@ test-decoder:
 	python3 -m unittest discover -s decoder/tests -v
 
 test-trace:
-	@echo "[trace-test] 1/3 Scala RTL 行为测试开始：包含 MultiHartTraceSpec"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.PacketGenSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec
-	@echo "[trace-test] 2/3 Python decoder 单元测试开始"
+	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec
+	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
-	@echo "[trace-test] 3/3 RTL->decoder 联动检查开始：读取 build/validation/two-hart-from-core.bin"
+	@echo "[trace-test] 3/4 双核启动 RTL->decoder 联动检查"
 	python3 -m decoder.check_rtl_capture build/validation/two-hart-from-core.bin
+	@echo "[trace-test] 4/4 分支/跳转/压缩指令 RTL->decoder 执行流对拍"
+	python3 -m decoder.tests.check_packetgen_capture build/validation
