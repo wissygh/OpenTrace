@@ -81,7 +81,8 @@ class EncoderCapabilitiesSpec extends AnyFlatSpec with ChiselScalatestTester wit
       d.io.values(2).expect(0.U); d.io.values(3).expect(0.U); d.io.values(4).expect(implementation.U)
       val control = d.io.values(0).peek().litValue
       ((control >> 24) & 7) shouldBe BigInt(0)
-      ((control >> 4) & 7) shouldBe BigInt(6)
+      ((control >> 4) & 7) shouldBe BigInt(7)
+      ((control >> 9) & 1) shouldBe BigInt(0)
       println("[capabilities] 2/3 全 1 能力探测：只保留 NoAddrDiff，可选压缩模式/数据功能/来源改写均被拒绝")
       for (pc <- Seq(0x1000, 0x1004)) {
         d.io.block.valid.poke(true.B); d.io.block.iaddr.poke(pc.U)
