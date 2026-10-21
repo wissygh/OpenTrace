@@ -134,7 +134,7 @@ class PacketGen extends Module with TraceParameters {
   val syncRequested = RegInit(false.B)
   val forceSync     = RegInit(false.B)
   when(io.syncReq && running)(syncRequested := true.B)
-  when(canAdvance)(forceSync := syncRequested)
+  when(canAdvance)(forceSync                := syncRequested)
   val resyncCount = RegInit(0.U(20.W))
   val syncMax     = (1.U(20.W) << (control.InstSyncMax.asUInt +& 4.U))(19, 0)
   val syncRequired =
@@ -254,7 +254,7 @@ class PacketGen extends Module with TraceParameters {
       packet.time.foreach(_ := cur.time)
       packet.context.foreach(_ := cur.context)
       emitPayload(packet.asUInt)
-      replayCurrent := true.B
+      replayCurrent                        := true.B
       when(generated.fire)(contextReported := true.B)
     }.elsewhen(previousJump) {
       addressPacket(false.B, nextTrap || nextBoundary || syncRequired || endCurrent)
@@ -315,14 +315,14 @@ class PacketGen extends Module with TraceParameters {
       endingChangesConfig := configPending || configurationChanged
     }
     when(supportPacket) {
-      activeConfig := supportConfig
+      activeConfig                             := supportConfig
       when(supportChangesConfig)(configPending := false.B)
-      endPending        := false.B
-      stopPending       := false.B
-      previousQualified := false.B
-      branchMap         := 0.U
-      branchCount       := 0.U
-      trapReported      := false.B
+      endPending                               := false.B
+      stopPending                              := false.B
+      previousQualified                        := false.B
+      branchMap                                := 0.U
+      branchCount                              := 0.U
+      trapReported                             := false.B
       when(lossWanted) {
         // Consume the metadata exactly once, when its support packet is queued.
         cur.valid    := false.B

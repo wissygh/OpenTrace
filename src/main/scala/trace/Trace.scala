@@ -9,6 +9,7 @@ import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.util.ResetCatchAndSync
 import org.chipsalliance.cde.config.Parameters
 import trace.component._
 import trace.component.ComponentBase
@@ -16,10 +17,12 @@ import trace.control._
 import trace.interface._
 import utils._
 
-class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false) extends Bundle with TraceParameters {
+class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false, useSMEMSink: Boolean = false) extends Bundle
+    with TraceParameters {
   val fromCore    = Input(Vec(numHarts, new FromCore))
   val toCore      = Output(Vec(numHarts, new ToCore))
   val hpm         = Option.when(supportHPM)(Vec(numHarts, new Hpm))
+  val smem        = Option.when(useSMEMSink)(new AXI4Bundle(AXI4BundleParameters(64, 32, 1)))
   val atbm        = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
   val clock_atb   = Option.when(useAtbSink)(Input(Clock()))
   val reset_atb_n = Option.when(useAtbSink)(Input(Bool()))
@@ -35,10 +38,12 @@ class Trace(
     busType:        BusType = BusType.TL,
     xs_socmisc:     Boolean = false,
     val numHarts:   Int = 1,
-    val useAtbSink: Boolean = false
+    val useAtbSink: Boolean = false,
+    val smemWindow: Option[SMEMWindow] = None
 )(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
+  require(!useAtbSink || smemWindow.isEmpty, "select only one output sink")
   require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
   override def hart_num = numHarts
   validateImplementationParameters()
@@ -47,8 +52,10 @@ class Trace(
   val funnel     = LazyModule(new Funnel(funnelBaseAddr, numHarts))
   val pib        = LazyModule(new PIB(pibBaseAddr))
   val atb        = LazyModule(new ATBBridge(atbbridgeBaseAddr))
-  val ram        = LazyModule(new SRAM(ramSinkAddr))
-  val components: Seq[ComponentBase] = encoderVec.toSeq ++ Seq(funnel, pib, atb, ram)
+  val ram        = Option.when(smemWindow.isEmpty)(LazyModule(new SRAM(ramSinkAddr)))
+  val smem       = smemWindow.map(window => LazyModule(new SMEM(ramSinkAddr, window)))
+  val memory:     ComponentBase      = smem.getOrElse(ram.get)
+  val components: Seq[ComponentBase] = encoderVec.toSeq ++ Seq(funnel, pib, atb, memory)
 
   val ctrlSources: Seq[CtrlAsyncSource] = (0 until components.length).map(i => LazyModule(new CtrlAsyncSource)).toSeq
   val ctrlSinks:   Seq[CtrlAsyncSink]   = components.map(comp => LazyModule(new CtrlAsyncSink(comp.compBaseAddress)))
@@ -141,7 +148,7 @@ class Trace(
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyRawModuleImp(wrapper) {
-    val io = IO(new TraceTopIO(numHarts, useAtbSink))
+    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty))
 
     /**
      * io
@@ -155,12 +162,14 @@ class Trace(
     val funnelMod     = funnel.module
     val pibMod        = pib.module
     val atbMod        = atb.module
-    val ramMod        = ram.module
+    val ramMod        = ram.map(_.module)
+    val smemMod       = smem.map(_.module)
+    val memoryMod     = memory.module
 
     val ctrlSourceMods = ctrlSources.map(_.module)
     val ctrlSinkMods   = ctrlSinks.map(_.module)
     val compMods:         Seq[ComponentBaseImp] = components.map(_.module)
-    val comp_traceDomain: Seq[ComponentBaseImp] = Seq(funnelMod, pibMod, atbMod, ramMod)
+    val comp_traceDomain: Seq[ComponentBaseImp] = Seq(funnelMod, pibMod, atbMod, memoryMod)
 
     encoderModVec.map(encoder => dontTouch(encoder.io))
 
@@ -203,10 +212,17 @@ class Trace(
       crossing.io.slave.atclken := true.B
       atbMod.io.atbm.atclken    := true.B
       io.atbm.get <> crossing.io.master
-      ramMod.io.in.valid := false.B
-      ramMod.io.in.bits  := 0.U.asTypeOf(ramMod.io.in.bits)
+      ramMod.get.io.in.valid := false.B
+      ramMod.get.io.in.bits  := 0.U.asTypeOf(ramMod.get.io.in.bits)
     } else {
-      ramMod.io.in <> funnelMod.io.out
+      if (smemWindow.nonEmpty) {
+        val sink = smemMod.get
+        sink.io.in <> funnelMod.io.out
+        sink.io.transactionReset := ResetCatchAndSync(io.clock_trace, io.reset_trace.asBool).asAsyncReset
+        io.smem.get <> sink.io.axi
+      } else {
+        ramMod.get.io.in <> funnelMod.io.out
+      }
       atbMod.io.in.valid            := false.B
       atbMod.io.in.bits             := 0.U.asTypeOf(atbMod.io.in.bits)
       atbMod.io.atbm.at.ready       := false.B

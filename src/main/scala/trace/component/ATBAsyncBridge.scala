@@ -28,15 +28,15 @@ class ATBAsyncBridge(dataBytes: Int = 4, depth: Int = 16) extends RawModule {
   io.slave.at.ready  := bridge.io.in.ready && io.slave.atclken
   withClockAndReset(io.sourceClock, sourceReset) {
     val done = RegInit(false.B)
-    io.slave.af.valid := bridge.io.sourceControl.flushReq && !done
-    io.slave.af.bits  := 0.U.asTypeOf(io.slave.af.bits)
+    io.slave.af.valid                               := bridge.io.sourceControl.flushReq && !done
+    io.slave.af.bits                                := 0.U.asTypeOf(io.slave.af.bits)
     when(io.slave.atclken && io.slave.af.fire)(done := true.B)
-    when(!bridge.io.sourceControl.flushReq)(done := false.B)
-    bridge.io.sourceControl.flushAck := done
+    when(!bridge.io.sourceControl.flushReq)(done    := false.B)
+    bridge.io.sourceControl.flushAck                := done
     // Preserve the event if ATCLKEN is low in the receiving source domain.
     val syncPending = RegInit(false.B)
-    io.slave.syncReq := syncPending && io.slave.atclken
-    when(io.slave.atclken)(syncPending := false.B)
+    io.slave.syncReq                                  := syncPending && io.slave.atclken
+    when(io.slave.atclken)(syncPending                := false.B)
     when(bridge.io.sourceControl.syncReq)(syncPending := true.B)
   }
   io.master.at.valid  := bridge.io.out.valid

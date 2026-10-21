@@ -44,14 +44,14 @@ class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters) ext
   val readData = Mux(controlWord, (io.bus.c2b.dataRead & "hfffffffe".U) | io.active.asUInt, io.bus.c2b.dataRead)
 
   when(io.a.fire) {
-    response        := 0.U.asTypeOf(new TLBundleD(busParameters))
-    response.opcode := Mux(read, TLMessages.AccessAckData, TLMessages.AccessAck)
-    response.source := io.a.bits.source
-    response.size   := io.a.bits.size
-    response.echo   := io.a.bits.echo
-    response.data   := Mux(read && legal, readData, 0.U)
-    response.denied := !legal || io.bus.c2b.error
-    pending         := true.B
+    response                                   := 0.U.asTypeOf(new TLBundleD(busParameters))
+    response.opcode                            := Mux(read, TLMessages.AccessAckData, TLMessages.AccessAck)
+    response.source                            := io.a.bits.source
+    response.size                              := io.a.bits.size
+    response.echo                              := io.a.bits.echo
+    response.data                              := Mux(read && legal, readData, 0.U)
+    response.denied                            := !legal || io.bus.c2b.error
+    pending                                    := true.B
     when(legal && write && controlWord)(active := io.a.bits.data(0))
   }.elsewhen(io.d.fire) {
     pending := false.B

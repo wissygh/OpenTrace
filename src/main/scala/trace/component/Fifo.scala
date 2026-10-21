@@ -85,13 +85,13 @@ class Fifo(param: FifoParam) extends Module with HasCircularQueuePtrHelper with 
     oldBytes := oldBytes - count
   }
   when(!io.control.flushReq)(flushing := false.B)
-  io.control.flushAck      := reset.asBool || (flushing && oldBytes === 0.U)
-  io.atbm.valid            := lengths.io.deq.valid && !(flushing && oldBytes === 0.U)
-  io.atbm.bits.data        := beat.asUInt
-  io.atbm.bits.bytes       := count - 1.U
-  io.atbm.bits.packetBytes := packetSize
-  io.atbm.bits.last        := last
-  lengths.io.deq.ready     := io.atbm.fire && last
+  io.control.flushAck                 := reset.asBool || (flushing && oldBytes === 0.U)
+  io.atbm.valid                       := lengths.io.deq.valid && !(flushing && oldBytes === 0.U)
+  io.atbm.bits.data                   := beat.asUInt
+  io.atbm.bits.bytes                  := count - 1.U
+  io.atbm.bits.packetBytes            := packetSize
+  io.atbm.bits.last                   := last
+  lengths.io.deq.ready                := io.atbm.fire && last
   when(io.atbm.fire) {
     readPtr   := readPtr + count
     remaining := Mux(last, 0.U, available - count)

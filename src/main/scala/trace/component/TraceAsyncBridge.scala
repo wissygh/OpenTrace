@@ -44,14 +44,14 @@ class TraceAsyncBridge[T <: Data](gen: T, depth: Int = 16, stages: Int = 3) exte
     val marker    = flush && flushSeen && io.sourceControl.flushAck && !marked
     io.sourceControl.flushReq := flush
     val sync = AsyncResetSynchronizerShiftReg(syncRequest, stages)
-    io.sourceControl.syncReq := sync && !RegNext(sync, false.B)
-    syncAck                  := sync
-    queue.io.enq.valid       := marker || (io.in.valid && !marked)
-    queue.io.enq.bits.marker := marker
-    queue.io.enq.bits.data   := io.in.bits
-    io.in.ready              := queue.io.enq.ready && !marker && !marked
+    io.sourceControl.syncReq                 := sync && !RegNext(sync, false.B)
+    syncAck                                  := sync
+    queue.io.enq.valid                       := marker || (io.in.valid && !marked)
+    queue.io.enq.bits.marker                 := marker
+    queue.io.enq.bits.data                   := io.in.bits
+    io.in.ready                              := queue.io.enq.ready && !marker && !marked
     when(queue.io.enq.fire && marker)(marked := true.B)
-    when(!flush)(marked := false.B)
+    when(!flush)(marked                      := false.B)
   }
   withClockAndReset(io.sinkClock, sinkReset) {
     // Register the request before it crosses; no pulse is sampled directly.
@@ -63,15 +63,15 @@ class TraceAsyncBridge[T <: Data](gen: T, depth: Int = 16, stages: Int = 3) exte
     // Only requests still waiting for delivery may be coalesced (§4.4).
     when(!pending && !acknowledged && queued) { pending := true.B; queued := false.B }
     when(pending && acknowledged)(pending := false.B)
-    when(io.control.syncReq)(queued := true.B)
-    syncRequest := pending
+    when(io.control.syncReq)(queued       := true.B)
+    syncRequest                           := pending
     val done  = RegInit(false.B)
     val entry = queue.io.deq
     io.out.valid := entry.valid && !entry.bits.marker && !done
     io.out.bits  := entry.bits.data
     entry.ready  := Mux(entry.bits.marker, io.control.flushReq && !done, io.out.ready && !done)
     when(entry.fire && entry.bits.marker)(done := true.B)
-    when(!io.control.flushReq)(done := false.B)
-    io.control.flushAck := sinkReset.asBool || done
+    when(!io.control.flushReq)(done            := false.B)
+    io.control.flushAck                        := sinkReset.asBool || done
   }
 }

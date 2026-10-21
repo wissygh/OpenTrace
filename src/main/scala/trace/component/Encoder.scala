@@ -102,7 +102,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     comparator.io.primary   := Cat(teCompPMatchHighVec(i).rdata, teCompPMatchLowVec(i).rdata)
     comparator.io.secondary := Cat(teCompSMatchHighVec(i).rdata, teCompSMatchLowVec(i).rdata)
     // Prime from the new control word on its actual CSR write edge.
-    comparator.io.configure := teCompControlVec(i).w.wen
+    comparator.io.configure                               := teCompControlVec(i).w.wen
     when(teCompControlVec(i).w.wen)(comparator.io.control := teCompControlVec(i).w.wdata)
     comparator.io.advance := block.valid && packetGen.io.blockReady && teControl.regOut.Enable.asBool
     compMatchVec(i)       := comparator.io.matched

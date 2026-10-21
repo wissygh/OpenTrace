@@ -172,10 +172,10 @@ class SMEMSinkCore(window: SMEMWindow) extends Module with TraceParameters {
       offset        := offset + issued
       wrappedPacket := wrappedPacket || wrapped
       when(complete) {
-        committed := nextCursor
-        io.wrap   := wrappedPacket || wrapped
+        committed                                                     := nextCursor
+        io.wrap                                                       := wrappedPacket || wrapped
         when((wrappedPacket || wrapped) && packetStopOnWrap)(stopping := true.B)
-        state := idle
+        state                                                         := idle
       }.otherwise {
         state := offering
       }
@@ -184,18 +184,18 @@ class SMEMSinkCore(window: SMEMWindow) extends Module with TraceParameters {
   // Offered writes remain valid through abort; finish that word, discard the
   // remaining staged packet, then reset. No new session can inherit a stale B.
   when(aborting && (state === idle || state === collecting)) {
-    state         := idle
-    start         := window.base.U
-    limit         := window.limit.U
-    committed     := window.base.U
-    cursor        := window.base.U
-    collected     := 0.U
-    offset        := 0.U
-    padding       := false.B
-    stopping      := false.B
-    wrappedPacket := false.B
-    fault         := 0.U
-    faultAddress  := 0.U
+    state                   := idle
+    start                   := window.base.U
+    limit                   := window.limit.U
+    committed               := window.base.U
+    cursor                  := window.base.U
+    collected               := 0.U
+    offset                  := 0.U
+    padding                 := false.B
+    stopping                := false.B
+    wrappedPacket           := false.B
+    fault                   := 0.U
+    faultAddress            := 0.U
     when(!io.abort)(aborted := false.B)
   }
 }

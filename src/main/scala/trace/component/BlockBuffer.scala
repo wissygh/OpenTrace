@@ -116,7 +116,7 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
   val admit         = !lossPending && canEnq
   val dropped       = enqCount =/= 0.U && !admit
   when(dropped && !lossPending)(lossPending := true.B)
-  when(dropped)(lostTrigger := markerTrigger)
+  when(dropped)(lostTrigger                 := markerTrigger)
   when(insertMarker) {
     val marker = WireInit(0.U.asTypeOf(new BlockBufferEntry))
     marker.valid       := true.B

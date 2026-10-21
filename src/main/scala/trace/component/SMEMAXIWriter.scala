@@ -27,18 +27,18 @@ class SMEMAXIWriter extends Module {
     dataSent    := false.B
     state       := sending
   }
-  io.axi.aw.valid      := state === sending && !addressSent
-  io.axi.aw.bits       := 0.U.asTypeOf(io.axi.aw.bits)
-  io.axi.aw.bits.addr  := request.address
-  io.axi.aw.bits.size  := 2.U
-  io.axi.aw.bits.burst := 1.U // INCR, one beat, ID 0, normal non-cacheable data
-  io.axi.w.valid       := state === sending && !dataSent
-  io.axi.w.bits        := 0.U.asTypeOf(io.axi.w.bits)
-  io.axi.w.bits.data   := request.data
-  io.axi.w.bits.strb   := request.mask
-  io.axi.w.bits.last   := true.B
+  io.axi.aw.valid                  := state === sending && !addressSent
+  io.axi.aw.bits                   := 0.U.asTypeOf(io.axi.aw.bits)
+  io.axi.aw.bits.addr              := request.address
+  io.axi.aw.bits.size              := 2.U
+  io.axi.aw.bits.burst             := 1.U // INCR, one beat, ID 0, normal non-cacheable data
+  io.axi.w.valid                   := state === sending && !dataSent
+  io.axi.w.bits                    := 0.U.asTypeOf(io.axi.w.bits)
+  io.axi.w.bits.data               := request.data
+  io.axi.w.bits.strb               := request.mask
+  io.axi.w.bits.last               := true.B
   when(io.axi.aw.fire)(addressSent := true.B)
-  when(io.axi.w.fire)(dataSent := true.B)
+  when(io.axi.w.fire)(dataSent     := true.B)
   when(state === sending && (addressSent || io.axi.aw.fire) && (dataSent || io.axi.w.fire)) {
     state := replying
   }
@@ -47,10 +47,10 @@ class SMEMAXIWriter extends Module {
     error := io.axi.b.bits.resp =/= 0.U || io.axi.b.bits.id =/= 0.U
     state := done
   }
-  io.response.valid := state === done
-  io.response.bits  := error
+  io.response.valid            := state === done
+  io.response.bits             := error
   when(io.response.fire)(state := idle)
-  io.axi.ar.valid := false.B
-  io.axi.ar.bits  := 0.U.asTypeOf(io.axi.ar.bits)
-  io.axi.r.ready  := true.B // no read requests are generated
+  io.axi.ar.valid              := false.B
+  io.axi.ar.bits               := 0.U.asTypeOf(io.axi.ar.bits)
+  io.axi.r.ready               := true.B // no read requests are generated
 }

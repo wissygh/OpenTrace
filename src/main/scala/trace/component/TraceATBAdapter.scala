@@ -51,7 +51,7 @@ class TraceATBAdapter(dataBytes: Int = 4) extends Module with TraceParameters {
   when(io.in.fire) {
     when(!packetActive)(assert(io.id > 0.U && io.id < 0x70.U))
     when(!packetActive)(packetId := io.id)
-    packetActive := !io.in.bits.last
+    packetActive                 := !io.in.bits.last
   }
   io.atbm.at.valid   := queue.io.deq.valid
   io.atbm.at.bits    := queue.io.deq.bits
