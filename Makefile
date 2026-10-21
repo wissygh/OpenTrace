@@ -30,7 +30,14 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart
+.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart test-xiangshan-sba
+
+XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
+XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
+
+test-xiangshan-sba:
+	@echo "[XS-SBA] 启用已有emu的JTAG；外部SBA配置/停止/读SRAM，再与ROB采样对拍"
+	python3 -m decoder.tests.run_xiangshan_sba --emu "$(XIANGSHAN_EMU)" --output "$(XIANGSHAN_SBA_OUTPUT)"
 
 test-single-hart:
 	@echo "[single-hart] 实际Trace/SRAM，SoCMisc CPU/SBA配置与decoder完整执行流"

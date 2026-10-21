@@ -23,6 +23,7 @@ private class SingleHartSramDesign(adaptCPUWidth: Boolean = true)(implicit p: Pa
   val otherSlave = LazyModule(new TLError(
     DevNullParams(address = Seq(AddressSet(0x30000000L, 0xfff)), maxAtomic = 8, maxTransfer = 8),
     beatBytes = 8))
+  // This auxiliary control master is distinct from the hart supplying FromCore.
   val cpu = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1("cpu", sourceId = IdRange(0, 1))))))
   val sba = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1("sba", sourceId = IdRange(0, 1))))))
   trace.ctrlnode.get := TLBuffer() := xbar
