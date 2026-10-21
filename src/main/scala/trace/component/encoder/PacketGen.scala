@@ -162,6 +162,20 @@ class PacketGen extends Module with TraceParameters {
   targetCache.io.address := address
   targetCache.io.update  := generated.fire && carriesAddress && previousJump && activeConfig(4) && !syncPacket
   targetCache.io.clear   := generated.fire && (syncPacket || supportPacket)
+  val predictor = Module(new TraceBranchPredictor)
+  predictor.io.address := address
+  predictor.io.taken   := taken
+  predictor.io.update  := step && branch && activeConfig(3) && !syncPacket
+  predictor.io.clear   := generated.fire && (syncPacket || supportPacket)
+  // The wire stores correct branches minus 31 in all 32 bits. The logical
+  // count therefore needs 33 bits, including the maximum 0xffffffff + 31.
+  val correctBranches        = RegInit(0.U(33.W))
+  val allPredicted           = RegInit(true.B)
+  val predictedCount         = TraceBranchPredictor.countAfter(correctBranches, branch && predictor.io.correct)
+  val predictionRun          = activeConfig(3) && allPredicted && predictedCount >= 31.U
+  val predictionFailed       = branch && !predictor.io.correct
+  val predictionMaximum      = TraceBranchPredictor.atMaximum(predictedCount)
+  val encodedPredictionCount = TraceBranchPredictor.encodedCount(predictedCount)
 
   def emitPayload(value: UInt): Unit = {
     payload := ETracePacketCodec.extend(value, payload_max_width)
@@ -225,6 +239,17 @@ class PacketGen extends Module with TraceParameters {
       ETracePacketCodec.cachedTarget(targetCache.io.index, count(4, 0), map(30, 0), f0s_width_p, payload_max_width),
       addressPayload
     )
+    when(predictionRun) {
+      payload := ETracePacketCodec.predictedAddress(
+        encodedPredictionCount,
+        predictionFailed,
+        delta(iaddress_width_p - 1, iaddress_lsb_p),
+        requestedNotify,
+        beforeSync,
+        f0s_width_p,
+        payload_max_width
+      )
+    }
     emit             := true.B
     consumesBranches := true.B
     carriesAddress   := true.B
@@ -272,7 +297,13 @@ class PacketGen extends Module with TraceParameters {
     }.elsewhen(curNotify || nextTrap || nextBoundary || !nextQualified || syncRequired || endCurrent) {
       // If history is pending, flush it with an address before the next sync.
       addressPacket(curNotify, false.B)
-    }.elsewhen(count === 31.U) {
+    }.elsewhen(predictionRun && predictionMaximum) {
+      addressPacket(false.B, false.B)
+    }.elsewhen(predictionRun && predictionFailed) {
+      payload          := ETracePacketCodec.predictedBranches(encodedPredictionCount, payload_max_width, f0s_width_p)
+      emit             := true.B
+      consumesBranches := true.B
+    }.elsewhen(count === 31.U && !predictionRun) {
       payload          := ETracePacketCodec.branchOnly(map(30, 0), payload_max_width)
       emit             := true.B
       consumesBranches := true.B
@@ -306,15 +337,25 @@ class PacketGen extends Module with TraceParameters {
 
   when(step && cur.valid) {
     when(!qualified || consumesBranches) {
-      branchMap   := 0.U
-      branchCount := 0.U
+      branchMap       := 0.U
+      branchCount     := 0.U
+      correctBranches := 0.U
+      allPredicted    := true.B
     }.otherwise {
-      assert(count <= 31.U)
+      assert(predictionRun || count <= 31.U)
       branchMap   := map
-      branchCount := count
+      branchCount := Mux(predictionRun, 31.U, count)
+      when(branch) {
+        allPredicted    := allPredicted && predictor.io.correct
+        correctBranches := Mux(allPredicted && predictor.io.correct, predictedCount, 0.U)
+      }
     }
   }
   when(generated.fire) {
+    when(syncPacket || supportPacket) {
+      correctBranches := 0.U
+      allPredicted    := true.B
+    }
     when(finishesCurrent) {
       cur.valid           := false.B
       qualified           := false.B

@@ -32,6 +32,7 @@ trait TraceParameters {
       block_buffer_depth_p >= BlockNum * (core_stall_response_cycles_p + 1))
     require(filter_trap_depth_bits_p > 0 && filter_trap_depth_bits_p <= 16)
     require(f0s_width_p == 1 && cache_size_p >= 1 && cache_size_p <= 10)
+    require(bpred_size_p >= 1 && bpred_size_p <= 10)
   }
 
   /**
@@ -79,11 +80,12 @@ trait TraceParameters {
   def iaddress_lsb_p       = 1
   def encodermode_width_p  = 1 // Branch trace is the only mode.
 
-  def return_stack_size_p = 8 // todo: fix
-  def call_counter_size_p = 8 // todo: fix
+  def return_stack_size_p = 0 // Implicit return is not implemented in this profile.
+  def call_counter_size_p = 0
 
   def f0s_width_p  = 1
   def cache_size_p = 8
+  def bpred_size_p = 8
 
   // support packet
   def ioptions_width_p = 6
@@ -184,7 +186,7 @@ trait TraceParameters {
 
   def supportFullAddr   = true
   def supportJumpCache  = true
-  def supportBranchPred = false
+  def supportBranchPred = true
   def supportImExp      = false
   def supportImRet      = false
   def supportSijump     = false

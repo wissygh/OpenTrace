@@ -34,6 +34,23 @@ object ETracePacketCodec {
     Mux(count === 0.U, extend(Cat(0.U(5.W), suffix), width), PriorityMux(choices))
   }
 
+  def predictedBranches(count: UInt, width: Int, subformatWidth: Int): UInt =
+    extend(Cat(0.U(2.W), count, 0.U(subformatWidth.W), 0.U(2.W)), width)
+
+  def predictedAddress(
+      count:          UInt,
+      failed:         Bool,
+      alignedAddress: UInt,
+      notify:         Bool,
+      updiscon:       Bool,
+      subformatWidth: Int,
+      width:          Int
+  ): UInt = {
+    val n = alignedAddress.head(1).asBool ^ notify
+    val u = n ^ updiscon
+    extend(Cat(u, n, alignedAddress, Mux(failed, 3.U(2.W), 2.U(2.W)), count, 0.U(subformatWidth.W), 0.U(2.W)), width)
+  }
+
   /** Preserve a sign bit before rounding to bytes, including all-zero/all-one
     * payloads. valid is separate: payload value zero is not an absence marker.
     */

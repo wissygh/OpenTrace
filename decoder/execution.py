@@ -4,6 +4,7 @@ Every instance owns its reference PC, branch FIFO, qualification and options.
 No ELF bytes or trace from another source participate in that state machine.
 """
 from dataclasses import dataclass
+from collections import deque
 from .encapsulation import DecodeError
 from .image import signed
 
@@ -19,6 +20,7 @@ class Profile:
     encoder_mode_width: int = 1
     f0s_width: int = 1
     cache_size: int = 8
+    bpred_size: int = 8
     max_steps: int = 100000
 
     def __post_init__(self):
@@ -27,7 +29,7 @@ class Profile:
         if not (1 <= self.privilege_width <= 3 and 0 <= self.context_width <= 64 and
                 0 <= self.time_width <= 64 and 1 <= self.ecause_width <= 64 and
                 1 <= self.encoder_mode_width <= 8 and 0 <= self.f0s_width <= 2 and
-                0 <= self.cache_size <= 16 and self.max_steps > 0):
+                0 <= self.cache_size <= 16 and 0 <= self.bpred_size <= 16 and self.max_steps > 0):
             raise DecodeError('invalid discovery profile')
 
 
@@ -52,14 +54,25 @@ def unpack(payload, profile, options):
     aw = profile.address_width - profile.address_lsb
     if fmt == 0:
         sf = b.take(profile.f0s_width) if profile.f0s_width else (1 if options & 16 else 0)
-        if sf != 1 or not options & 16 or not profile.cache_size:
+        packet['subformat'] = sf
+        if sf == 0 and options & 8 and profile.bpred_size:
+            count = b.take(32)
+            branch_format = b.take(2)
+            if branch_format == 1 or (branch_format == 0 and count == 0xffffffff):
+                raise DecodeError('invalid Format0 branch_fmt or maximum-count encoding')
+            packet.update(branch_count=count + 31, prediction_failed=branch_format in (0, 3),
+                          prediction_max=count == 0xffffffff and branch_format == 2)
+            if branch_format == 0:
+                packet.update(notify=False, updiscon=False)
+                return packet
+        elif sf == 1 and options & 16 and profile.cache_size:
+            packet.update(index=b.take(profile.cache_size), branches=b.take(5), notify=False, updiscon=False)
+            branches = packet['branches']
+            packet['branch_map'] = (b.take((1 << branches.bit_length()) - 1) & ((1 << branches) - 1)
+                                    if branches else 0)
+            return packet
+        else:
             raise DecodeError('Format 0 requires an enabled, supported optional format')
-        packet.update(subformat=sf, index=b.take(profile.cache_size), branches=b.take(5),
-                      notify=False, updiscon=False)
-        branches = packet['branches']
-        packet['branch_map'] = (b.take((1 << branches.bit_length()) - 1) & ((1 << branches) - 1)
-                                if branches else 0)
-        return packet
     if fmt == 3:
         sf = b.take(2)
         packet['subformat'] = sf
@@ -116,7 +129,9 @@ class ExecutionDecoder:
         self.awaiting_handler = False
         self.address = 0
         self.branches = 0
-        self.branch_map = 0
+        self.branch_runs = deque()
+        self.prediction_states = {}
+        self.skip_sync_prediction = False
         self.stop_at_last_branch = False
         self.inferred_address = False
         self.start_of_trace = True
@@ -145,6 +160,46 @@ class ExecutionDecoder:
         instr = image.instruction(self.pc) if image is not None else self._instr(self.pc)
         return self.branches != int(instr.kind == 'branch')
 
+    def _clear_branches(self):
+        self.branches = 0
+        self.branch_runs.clear()
+
+    def _append_map(self, bits, count):
+        if count:
+            self.branch_runs.append([0, count, bits])
+            self.branches += count
+
+    def _append_predictions(self, count, failed):
+        self.branch_runs.append([1, count, 0])
+        self.branches += count
+        if failed:
+            self.branch_runs.append([2, 1, 0])
+            self.branches += 1
+
+    def _take_branch(self):
+        if not self.branches:
+            raise DecodeError(f'branch outcome unavailable at 0x{self.pc:x}')
+        index = (self.pc >> self.profile.address_lsb) & ((1 << self.profile.bpred_size) - 1)
+        state = self.prediction_states.get(index, 1)
+        run = self.branch_runs[0]
+        if run[0] == 0:
+            taken = not (run[2] & 1)
+            run[2] >>= 1
+        else:
+            taken = bool(state & 2) ^ (run[0] == 2)
+        run[1] -= 1
+        self.branches -= 1
+        if not run[1]:
+            self.branch_runs.popleft()
+        if self.options & 8:
+            if self.skip_sync_prediction:
+                self.skip_sync_prediction = False
+            else:
+                predicted = bool(state & 2)
+                next_prediction = taken if bool(state & 1) == taken else predicted
+                self.prediction_states[index] = (int(next_prediction) << 1) | int(taken)
+        return taken
+
     def _next(self, address):
         instr = self._instr(self.pc)
         old = self.pc
@@ -165,11 +220,7 @@ class ExecutionDecoder:
                 raise DecodeError('uninferable discontinuity in address-free branch map')
             self.pc, stop = address, True
         elif instr.kind == 'branch':
-            if not self.branches:
-                raise DecodeError(f'branch outcome unavailable at 0x{old:x}')
-            taken = not (self.branch_map & 1)
-            self.branch_map >>= 1
-            self.branches -= 1
+            taken = self._take_branch()
             self.pc += instr.immediate if taken else instr.size
         else:
             self.pc += instr.size
@@ -203,7 +254,7 @@ class ExecutionDecoder:
             if self.pc != address or self.stop_at_last_branch or self._unprocessed(target_image):
                 continue
             if packet['format'] != 3:
-                if packet['notify']:
+                if packet['notify'] or packet.get('prediction_max'):
                     return
                 if self._instr(self.last_pc).kind not in ('indirect', 'xret') and not packet['updiscon']:
                     self.inferred_address = True
@@ -222,10 +273,14 @@ class ExecutionDecoder:
         if fmt == 3:
             sf = packet['subformat']
             if sf == 3:
-                if packet['mode'] or packet['options'] & (2 | 8):
-                    raise DecodeError('implicit return and branch prediction modes are not implemented')
+                if packet['mode'] or packet['options'] & 2:
+                    raise DecodeError('implicit return mode is not implemented')
                 if packet['options'] & 16 and not self.profile.cache_size:
                     raise DecodeError('jump target cache requires non-zero cache_size discovery')
+                if packet['options'] & 8 and not self.profile.bpred_size:
+                    raise DecodeError('branch prediction requires non-zero bpred_size discovery')
+                if packet['options'] & 24 == 24 and not self.profile.f0s_width:
+                    raise DecodeError('multiple Format0 extensions require a subformat field')
                 if packet['denable']:
                     raise DecodeError('data trace is not implemented')
                 self.options = packet['options']
@@ -243,9 +298,11 @@ class ExecutionDecoder:
                 if status or not packet['ienable']:
                     self.start_of_trace = True
                     self.awaiting_handler = False
-                    self.branches = self.branch_map = 0
+                    self._clear_branches()
                     self.inferred_address = False
                 self.target_cache.clear()
+                self.prediction_states.clear()
+                self.skip_sync_prediction = False
                 self._emit('support', **packet)
                 return self.events
             if sf == 2:
@@ -275,7 +332,9 @@ class ExecutionDecoder:
                     self.target_cache.clear()
                     self.awaiting_handler = True
                     self.inferred_address = False
-                    self.branches = self.branch_map = 0
+                    self._clear_branches()
+                    self.prediction_states.clear()
+                    self.skip_sync_prediction = False
                     return self.events
             if address is None:
                 vector = self.trap_vectors.get(packet['privilege'])
@@ -290,13 +349,12 @@ class ExecutionDecoder:
             self.inferred_address = False
             self.address = full_address
             if sf == 1 or self.start_of_trace or self.awaiting_handler:
-                self.branches = self.branch_map = 0
+                self._clear_branches()
             # The synchronization instruction is in the new context; intermediate
             # instructions up to it still use the old image/context.
             target_image = self.contexts.get(packet['context'], self.image)
             if target_image.instruction(full_address).kind == 'branch':
-                self.branch_map |= packet['branch'] << self.branches
-                self.branches += 1
+                self._append_map(packet['branch'], 1)
             if sf == 0 and not self.start_of_trace and not self.awaiting_handler:
                 self._follow(full_address, packet)
                 if self.events and self.events[-1]['kind'] == 'instruction':
@@ -309,18 +367,26 @@ class ExecutionDecoder:
             self.start_of_trace = False
             self.awaiting_handler = False
             self.target_cache.clear()
+            self.prediction_states.clear()
+            self.skip_sync_prediction = target_image.instruction(full_address).kind == 'branch'
             return self.events
         if self.start_of_trace:
             # A circular capture may begin with packets preceding this hart's sync.
             self._emit('unsynchronized', format=fmt)
             return self.events
         if fmt == 0:
-            if packet['index'] not in self.target_cache:
-                raise DecodeError(f"jump target cache index {packet['index']} is invalid")
-            self.address = self.target_cache[packet['index']]
-            self.stop_at_last_branch = False
-            self.branch_map |= packet['branch_map'] << self.branches
-            self.branches += packet['branches']
+            if packet['subformat'] == 1:
+                if packet['index'] not in self.target_cache:
+                    raise DecodeError(f"jump target cache index {packet['index']} is invalid")
+                self.address = self.target_cache[packet['index']]
+                self.stop_at_last_branch = False
+                self._append_map(packet['branch_map'], packet['branches'])
+            else:
+                self._append_predictions(packet['branch_count'], packet['prediction_failed'])
+                self.stop_at_last_branch = 'address' not in packet
+                if 'address' in packet:
+                    absolute = self._absolute(packet['address'])
+                    self.address = absolute if self.options & 32 else (self.address + absolute) & self.mask
             self._follow(self.address, packet)
             return self.events
         if fmt == 2 or packet['branches']:
@@ -331,7 +397,6 @@ class ExecutionDecoder:
                 self.address = (self.address + self._absolute(packet['address'])) & self.mask
         if fmt == 1:
             self.stop_at_last_branch = packet['branches'] == 0
-            self.branch_map |= packet['branch_map'] << self.branches
-            self.branches += packet['branches'] or 31
+            self._append_map(packet['branch_map'], packet['branches'] or 31)
         self._follow(self.address, packet)
         return self.events
