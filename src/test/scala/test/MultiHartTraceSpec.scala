@@ -3,6 +3,7 @@ package trace
 import chisel3._
 import chisel3.util._
 import chiseltest._
+import freechips.rocketchip.amba.axi4._
 import java.nio.file.{Files, Paths}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -12,8 +13,9 @@ import trace.interface._
 /** Tests the actual BlockBuffer/PacketGen/Fifo path and the shared SRAM core,
   * without duplicating their datapath or relying on an async-CSR test backend.
   */
-private class MultiHartTraceHarness(words: Int = 16) extends Module with TraceParameters {
+private class MultiHartTraceHarness(words: Int = 16, useSMEM: Boolean = false) extends Module with TraceParameters {
   val io = IO(new Bundle {
+    val smem = Option.when(useSMEM)(new AXI4Bundle(AXI4BundleParameters(64, 32, 1)))
     val fromCore = Input(Vec(2, new FromCore))
     val sinkEnable = Input(Bool())
     val control = Input(UInt(32.W))
@@ -56,17 +58,36 @@ private class MultiHartTraceHarness(words: Int = 16) extends Module with TracePa
     overflow(i) := blocks.io.overflow
     empty(i) := blocks.io.empty && encoder.io.empty && fifo.io.ctrl.fifoIsEmpty
   }
-  val sink = Module(new SRAMSinkCore(words))
-  sink.io.in <> arbiter.io.out
-  sink.io.enable := io.sinkEnable
-  sink.io.stopOnWrap := false.B
-  sink.io.writePointer.valid := false.B
-  sink.io.writePointer.bits := 0.U
-  sink.io.readPointer <> io.readPointer
-  sink.io.read := false.B
-  io.wp := sink.io.wp
-  io.empty := sink.io.empty
-  io.readData := sink.io.readData
+  if (useSMEM) {
+    val base = BigInt("180000000", 16)
+    val sink = Module(new SMEMSinkCore(SMEMWindow(base, words * 4)))
+    val writer = Module(new SMEMAXIWriter)
+    sink.io.in <> arbiter.io.out
+    sink.io.enable := io.sinkEnable
+    sink.io.stopOnWrap := false.B
+    sink.io.abort := false.B
+    sink.io.configuration.valid := false.B
+    sink.io.configuration.bits := 0.U.asTypeOf(sink.io.configuration.bits)
+    sink.io.request <> writer.io.request
+    sink.io.response <> writer.io.response
+    io.smem.get <> writer.io.axi
+    io.wp := (sink.io.committed - base.U) >> 2
+    io.empty := sink.io.empty
+    io.readData := 0.U
+    assert(sink.io.fault === 0.U, "SMEM execution capture must remain error-free")
+  } else {
+    val sink = Module(new SRAMSinkCore(words))
+    sink.io.in <> arbiter.io.out
+    sink.io.enable := io.sinkEnable
+    sink.io.stopOnWrap := false.B
+    sink.io.writePointer.valid := false.B
+    sink.io.writePointer.bits := 0.U
+    sink.io.readPointer <> io.readPointer
+    sink.io.read := false.B
+    io.wp := sink.io.wp
+    io.empty := sink.io.empty
+    io.readData := sink.io.readData
+  }
 }
 
 class MultiHartTraceSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
@@ -171,9 +192,12 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
   private case class Block(pc: Int, kind: Int = 0, halfwords: Int = 2, lastSize: Int = 1,
       notification: Boolean = false, cause: Int = 0, tval: Int = 0, context: Int = 0, ctype: Int = 0)
   behavior of "complete multi-hart SRAM execution capture"
-  it should "retain independent execution and trap streams through packet arbitration and sink stalls" in {
-    test(new MultiHartTraceHarness(128)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
-      println("[RTL-full][1/6] 双 hart 实际 raw/PacketGen/Fifo -> PacketArbiter -> SRAM，覆盖完整退休片段")
+  for (useSMEM <- Seq(false, true)) {
+  it should s"retain independent execution and traps through ${if (useSMEM) "SMEM AXI" else "SRAM"} stalls" in {
+    test(new MultiHartTraceHarness(128, useSMEM)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+      val captureStem = if (useSMEM) "two-hart-smem" else "two-hart-execution"
+      val sinkName = if (useSMEM) "SMEM AXI" else "SRAM"
+      println(s"[RTL-full][1/6] sink=$sinkName： 双 hart 实际 raw/PacketGen/Fifo -> PacketArbiter -> SRAM，覆盖完整退休片段")
       d.io.sinkEnable.poke(true.B); d.io.control.poke((6 | (15 << 20)).U)
       d.io.readPointer.valid.poke(false.B); d.io.readPointer.bits.poke(0.U)
       for (i <- 0 until 2) {
@@ -188,8 +212,47 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
           b.bits.trigNotify.poke(false.B); b.bits.sijump.foreach(_.poke(false.B))
         }
       }
+      val memory = scala.collection.mutable.Map.empty[BigInt, Int]
+      val memoryBase = BigInt("180000000", 16)
+      var address = Option.empty[BigInt]
+      var writeData = Option.empty[(BigInt, Int)]
+      var responseDelay = -1
+      var memoryCycle = 0
+      d.io.smem.foreach { axi =>
+        axi.aw.ready.poke(false.B); axi.w.ready.poke(false.B)
+        axi.b.valid.poke(false.B); axi.b.bits.resp.poke(0.U); axi.b.bits.id.poke(0.U)
+        axi.ar.ready.poke(true.B); axi.r.valid.poke(false.B)
+        axi.r.bits.id.poke(0.U); axi.r.bits.data.poke(0.U); axi.r.bits.resp.poke(0.U); axi.r.bits.last.poke(true.B)
+      }
       d.reset.poke(true.B); d.clock.step(2); d.reset.poke(false.B)
-      def tick(n: Int): Unit = for (_ <- 0 until n) { d.io.ingressOverflow.expect(false.B); d.clock.step() }
+      def tick(n: Int): Unit = for (_ <- 0 until n) {
+        d.io.ingressOverflow.expect(false.B)
+        d.io.smem.foreach { axi =>
+          val awReady = address.isEmpty && memoryCycle % 5 != 0
+          val wReady = writeData.isEmpty && memoryCycle % 3 == 0
+          val bValid = responseDelay == 0
+          axi.aw.ready.poke(awReady.B); axi.w.ready.poke(wReady.B); axi.b.valid.poke(bValid.B)
+          if (bValid && axi.b.ready.peek().litToBoolean) {
+            responseDelay = -1; address = None; writeData = None
+          } else if (responseDelay > 0) responseDelay -= 1
+          if (awReady && axi.aw.valid.peek().litToBoolean) {
+            axi.aw.bits.size.expect(2.U); axi.aw.bits.len.expect(0.U); axi.aw.bits.id.expect(0.U)
+            address = Some(axi.aw.bits.addr.peek().litValue)
+          }
+          if (wReady && axi.w.valid.peek().litToBoolean) {
+            axi.w.bits.last.expect(true.B)
+            writeData = Some((axi.w.bits.data.peek().litValue, axi.w.bits.strb.peek().litValue.toInt))
+          }
+          if (address.nonEmpty && writeData.nonEmpty && responseDelay < 0) {
+            val (data, mask) = writeData.get
+            for (lane <- 0 until 4 if (mask & (1 << lane)) != 0)
+              memory(address.get + lane) = ((data >> (lane * 8)) & 255).toInt
+            responseDelay = 2 + memoryCycle % 4
+          }
+          axi.ar.valid.expect(false.B)
+        }
+        d.clock.step(); memoryCycle += 1
+      }
       val inputs = Seq(
         Seq(Block(0x1000), Block(0x1004, 5), Block(0x1000), Block(0x1004, 4),
           Block(0x1008, 8, 4), Block(0x2000, halfwords = 3, lastSize = 0, notification = true),
@@ -199,7 +262,7 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
           Block(0xa004, notification = true, context = 1), Block(0xa008, context = 1),
           Block(0xb000, context = 2, ctype = 3), Block(0xb004, context = 2)))
       for (index <- 0 until inputs.map(_.size).max) {
-        if (index == 4) { d.io.sinkEnable.poke(false.B); println("[RTL-full][2/6] 暂停 SRAM 接收，观察队列反压和整包仲裁") }
+        if (index == 4) { d.io.sinkEnable.poke(false.B); println(s"[RTL-full][2/6] 暂停 $sinkName 接收，观察队列反压和整包仲裁") }
         for (hart <- 0 until 2) {
           val core = d.io.fromCore(hart)
           core.blocks(0).valid.poke((index < inputs(hart).size).B)
@@ -213,18 +276,23 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
           }
         }
         tick(1); d.io.fromCore.foreach(_.blocks(0).valid.poke(false.B)); tick(9)
-        if (index == 4) { d.io.sinkEnable.poke(true.B); println("[RTL-full][2/6] 恢复 SRAM，继续发送两路独立执行流") }
+        if (index == 4) { d.io.sinkEnable.poke(true.B); println(s"[RTL-full][2/6] 恢复 $sinkName，继续发送两路独立执行流") }
       }
       tick(30) // raw entries are drained; each encoder retains its final logical instruction
       d.io.fromCore.foreach(_.hartIsReset.poke(true.B)); tick(1)
-      d.io.fromCore.foreach(_.hartIsReset.poke(false.B)); tick(120)
+      d.io.fromCore.foreach(_.hartIsReset.poke(false.B))
+      var drainCycles = 0
+      while (!d.io.encodersEmpty.peek().litToBoolean && drainCycles < 2000) { tick(1); drainCycles += 1 }
       d.io.encodersEmpty.expect(true.B)
-      d.io.sinkEnable.poke(false.B); tick(20); d.io.empty.expect(true.B)
+      d.io.sinkEnable.poke(false.B)
+      var tailCycles = 0
+      while (!d.io.empty.peek().litToBoolean && tailCycles < 200) { tick(1); tailCycles += 1 }
+      d.io.empty.expect(true.B)
       val words = d.io.wp.peek().litValue.toInt
       words should be > 0
       words should be < 128
-      println(s"[RTL-full][3/6] 两路停止并排空，SRAM 捕获 $words word，开始读回")
-      val bytes = (0 until words).flatMap { index =>
+      println(s"[RTL-full][3/6] 两路停止并排空，$sinkName 捕获 $words word，开始读回")
+      val bytes = if (useSMEM) (0 until words * 4).map(i => memory(memoryBase + i)) else (0 until words).flatMap { index =>
         d.io.readPointer.valid.poke(true.B); d.io.readPointer.bits.poke(index.U); tick(1)
         d.io.readPointer.valid.poke(false.B)
         val word = d.io.readData.peek().litValue
@@ -257,12 +325,12 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
         ETraceReference.address(1, 0xa008, 0xa004), ETraceReference.support(1, status = 1),
         ETraceReference.synchronization(1, 0xb000, context = 2),
         ETraceReference.address(1, 0xb004, 0xb000), ETraceReference.support(1, status = 1))
-      println(s"[RTL-full][4/6] SRAM 内 ${frames.map(_.size).sum} 个完整 packet 按 srcID 对独立 golden，padding=$padding")
+      println(s"[RTL-full][4/6] $sinkName 内 ${frames.map(_.size).sum} 个完整 packet 按 srcID 对独立 golden，padding=$padding")
       val workspace = sys.env.get("MILL_WORKSPACE_ROOT").map(Paths.get(_)).getOrElse(
         Iterator.iterate(Paths.get("").toAbsolutePath)(_.getParent).takeWhile(_ != null)
           .find(p => Files.isRegularFile(p.resolve("build.sc"))).get)
       val out = workspace.resolve(Paths.get("build", "validation")); Files.createDirectories(out)
-      Files.write(out.resolve("two-hart-execution.bin"), bytes.map(_.toByte).toArray)
+      Files.write(out.resolve(s"$captureStem.bin"), bytes.map(_.toByte).toArray)
       val code0 = Array.fill[Byte](0x2020 - 0xff0)(0)
       val code1 = Array.fill[Byte](0x3020)(0)
       def put(code: Array[Byte], base: Int, pc: Int, instruction: Long, size: Int = 4): Unit =
@@ -275,9 +343,11 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
       Files.write(out.resolve("two-hart-execution-hart0.bin"), code0)
       Files.write(out.resolve("two-hart-execution-hart1.bin"), code1)
       val config = """{"source_bits":8,"sources":{"0":{"hart_id":0,"raw":"two-hart-execution-hart0.bin","base":"0xff0","xlen":64},"1":{"hart_id":1,"raw":"two-hart-execution-hart1.bin","base":"0x8000","xlen":64}}}"""
-      Files.write(out.resolve("two-hart-execution.json"), config.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-      println("[RTL-full][5/6] 写出 SRAM capture、两份实际指令镜像和 srcID 配置")
+      Files.write(out.resolve(s"$captureStem.json"), config.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      println(s"[RTL-full][5/6] 写出 $sinkName capture、两份实际指令镜像和 srcID 配置")
       println("[RTL-full][6/6] 下一阶段 decoder 校验 hart0 全部 11 条、hart1 全部 8 条退休 PC 及 EPC/context")
     }
   }
+}
+
 }

@@ -30,11 +30,13 @@ def ports(source):
     return result
 
 
-def main(directory='build/rtl'):
+def main(directory='build/rtl', include_smem=False):
     directory = Path(directory)
     configurations = [('tl', 1, False), ('axi', 1, False), ('apb', 1, False),
                       ('tl-2hart-sram', 2, False), ('axi-2hart-sram', 2, False),
                       ('apb-2hart-sram', 2, False), ('tl-2hart-atb', 2, True)]
+    if include_smem:
+        configurations += [('tl-2hart-smem', 2, False), ('axi-2hart-smem', 2, False), ('apb-2hart-smem', 2, False)]
     manifest = []
     for name, harts, atb in configurations:
         top = directory / name / 'Trace.sv'
@@ -88,14 +90,28 @@ def main(directory='build/rtl'):
         missing = [filename for filename in filelist if filename and not (top.parent / filename).is_file()]
         if missing:
             raise ValueError(f'{top}: generated file list references missing files: {missing!r}')
-        manifest.append({'configuration': name, 'harts': harts, 'sink': 'ATB' if atb else 'SRAM',
+        smem = name.endswith('-smem')
+        if smem:
+            for channel in ('aw', 'w', 'ar'):
+                require(f'io_smem_{channel}_valid', 'output')
+                require(f'io_smem_{channel}_ready', 'input')
+            for channel in ('b', 'r'):
+                require(f'io_smem_{channel}_valid', 'input')
+                require(f'io_smem_{channel}_ready', 'output')
+            require('io_smem_aw_bits_addr', 'output', 64)
+            require('io_smem_w_bits_data', 'output', 32)
+            require('io_smem_w_bits_strb', 'output', 4)
+            require('io_smem_b_bits_resp', 'input', 2)
+        elif any(key.startswith('io_smem_') for key in actual):
+            raise ValueError(f'{top}: memory master appears on a non-SMEM configuration')
+        manifest.append({'configuration': name, 'harts': harts, 'sink': 'ATB' if atb else 'SMEM' if smem else 'SRAM',
                          'ports': len(actual), 'modules': len(filelist), 'sha256': hashlib.sha256(top.read_bytes()).hexdigest()})
         print(f'[rtl-profile] {name}: hart={harts}, sink={manifest[-1]["sink"]}, {len(actual)} 个端口符合冻结接口')
     output = directory.parent / 'validation' / 'rtl-profile-manifest.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(manifest, indent=2) + '\n')
-    print(f'[rtl-profile] 7 种配置生成和端口检查通过，manifest: {output}')
+    print(f'[rtl-profile] {len(configurations)} 种配置生成和端口检查通过，manifest: {output}')
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl')
+    main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl', include_smem='--smem' in sys.argv[2:])

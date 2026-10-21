@@ -17,7 +17,7 @@ import freechips.rocketchip.diplomacy.LazyModule
 object RAMMain extends App {
   val path = """./build/rtl"""
   implicit val p: Parameters = Parameters.empty
-  val ram = LazyModule(new SMEM(0)(p))
+  val ram = LazyModule(new SMEM(0, trace.component.SMEMWindow(BigInt("180000000", 16), 0x10000))(p))
   val params = List(1)
   for (i <- params) {
     (new ChiselStage).execute(

@@ -51,3 +51,19 @@ object TraceVariantsMain extends App {
         circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
   }
 }
+
+
+/** The address window is a test configuration, not a platform memory map. */
+object TraceSMEMMain extends App {
+  implicit val p: Parameters = Parameters.empty
+  for (bus <- Seq(BusType.TL, BusType.AXI, BusType.APB)) {
+    val top = LazyModule(new Trace(bus, numHarts = 2,
+      smemWindow = Some(trace.component.SMEMWindow(BigInt("180000000", 16), 0x10000))))
+    (new ChiselStage).execute(
+      Array("--target-dir", s"./build/rtl/${bus.busName}-2hart-smem", "--split-verilog"),
+      Seq(ChiselGeneratorAnnotation(() => top.module),
+        FirtoolOption("--disable-all-randomization"), FirtoolOption("--disable-annotation-unknown"),
+        circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
+    println(s"[SMEM-rtl] ${bus.busName} 双 hart / 64-bit 地址 / 32-bit AXI 写口生成完成")
+  }
+}
