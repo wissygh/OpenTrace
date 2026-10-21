@@ -20,7 +20,7 @@ class PacketParser:
     Input must begin at a packet boundary (or use the documented synchronization
     acquisition mode). Null packets have no srcID or timestamp field.
     """
-    def __init__(self, source_bits=8, timestamp_bytes=0, single_source_id=0):
+    def __init__(self, source_bits=8, timestamp_bytes=0, single_source_id=0, observer=None):
         if source_bits not in (0, 8, 16):
             raise DecodeError('source_bits must be 0, 8 or 16 for this decoder')
         if not 0 <= timestamp_bytes <= 8:
@@ -31,6 +31,7 @@ class PacketParser:
         self.buffer = bytearray()
         self.null_packets = 0
         self.offset = 0
+        self.observer = observer
 
     def feed(self, data):
         self.buffer.extend(data)
@@ -39,6 +40,8 @@ class PacketParser:
             header = self.buffer[0]
             length = header & 31
             if not length:
+                if self.observer is not None:
+                    self.observer.frame(self.offset, bytes([header]), None)
                 del self.buffer[:1]
                 self.offset += 1
                 self.null_packets += 1
@@ -59,7 +62,10 @@ class PacketParser:
             if time_bytes:
                 timestamp = int.from_bytes(self.buffer[cursor:cursor + time_bytes], 'little')
                 cursor += time_bytes
-            result.append(Packet(source, bytes(self.buffer[cursor:size]), (header >> 5) & 3, timestamp))
+            packet = Packet(source, bytes(self.buffer[cursor:size]), (header >> 5) & 3, timestamp)
+            if self.observer is not None:
+                self.observer.frame(self.offset, bytes(self.buffer[:size]), packet)
+            result.append(packet)
             del self.buffer[:size]
             self.offset += size
         return result
@@ -80,6 +86,7 @@ class SyncAcquirer:
         self.required = 32 + parser.source_bytes + parser.timestamp_bytes
         self.zeros = 0
         self.acquired = False
+        self.scanned_bytes = 0
 
     def feed(self, data):
         if self.acquired:
@@ -90,8 +97,10 @@ class SyncAcquirer:
             else:
                 if self.zeros >= self.required:
                     self.acquired = True
+                    self.parser.offset = self.scanned_bytes + i
                     return self.parser.feed(data[i:])
                 self.zeros = 0
+        self.scanned_bytes += len(data)
         return []
 
     def finish(self):

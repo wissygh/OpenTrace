@@ -34,30 +34,33 @@ class Profile:
 
 
 class Bits:
-    def __init__(self, data):
+    def __init__(self, data, fields=None):
         if not data:
             raise DecodeError('empty instruction payload')
         # Packets use sign-based compression of their most significant fields.
         self.value = int.from_bytes(data, 'little', signed=True)
         self.position = 0
+        self.fields = fields
 
-    def take(self, width):
+    def take(self, width, name=None):
         value = (self.value >> self.position) & ((1 << width) - 1)
+        if self.fields is not None and name is not None:
+            self.fields.append(dict(name=name, bit_offset=self.position, width=width, value=value))
         self.position += width
         return value
 
 
-def unpack(payload, profile, options):
-    b = Bits(payload)
-    fmt = b.take(2)
+def unpack(payload, profile, options, fields=None):
+    b = Bits(payload, fields)
+    fmt = b.take(2, 'format')
     packet = {'format': fmt}
     aw = profile.address_width - profile.address_lsb
     if fmt == 0:
-        sf = b.take(profile.f0s_width) if profile.f0s_width else (1 if options & 16 else 0)
+        sf = b.take(profile.f0s_width, 'subformat') if profile.f0s_width else (1 if options & 16 else 0)
         packet['subformat'] = sf
         if sf == 0 and options & 8 and profile.bpred_size:
-            count = b.take(32)
-            branch_format = b.take(2)
+            count = b.take(32, 'branch_count')
+            branch_format = b.take(2, 'branch_fmt')
             if branch_format == 1 or (branch_format == 0 and count == 0xffffffff):
                 raise DecodeError('invalid Format0 branch_fmt or maximum-count encoding')
             packet.update(branch_count=count + 31, prediction_failed=branch_format in (0, 3),
@@ -66,50 +69,50 @@ def unpack(payload, profile, options):
                 packet.update(notify=False, updiscon=False)
                 return packet
         elif sf == 1 and options & 16 and profile.cache_size:
-            packet.update(index=b.take(profile.cache_size), branches=b.take(5), notify=False, updiscon=False)
+            packet.update(index=b.take(profile.cache_size, 'index'), branches=b.take(5, 'branches'), notify=False, updiscon=False)
             branches = packet['branches']
-            packet['branch_map'] = (b.take((1 << branches.bit_length()) - 1) & ((1 << branches) - 1)
+            packet['branch_map'] = (b.take((1 << branches.bit_length()) - 1, 'branch_map') & ((1 << branches) - 1)
                                     if branches else 0)
             return packet
         else:
             raise DecodeError('Format 0 requires an enabled, supported optional format')
     if fmt == 3:
-        sf = b.take(2)
+        sf = b.take(2, 'subformat')
         packet['subformat'] = sf
         if sf == 3:
-            packet['ienable'] = b.take(1)
-            packet['mode'] = b.take(profile.encoder_mode_width)
-            packet['qual_status'] = b.take(2)
-            packet['options'] = b.take(6)
-            packet['denable'] = b.take(1)
-            packet['dloss'] = b.take(1)
-            packet['doptions'] = b.take(2)
+            packet['ienable'] = b.take(1, 'ienable')
+            packet['mode'] = b.take(profile.encoder_mode_width, 'encoder_mode')
+            packet['qual_status'] = b.take(2, 'qual_status')
+            packet['options'] = b.take(6, 'ioptions')
+            packet['denable'] = b.take(1, 'denable')
+            packet['dloss'] = b.take(1, 'dloss')
+            packet['doptions'] = b.take(2, 'doptions')
             return packet
         if sf != 2:
-            packet['branch'] = b.take(1)
-        packet['privilege'] = b.take(profile.privilege_width)
-        packet['time'] = b.take(profile.time_width) if profile.time_width else None
-        packet['context'] = b.take(profile.context_width) if profile.context_width else None
+            packet['branch'] = b.take(1, 'branch')
+        packet['privilege'] = b.take(profile.privilege_width, 'privilege')
+        packet['time'] = b.take(profile.time_width, 'time') if profile.time_width else None
+        packet['context'] = b.take(profile.context_width, 'context') if profile.context_width else None
         if sf == 1:
-            packet['ecause'] = b.take(profile.ecause_width)
-            packet['interrupt'] = b.take(1)
-            packet['thaddr'] = b.take(1)
+            packet['ecause'] = b.take(profile.ecause_width, 'ecause')
+            packet['interrupt'] = b.take(1, 'interrupt')
+            packet['thaddr'] = b.take(1, 'thaddr')
         if sf != 2:
             omitted = sf == 1 and packet['thaddr'] and options & 4
-            packet['address'] = None if omitted else b.take(aw)
+            packet['address'] = None if omitted else b.take(aw, 'address')
         if sf == 1 and not packet['interrupt']:
-            packet['tval'] = b.take(profile.address_width)
+            packet['tval'] = b.take(profile.address_width, 'tval')
         return packet
     if fmt == 1:
-        branches = b.take(5)
+        branches = b.take(5, 'branches')
         packet['branches'] = branches
-        raw_map = b.take((1 << branches.bit_length()) - 1 if branches else 31)
+        raw_map = b.take((1 << branches.bit_length()) - 1 if branches else 31, 'branch_map')
         packet['branch_map'] = raw_map & ((1 << (branches or 31)) - 1)
         if not branches:
             return packet
-    address = b.take(aw)
-    notify = b.take(1)
-    updiscon = b.take(1)
+    address = b.take(aw, 'address')
+    notify = b.take(1, 'notify')
+    updiscon = b.take(1, 'updiscon')
     packet.update(address=address, notify=bool(notify ^ (address >> (aw - 1))),
                   updiscon=bool(updiscon ^ notify))
     return packet
