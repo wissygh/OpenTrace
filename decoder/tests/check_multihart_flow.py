@@ -7,7 +7,7 @@ from decoder.__main__ import load_config
 
 def main(directory='build/validation', stem='two-hart-execution'):
     directory = Path(directory)
-    label = 'SMEM' if stem == 'two-hart-smem' else 'SRAM'
+    label = 'PIB' if stem == 'two-hart-pib' else 'SMEM' if stem == 'two-hart-smem' else 'SRAM'
     print(f'[{label}->decoder][1/4] 读取双核 {label} 采集、两份 raw 镜像与 srcID 配置', file=sys.stderr)
     decoder = load_config(directory / f'{stem}.json')
     data = (directory / f'{stem}.bin').read_bytes()

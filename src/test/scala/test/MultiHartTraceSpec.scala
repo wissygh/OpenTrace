@@ -13,8 +13,9 @@ import trace.interface._
 /** Tests the actual BlockBuffer/PacketGen/Fifo path and the shared SRAM core,
   * without duplicating their datapath or relying on an async-CSR test backend.
   */
-private class MultiHartTraceHarness(words: Int = 16, useSMEM: Boolean = false) extends Module with TraceParameters {
+private class MultiHartTraceHarness(words: Int = 16, useSMEM: Boolean = false, usePIB: Boolean = false) extends Module with TraceParameters {
   val io = IO(new Bundle {
+    val pib = Option.when(usePIB)(new PIBTracePins)
     val smem = Option.when(useSMEM)(new AXI4Bundle(AXI4BundleParameters(64, 32, 1)))
     val fromCore = Input(Vec(2, new FromCore))
     val sinkEnable = Input(Bool())
@@ -58,7 +59,19 @@ private class MultiHartTraceHarness(words: Int = 16, useSMEM: Boolean = false) e
     overflow(i) := blocks.io.overflow
     empty(i) := blocks.io.empty && encoder.io.empty && fifo.io.ctrl.fifoIsEmpty
   }
-  if (useSMEM) {
+  if (usePIB) {
+    val serializer = Module(new PIBSerializer)
+    serializer.io.in <> arbiter.io.out
+    serializer.io.enable := io.sinkEnable
+    serializer.io.mode := 5.U
+    serializer.io.divider := 1.U
+    serializer.io.center := false.B
+    serializer.io.calibrate := false.B
+    io.pib.get <> serializer.io.pins
+    io.empty := serializer.io.empty
+    io.wp := 0.U
+    io.readData := 0.U
+  } else if (useSMEM) {
     val base = BigInt("180000000", 16)
     val sink = Module(new SMEMSinkCore(SMEMWindow(base, words * 4)))
     val writer = Module(new SMEMAXIWriter)
@@ -192,11 +205,14 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
   private case class Block(pc: Int, kind: Int = 0, halfwords: Int = 2, lastSize: Int = 1,
       notification: Boolean = false, cause: Int = 0, tval: Int = 0, context: Int = 0, ctype: Int = 0)
   behavior of "complete multi-hart SRAM execution capture"
-  for (useSMEM <- Seq(false, true)) {
-  it should s"retain independent execution and traps through ${if (useSMEM) "SMEM AXI" else "SRAM"} stalls" in {
-    test(new MultiHartTraceHarness(128, useSMEM)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
-      val captureStem = if (useSMEM) "two-hart-smem" else "two-hart-execution"
-      val sinkName = if (useSMEM) "SMEM AXI" else "SRAM"
+  for (sinkKind <- Seq("SRAM", "SMEM AXI", "PIB UART")) {
+  val useSMEM = sinkKind == "SMEM AXI"
+  val usePIB = sinkKind == "PIB UART"
+  it should s"retain independent execution and traps through ${sinkKind} stalls" in {
+    test(new MultiHartTraceHarness(128, useSMEM, usePIB)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+      if (usePIB) d.clock.setTimeout(12000) // UART wire transfer spans thousands of trace cycles
+      val captureStem = if (usePIB) "two-hart-pib" else if (useSMEM) "two-hart-smem" else "two-hart-execution"
+      val sinkName = sinkKind
       println(s"[RTL-full][1/6] sink=$sinkName： 双 hart 实际 raw/PacketGen/Fifo -> PacketArbiter -> SRAM，覆盖完整退休片段")
       d.io.sinkEnable.poke(true.B); d.io.control.poke((6 | (15 << 20)).U)
       d.io.readPointer.valid.poke(false.B); d.io.readPointer.bits.poke(0.U)
@@ -218,6 +234,11 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
       var writeData = Option.empty[(BigInt, Int)]
       var responseDelay = -1
       var memoryCycle = 0
+      val serialCapture = scala.collection.mutable.ArrayBuffer.empty[Int]
+      var serialReceiving = false
+      var serialCountdown = 0
+      var serialBit = 0
+      var serialByte = 0
       d.io.smem.foreach { axi =>
         axi.aw.ready.poke(false.B); axi.w.ready.poke(false.B)
         axi.b.valid.poke(false.B); axi.b.bits.resp.poke(0.U); axi.b.bits.id.poke(0.U)
@@ -252,6 +273,24 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
           axi.ar.valid.expect(false.B)
         }
         d.clock.step(); memoryCycle += 1
+        d.io.pib.foreach { pins =>
+          pins.clock.expect(false.B); pins.control.expect(false.B)
+          val bit = pins.data.peek().litValue.toInt & 1
+          if (!serialReceiving && bit == 0) {
+            serialReceiving = true; serialCountdown = 3; serialBit = 0; serialByte = 0
+          } else if (serialReceiving) {
+            serialCountdown -= 1
+            if (serialCountdown == 0) {
+              if (serialBit < 8) {
+                serialByte |= bit << serialBit; serialBit += 1; serialCountdown = 2
+              } else {
+                bit shouldBe 1
+                serialCapture += serialByte
+                serialReceiving = false
+              }
+            }
+          }
+        }
       }
       val inputs = Seq(
         Seq(Block(0x1000), Block(0x1004, 5), Block(0x1000), Block(0x1004, 4),
@@ -282,17 +321,17 @@ class MultiHartExecutionSpec extends AnyFlatSpec with ChiselScalatestTester with
       d.io.fromCore.foreach(_.hartIsReset.poke(true.B)); tick(1)
       d.io.fromCore.foreach(_.hartIsReset.poke(false.B))
       var drainCycles = 0
-      while (!d.io.encodersEmpty.peek().litToBoolean && drainCycles < 2000) { tick(1); drainCycles += 1 }
+      while (!d.io.encodersEmpty.peek().litToBoolean && drainCycles < (if (usePIB) 10000 else 2000)) { tick(1); drainCycles += 1 }
       d.io.encodersEmpty.expect(true.B)
       d.io.sinkEnable.poke(false.B)
       var tailCycles = 0
       while (!d.io.empty.peek().litToBoolean && tailCycles < 200) { tick(1); tailCycles += 1 }
       d.io.empty.expect(true.B)
-      val words = d.io.wp.peek().litValue.toInt
+      val words = if (usePIB) (serialCapture.size + 3) / 4 else d.io.wp.peek().litValue.toInt
       words should be > 0
       words should be < 128
       println(s"[RTL-full][3/6] 两路停止并排空，$sinkName 捕获 $words word，开始读回")
-      val bytes = if (useSMEM) (0 until words * 4).map(i => memory(memoryBase + i)) else (0 until words).flatMap { index =>
+      val bytes = if (usePIB) serialCapture.toSeq else if (useSMEM) (0 until words * 4).map(i => memory(memoryBase + i)) else (0 until words).flatMap { index =>
         d.io.readPointer.valid.poke(true.B); d.io.readPointer.bits.poke(index.U); tick(1)
         d.io.readPointer.valid.poke(false.B)
         val word = d.io.readData.peek().litValue

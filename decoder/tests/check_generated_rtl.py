@@ -30,7 +30,7 @@ def ports(source):
     return result
 
 
-def main(directory='build/rtl', include_smem=False, include_hpm=False):
+def main(directory='build/rtl', include_smem=False, include_hpm=False, include_pib=False):
     directory = Path(directory)
     configurations = [('tl', 1, False), ('axi', 1, False), ('apb', 1, False),
                       ('tl-2hart-sram', 2, False), ('axi-2hart-sram', 2, False),
@@ -39,6 +39,8 @@ def main(directory='build/rtl', include_smem=False, include_hpm=False):
         configurations += [('tl-2hart-smem', 2, False), ('axi-2hart-smem', 2, False), ('apb-2hart-smem', 2, False)]
     if include_hpm:
         configurations += [('tl-2hart-hpm', 2, False)]
+    if include_pib:
+        configurations += [('tl-2hart-pib', 2, False), ('axi-2hart-pib', 2, False), ('apb-2hart-pib', 2, False)]
     manifest = []
     for name, harts, atb in configurations:
         top = directory / name / 'Trace.sv'
@@ -77,6 +79,13 @@ def main(directory='build/rtl', include_smem=False, include_hpm=False):
                 raise ValueError(f'{top}: internal packet metadata exposed on standard ATB')
         elif any(key.startswith('io_atbm_') for key in actual):
             raise ValueError(f'{top}: SRAM configuration unexpectedly exports an ATB sink')
+        pib = name.endswith('-pib')
+        if pib:
+            require('io_pib_clock', 'output')
+            require('io_pib_data', 'output', 16)
+            require('io_pib_control', 'output')
+        elif any(key.startswith('io_pib_') for key in actual):
+            raise ValueError(f'{top}: inactive PIB appears on another output profile')
         hpm = name.endswith('-hpm')
         if hpm:
             for hart in range(harts):
@@ -116,7 +125,7 @@ def main(directory='build/rtl', include_smem=False, include_hpm=False):
             require('io_smem_b_bits_resp', 'input', 2)
         elif any(key.startswith('io_smem_') for key in actual):
             raise ValueError(f'{top}: memory master appears on a non-SMEM configuration')
-        manifest.append({'configuration': name, 'harts': harts, 'sink': 'ATB' if atb else 'SMEM' if smem else 'SRAM',
+        manifest.append({'configuration': name, 'harts': harts, 'sink': 'ATB' if atb else 'SMEM' if smem else 'PIB' if pib else 'SRAM',
                          'ports': len(actual), 'modules': len(filelist), 'sha256': hashlib.sha256(top.read_bytes()).hexdigest()})
         print(f'[rtl-profile] {name}: hart={harts}, sink={manifest[-1]["sink"]}, {len(actual)} 个端口符合冻结接口')
     output = directory.parent / 'validation' / 'rtl-profile-manifest.json'
@@ -126,4 +135,4 @@ def main(directory='build/rtl', include_smem=False, include_hpm=False):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl', include_smem='--smem' in sys.argv[2:], include_hpm='--hpm' in sys.argv[2:])
+    main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl', include_smem='--smem' in sys.argv[2:], include_hpm='--hpm' in sys.argv[2:], include_pib='--pib' in sys.argv[2:])

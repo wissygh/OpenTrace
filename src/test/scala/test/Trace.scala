@@ -79,3 +79,17 @@ object TraceHPMMain extends App {
       circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
   println("[core-HPM-rtl] 双 hart 独立 HPM 选择/增量端口及默认无 HPM 端口配置生成完成")
 }
+
+
+object TracePIBMain extends App {
+  implicit val p: Parameters = Parameters.empty
+  for (bus <- Seq(BusType.TL, BusType.AXI, BusType.APB)) {
+    val top = LazyModule(new Trace(bus, numHarts = 2, usePibSink = true))
+    (new ChiselStage).execute(
+      Array("--target-dir", s"./build/rtl/${bus.busName}-2hart-pib", "--split-verilog"),
+      Seq(ChiselGeneratorAnnotation(() => top.module),
+        FirtoolOption("--disable-all-randomization"), FirtoolOption("--disable-annotation-unknown"),
+        circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
+    println(s"[PIB-rtl] ${bus.busName} 双 hart -> PIB 独占输出生成完成")
+  }
+}
