@@ -33,8 +33,8 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters)
   io.resetReady   := core.io.idle
   core.io.disable := VecInit((0 until wrapper.numSources).map(i => funnelDisInput.regOut.DisInput.asUInt(i)))
   io.out <> core.io.out
-  val fifoIsEmpty = core.io.empty && (!funnelControl.regOut.Enable.asBool || !io.inputPending)
-  val fifoIsFull  = false.B
+  val fifoIsEmpty: Bool = core.io.empty && (!funnelControl.regOut.Enable.asBool || !io.inputPending)
+  val fifoIsFull = false.B
   controlMods.foreach {
     case m: HasCtrlBundle =>
       m.fifoIsEmpty := fifoIsEmpty
