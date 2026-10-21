@@ -12,6 +12,79 @@ def cached(index, outcomes=()):
     return payload(fields)
 
 
+def predicted(correct, delta=None, failed=False, notify=False, branch_format=None):
+    bf = (0 if delta is None else 3 if failed else 2) if branch_format is None else branch_format
+    fields = [(0, 2), (0, 1), (correct - 31, 32), (bf, 2)]
+    if delta is not None:
+        scaled = (delta >> 1) & 0x7fffffff
+        n = (scaled >> 30) ^ int(notify)
+        fields += [(scaled, 31), (n, 1), (n, 1)]
+    return payload(fields)
+
+
+class BranchPredictionTests(unittest.TestCase):
+    def program(self, twice=False, failed=True):
+        raw = bytearray(0x114)
+        pcs = [0x1000] + [0x1004 + i * 4 for i in range(31)]
+        if failed:
+            pcs += [0x1080]
+        if twice:
+            pcs += [0x1088 + i * 4 for i in range(31)] + [0x1104, 0x110c, 0x1110]
+        else:
+            pcs += [0x1088 if failed else 0x1080]
+        for pc in pcs:
+            word = 0x1463 if pc in range(0x1004, 0x1080, 4) or (twice and pc in range(0x1088, 0x1104, 4)) else 0x13
+            if failed and pc == 0x1080 or twice and pc == 0x1104:
+                word = 0x463
+            raw[pc - 0x1000:pc - 0x1000 + 4] = word.to_bytes(4, 'little')
+        return ProgramImage.from_raw(raw, 0x1000), pcs
+
+    def decoder(self, twice=False, failed=True):
+        image, pcs = self.program(twice, failed)
+        d = ExecutionDecoder(image, PROFILE)
+        d.consume(Packet(0, support(options=8)))
+        events = d.consume(Packet(0, sync(0x1000)))
+        return d, events, pcs
+
+    def test_consecutive_zero_payloads_preserve_each_implicit_failed_branch(self):
+        d, events, pcs = self.decoder(twice=True)
+        self.assertEqual(predicted(31), b'\0')
+        for _ in range(2):
+            events += d.consume(Packet(0, predicted(31)))
+        events += d.consume(Packet(0, address(0x10c, notify=True)))
+        events += d.consume(Packet(0, address(4)))
+        events += d.consume(Packet(0, support(1, options=8)))
+        self.assertEqual([e['pc'] for e in events if e['kind'] == 'instruction'], pcs)
+        self.assertTrue(d.start_of_trace)
+
+    def test_address_fail_and_last_correct_branch_anchors(self):
+        for failed in (False, True):
+            d, events, pcs = self.decoder(failed=failed)
+            anchor = 0x1080 if failed else 0x107c
+            events += d.consume(Packet(0, predicted(31, anchor - 0x1000, failed=failed, notify=True)))
+            events += d.consume(Packet(0, address(pcs[-1] - anchor)))
+            events += d.consume(Packet(0, support(1, options=8)))
+            self.assertEqual([e['pc'] for e in events if e['kind'] == 'instruction'], pcs)
+
+    def test_full_32_bit_count_and_invalid_formats(self):
+        maximum = 0xffffffff + 31
+        result = unpack(predicted(maximum, 4), PROFILE, 8)
+        self.assertEqual(result['branch_count'], maximum)
+        self.assertTrue(result['prediction_max'])
+        for invalid in (predicted(31, branch_format=1), predicted(maximum)):
+            with self.assertRaises(DecodeError):
+                unpack(invalid, PROFILE, 8)
+        with self.assertRaises(DecodeError):
+            unpack(predicted(31), PROFILE, 0)
+
+    def test_discovery_and_ambiguous_subformat_are_rejected(self):
+        image, _ = self.program()
+        for profile, options in ((Profile(bpred_size=0), 8), (Profile(f0s_width=0), 24)):
+            d = ExecutionDecoder(image, profile)
+            with self.assertRaises(DecodeError):
+                d.consume(Packet(0, support(options=options)))
+
+
 class JumpTargetCacheTests(unittest.TestCase):
     def image(self):
         segments = []

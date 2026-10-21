@@ -14,6 +14,7 @@ private[component] case class PacketInput(pc: BigInt, kind: Int = 0, retired: In
   * an independent normative model, never in this handshake driver.
   */
 private[component] class PacketStreamDriver(d: PacketGenHarness) extends Matchers {
+  d.clock.setTimeout(100000)
   val frames = ArrayBuffer.empty[Seq[Int]]
   private var cycles = 0
   private var held = Option.empty[(BigInt, Seq[BigInt])]
@@ -64,5 +65,9 @@ private[component] class PacketStreamDriver(d: PacketGenHarness) extends Matcher
   def stop(): Unit = {
     d.io.block.valid.poke(false.B); d.io.stopReq.poke(true.B); ready(); tick(); d.io.stopReq.poke(false.B)
     idle(32); d.io.empty.expect(true.B)
+  }
+  def requestSync(): Unit = {
+    d.io.block.valid.poke(false.B); d.io.syncReq.poke(true.B); ready(); tick(); d.io.syncReq.poke(false.B)
+    idle(4)
   }
 }

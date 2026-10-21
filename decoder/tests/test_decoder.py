@@ -131,7 +131,7 @@ class ExecutionTests(unittest.TestCase):
         d.consume(Packet(0, sync(0x1000)))
         # branches=2 allocates three bits, but its third bit is not an outcome.
         d.consume(Packet(0, address(0x1000, 7, 2)))
-        self.assertEqual((d.branches, d.branch_map), (0, 0))
+        self.assertEqual((d.branches, list(d.branch_runs)), (0, []))
 
     def test_implicit_vectored_interrupt_handler(self):
         d = self.decoder(program(0x1000, [0x13], [(0x200c, b'\x13\x00\x00\x00')]),
@@ -237,7 +237,7 @@ class ExecutionTests(unittest.TestCase):
 
     def test_unsupported_modes_and_missing_instruction_bytes_fail_explicitly(self):
         d = self.decoder(program(0x1000, [0x13]))
-        for options in (2, 8):
+        for options in (2,):
             with self.assertRaises(DecodeError):
                 d.consume(Packet(0, support(options=options)))
         with self.assertRaisesRegex(DecodeError, 'mapped'):

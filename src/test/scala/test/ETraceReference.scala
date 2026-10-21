@@ -80,4 +80,18 @@ object ETraceReference {
     frame(source, payload(fields ++ (if (outcomes.isEmpty) Seq.empty else
       Seq((map, Seq(1, 3, 7, 15, 31).find(_ >= outcomes.size).get)))))
   }
+
+  def prediction(source: Int, correct: BigInt, pc: Option[BigInt] = None, reference: BigInt = 0,
+      failed: Boolean = false, notifyRequested: Boolean = false, beforeSync: Boolean = false,
+      fullAddress: Boolean = false): Seq[Int] = {
+    require(correct >= 31 && correct <= (BigInt(1) << 32) + 30)
+    val prefix = Seq[(BigInt, Int)]((0, 2), (0, 1), (correct - 31, 32),
+      (if (pc.isEmpty) 0 else if (failed) 3 else 2, 2))
+    val fields = pc.map { address =>
+      val aligned = ((if (fullAddress) address else address - reference) & Mask) >> 1
+      val n = aligned.testBit(AlignedWidth - 1) ^ notifyRequested
+      Seq[(BigInt, Int)]((aligned, AlignedWidth), (if (n) 1 else 0, 1), (if (n ^ beforeSync) 1 else 0, 1))
+    }.getOrElse(Seq.empty)
+    frame(source, payload(prefix ++ fields))
+  }
 }

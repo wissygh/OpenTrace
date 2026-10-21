@@ -67,8 +67,12 @@ def main(directory, stem='packetgen-execution'):
         supports = [(e['qual_status'], e['options']) for e in events if e['kind'] == 'support']
         if supports != [(0, 16), (1, 16)] or not decoder.decoders[3].start_of_trace:
             raise SystemExit(f'jump-cache capture configuration/end mismatch: {supports!r}')
+    if stem == 'packetgen-branch-pred':
+        supports = [(e['qual_status'], e['options']) for e in events if e['kind'] == 'support']
+        if supports != [(0, 8), (1, 8)] or not decoder.decoders[3].start_of_trace:
+            raise SystemExit(f'branch prediction capture configuration/end mismatch: {supports!r}')
     extent = ('保留下来的全部退休指令' if stem == 'packetgen-loss' or stem.startswith('packetgen-support-') else '全部退休指令'
-              if stem in ('packetgen-lifecycle', 'packetgen-traps', 'packetgen-context', 'packetgen-jump-cache') else '至最后 trace 锚点的退休前缀')
+              if stem in ('packetgen-lifecycle', 'packetgen-traps', 'packetgen-context', 'packetgen-jump-cache', 'packetgen-branch-pred') else '至最后 trace 锚点的退休前缀')
     print(f'[encoder->decoder][3/3] {len(actual)} 条指令与{extent}逐条一致：' +
           ', '.join(f'0x{pc:x}' for pc in actual), file=sys.stderr)
     print(f'{stem} capture decoded successfully: {len(actual)} instructions')
