@@ -48,5 +48,5 @@ class ATBImplBundle extends CSRBundle {
   val VerMajor  = MajorVersion(3, 0).withReset(MajorVersion.Default)
   val VerMinor  = MinorVersion(7, 4).withReset(MinorVersion.Default)
   val CompType  = TrcompTypeField(11, 8).withReset(TrcompTypeField.ATBBridge)
-  val AsyncFreq = RO(14, 12).withReset(0.U)
+  val AsyncFreq = RW(14, 12).withReset(0.U)
 }

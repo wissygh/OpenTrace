@@ -19,8 +19,9 @@ class ATBBridgeImp(wrapper: ATBBridge)(baseAddr: Int)(implicit p: Parameters)
   })
   val adapter = Module(new TraceATBAdapter(funnelAtbDataBeats))
   adapter.io.in <> io.in
-  adapter.io.enable := ATBControl.regOut.Enable.asBool
-  adapter.io.id     := ATBControl.regOut.ID.asUInt
+  adapter.io.asyncFreq := ATBImpl.regOut.AsyncFreq.asUInt
+  adapter.io.enable    := ATBControl.regOut.Enable.asBool
+  adapter.io.id        := ATBControl.regOut.ID.asUInt
   io.atbm <> adapter.io.atbm
   io.upstream <> adapter.io.upstream
   ATBControl.fifoIsEmpty := adapter.io.empty

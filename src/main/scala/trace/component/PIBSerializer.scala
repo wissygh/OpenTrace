@@ -14,6 +14,7 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
   val io = IO(new Bundle {
     val in        = Flipped(Decoupled(new TraceBeat(4)))
     val enable    = Input(Bool())
+    val asyncFreq = Input(UInt(3.W))
     val mode      = Input(UInt(4.W))
     val divider   = Input(UInt(16.W))
     val center    = Input(Bool())
@@ -26,7 +27,13 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
   val newSession       = io.enable && !previousEnable
   val alignmentPending = RegInit(false.B)
   when(newSession && !io.calibrate && startupAlignment.B)(alignmentPending := true.B)
-  io.syncReq := newSession && !io.calibrate
+  val timer = Module(new TraceAlignmentTimer)
+  timer.io.enable    := io.enable && !io.calibrate
+  timer.io.frequency := io.asyncFreq
+  timer.io.bytes     := Mux(io.in.fire && io.in.bits.last, io.in.bits.packetBytes, 0.U)
+  timer.io.serviced  := false.B
+  when(timer.io.request)(alignmentPending := true.B)
+  io.syncReq := (newSession || timer.io.request) && !io.calibrate
   val idle :: collecting :: sending :: finishing :: Nil = Enum(4)
   val state                                             = RegInit(idle)
   val buffer                                            = Reg(Vec(maxNullSeq, UInt(8.W)))
@@ -61,7 +68,7 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
       phaseCount := 0.U
       when(parallel) {
         when(!io.center || centerPhase)(traceClock := !traceClock)
-        when(io.center)(centerPhase := !centerPhase)
+        when(io.center)(centerPhase                := !centerPhase)
       }
     }.otherwise(phaseCount := phaseCount + 1.U)
   }
@@ -96,16 +103,17 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
       when(lane.U < count)(buffer(start + lane.U) := io.in.bits.data(8 * lane + 7, 8 * lane))
     }
     when(state === idle)(length := io.in.bits.packetBytes)
-    collected   := next
-    calibrating := false.B
-    bitIndex    := 0.U
-    frame       := 0.U
-    half        := false.B
-    manStart    := true.B
-    manStop     := false.B
-    state       := Mux(io.in.bits.last, sending, collecting)
+    collected                   := next
+    calibrating                 := false.B
+    bitIndex                    := 0.U
+    frame                       := 0.U
+    half                        := false.B
+    manStart                    := true.B
+    manStop                     := false.B
+    state                       := Mux(io.in.bits.last, sending, collecting)
   }
   when(state === idle && io.enable && alignmentPending && !io.calibrate) {
+    timer.io.serviced := true.B
     for (i <- 0 until maxNullSeq) { buffer(i) := (if (i == maxNullSeq - 1) 0x80 else 0).U }
     length           := maxNullSeq.U
     bitIndex         := 0.U
@@ -157,8 +165,8 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
           }
       }.elsewhen(manchester) {
         when(manStart) {
-          pins := !half
-          half := !half
+          pins                := !half
+          half                := !half
           when(half)(manStart := false.B)
         }.elsewhen(manStop) {
           pins := 0.U
@@ -168,7 +176,7 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
           pins := Mux(half, !bits(0), bits(0))
           half := !half
           when(half) {
-            bitIndex := bitIndex + 1.U
+            bitIndex                                   := bitIndex + 1.U
             when(bitIndex + 1.U === totalBits)(manStop := true.B)
           }
         }

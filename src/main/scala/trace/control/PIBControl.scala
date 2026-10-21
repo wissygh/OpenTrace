@@ -36,11 +36,13 @@ class PIBControlRegister(implemented: Boolean = false)
     reg.Divider   := reg.Divider
     reg.ClkCenter := reg.ClkCenter
     reg.Calibrate := reg.Calibrate
+    reg.AsyncFreq := reg.AsyncFreq
     when(wen && !reg.Enable.asBool && empty.get) {
       when(wdata.Mode.isLegal)(reg.Mode := wdata.Mode)
-      reg.Divider   := wdata.Divider
-      reg.ClkCenter := PIBModeField.isParallel(wdata.Mode) && wdata.ClkCenter.asBool
-      reg.Calibrate := wdata.Calibrate
+      reg.Divider                       := wdata.Divider
+      reg.ClkCenter                     := PIBModeField.isParallel(wdata.Mode) && wdata.ClkCenter.asBool
+      reg.Calibrate                     := wdata.Calibrate
+      reg.AsyncFreq                     := wdata.AsyncFreq
     }
   }
 }
@@ -53,7 +55,7 @@ class PIBControlBundle(implemented: Boolean = false) extends CSRBundle {
   else RO(7, 4).withReset(0.U)
   val ClkCenter = (if (implemented) RW(8) else RO(8)).withReset(0.U)
   val Calibrate = (if (implemented) RW(9) else RO(9)).withReset(0.U)
-  val AsyncFreq = RO(14, 12).withReset(0.U)
+  val AsyncFreq = (if (implemented) RW(14, 12) else RO(14, 12)).withReset(0.U)
   val Divider = if (implemented) PIBDividerField(31, 16, wNoFilter).withReset(PIBDividerField.Default)
   else RO(31, 16).withReset(0.U)
 }

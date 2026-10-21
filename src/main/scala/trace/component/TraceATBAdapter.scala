@@ -10,30 +10,38 @@ import trace.interface._
   */
 class TraceATBAdapter(dataBytes: Int = 4) extends Module with TraceParameters {
   val io = IO(new Bundle {
-    val in       = Flipped(Decoupled(new TraceBeat(dataBytes)))
-    val enable   = Input(Bool())
-    val id       = Input(UInt(7.W))
-    val atbm     = new ATBMaster(dataBytes)
-    val upstream = Flipped(new TraceControl)
-    val empty    = Output(Bool())
+    val in        = Flipped(Decoupled(new TraceBeat(dataBytes)))
+    val enable    = Input(Bool())
+    val asyncFreq = Input(UInt(3.W))
+    val id        = Input(UInt(7.W))
+    val atbm      = new ATBMaster(dataBytes)
+    val upstream  = Flipped(new TraceControl)
+    val empty     = Output(Bool())
   })
   val packetActive = RegInit(false.B)
   val packetId     = Reg(UInt(7.W))
+  val alignmentId  = Reg(UInt(7.W))
   val queue        = Module(new Queue(new ATData(dataBytes), 2))
   val syncBytes    = RegInit(0.U(log2Ceil(maxNullSeq + 1).W))
   val flush        = Module(new ATBFlushController)
+  val timer        = Module(new TraceAlignmentTimer)
+  timer.io.enable      := io.enable && !flush.io.active
+  timer.io.frequency   := io.asyncFreq
+  timer.io.bytes       := Mux(io.in.fire, io.in.bits.bytes +& 1.U, 0.U)
   flush.io.request     := io.atbm.af.valid
   flush.io.clockEnable := io.atbm.atclken
   flush.io.available   := io.enable || packetActive || queue.io.deq.valid || syncBytes =/= 0.U
   flush.io.upstreamAck := io.upstream.flushAck
   flush.io.localDone   := !queue.io.deq.valid && syncBytes === 0.U
   io.upstream.flushReq := flush.io.upstreamReq
-  io.upstream.syncReq  := io.atbm.syncReq && io.atbm.atclken && !reset.asBool
+  io.upstream.syncReq  := (io.atbm.syncReq && io.atbm.atclken || timer.io.request) && !reset.asBool
   io.atbm.af.ready     := flush.io.ready
   // Encapsulation synchronization is inserted only between complete packets.
   // It precedes the per-source Format 30 anchors requested through SYNCREQ.
-  when(io.atbm.syncReq && io.atbm.atclken && io.enable && syncBytes === 0.U) {
-    syncBytes := maxNullSeq.U
+  when((io.atbm.syncReq && io.atbm.atclken || timer.io.request || timer.io.pending) && io.enable && syncBytes === 0.U) {
+    syncBytes   := maxNullSeq.U
+    alignmentId := io.id
+    assert(io.id > 0.U && io.id < 0x70.U)
   }
   val align = syncBytes =/= 0.U && !packetActive
   val count = Mux(syncBytes > dataBytes.U, dataBytes.U, syncBytes)
@@ -45,8 +53,9 @@ class TraceATBAdapter(dataBytes: Int = 4) extends Module with TraceParameters {
     io.in.bits.data
   )
   queue.io.enq.bits.bytes := Mux(align, count - 1.U, io.in.bits.bytes)
-  queue.io.enq.bits.id    := Mux(packetActive, packetId, io.id)
+  queue.io.enq.bits.id    := Mux(align, alignmentId, Mux(packetActive, packetId, io.id))
   io.in.ready             := !reset.asBool && queue.io.enq.ready && admit && !align && io.atbm.atclken
+  timer.io.serviced       := queue.io.enq.fire && align && syncBytes === maxNullSeq.U
   when(queue.io.enq.fire && align)(syncBytes := syncBytes - count)
   when(io.in.fire) {
     when(!packetActive)(assert(io.id > 0.U && io.id < 0x70.U))

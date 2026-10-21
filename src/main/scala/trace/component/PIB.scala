@@ -45,6 +45,7 @@ class PIBImp(wrapper: PIB)(baseAddr: Int)(implicit p: Parameters) extends Compon
   })
   val serializer = Module(new PIBSerializer)
   serializer.io.in <> io.in
+  serializer.io.asyncFreq := PIBControl.regOut.AsyncFreq.asUInt
   serializer.io.enable    := PIBControl.regOut.Enable.asBool
   serializer.io.mode      := PIBControl.regOut.Mode.asUInt
   serializer.io.divider   := PIBControl.regOut.Divider.asUInt
