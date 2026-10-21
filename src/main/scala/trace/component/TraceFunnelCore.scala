@@ -14,11 +14,13 @@ class TraceFunnelCore(numSources: Int, dataBytes: Int = 4) extends Module {
     val enable        = Input(Bool())
     val disable       = Input(Vec(numSources, Bool()))
     val empty         = Output(Bool())
+    val idle          = Output(Bool())
+    val quiesce       = Input(Bool())
   })
   val arbiter = Module(new PacketArbiter(numSources, dataBytes))
   arbiter.io.in <> io.in
   val flushing = io.control.flushReq
-  arbiter.io.enable := io.enable || flushing
+  arbiter.io.enable := (io.enable || flushing) && !io.quiesce
   // Drain buffered disabled inputs too; completed inputs stop competing (§4.2).
   for (i <- 0 until numSources) {
     io.sourceControl(i).flushReq := flushing
@@ -28,4 +30,5 @@ class TraceFunnelCore(numSources: Int, dataBytes: Int = 4) extends Module {
   io.control.flushAck := reset.asBool || (flushing && io.sourceControl.map(_.flushAck).reduce(_ && _))
   io.out <> arbiter.io.out
   io.empty := arbiter.io.idle && !io.in.map(_.valid).reduce(_ || _)
+  io.idle  := arbiter.io.idle
 }

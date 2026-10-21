@@ -10,7 +10,8 @@ import trace.TraceParameters
 /** Always-on, word-access control endpoint. Component reset never resets the
   * response buffer or the software Active latch that releases that component.
   */
-class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters) extends Module with TraceParameters {
+class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters, deferReset: Boolean = false)
+    extends Module with TraceParameters {
   require(busParameters.dataBits == ctrlDataSize)
   val io = IO(new Bundle {
     val a              = Flipped(Decoupled(new TLBundleA(busParameters)))
@@ -18,6 +19,8 @@ class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters) ext
     val bus            = Flipped(new Control2BusRegBundle)
     val active         = Output(Bool())
     val componentReset = Output(AsyncReset())
+    val resetReady     = Option.when(deferReset)(Input(Bool()))
+    val quiesce        = Option.when(deferReset)(Output(Bool()))
   })
   val active         = withReset(reset.asAsyncReset)(RegInit(false.B))
   val componentReset = ResetCatchAndSync(clock, reset.asBool || !active).asAsyncReset
@@ -37,6 +40,17 @@ class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters) ext
     io.a.bits.param === 0.U && !io.a.bits.corrupt
   val localAddress = io.a.bits.address(ctrlAddrWidthInner - 1, 0)
   val controlWord  = localAddress === (baseAddr & ctrlMask).U
+  val activeWrite  = io.a.fire && legal && write && controlWord
+  val resetPending = Option.when(deferReset)(withReset(reset.asAsyncReset)(RegInit(false.B)))
+  if (deferReset) {
+    // Finish an already offered packet before acknowledging power-down. The
+    // request itself blocks new arbitration on this edge, even before pending.
+    io.quiesce.get := resetPending.get || (activeWrite && !io.a.bits.data(0))
+    when(resetPending.get && io.resetReady.get) {
+      active           := false.B
+      resetPending.get := false.B
+    }
+  }
   io.bus.b2c.address   := localAddress
   io.bus.b2c.dataWrite := io.a.bits.data
   io.bus.b2c.readEn    := io.a.fire && legal && read
@@ -44,15 +58,24 @@ class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters) ext
   val readData = Mux(controlWord, (io.bus.c2b.dataRead & "hfffffffe".U) | io.active.asUInt, io.bus.c2b.dataRead)
 
   when(io.a.fire) {
-    response                                   := 0.U.asTypeOf(new TLBundleD(busParameters))
-    response.opcode                            := Mux(read, TLMessages.AccessAckData, TLMessages.AccessAck)
-    response.source                            := io.a.bits.source
-    response.size                              := io.a.bits.size
-    response.echo                              := io.a.bits.echo
-    response.data                              := Mux(read && legal, readData, 0.U)
-    response.denied                            := !legal || io.bus.c2b.error
-    pending                                    := true.B
-    when(legal && write && controlWord)(active := io.a.bits.data(0))
+    response        := 0.U.asTypeOf(new TLBundleD(busParameters))
+    response.opcode := Mux(read, TLMessages.AccessAckData, TLMessages.AccessAck)
+    response.source := io.a.bits.source
+    response.size   := io.a.bits.size
+    response.echo   := io.a.bits.echo
+    response.data   := Mux(read && legal, readData, 0.U)
+    response.denied := !legal || io.bus.c2b.error
+    pending         := true.B
+    when(activeWrite) {
+      if (deferReset) {
+        when(io.a.bits.data(0) || io.resetReady.get) {
+          active           := io.a.bits.data(0)
+          resetPending.get := false.B
+        }.otherwise(resetPending.get := true.B)
+      } else {
+        active := io.a.bits.data(0)
+      }
+    }
   }.elsewhen(io.d.fire) {
     pending := false.B
   }

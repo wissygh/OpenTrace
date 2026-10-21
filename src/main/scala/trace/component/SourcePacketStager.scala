@@ -40,8 +40,8 @@ class SourcePacketStager(sourceId: Int, dataBytes: Int = 4) extends Module with 
   io.syncReq  := resumed || discarded
   io.empty    := !complete && !loss && received === 0.U && !damaged
   when(resetting) {
-    received := 0.U
-    damaged  := false.B
+    received                                          := 0.U
+    damaged                                           := false.B
     when(tracing || received =/= 0.U || damaged)(loss := true.B)
   }
   when(io.in.fire) {

@@ -70,7 +70,9 @@ class Trace(
   val components: Seq[ComponentBase] = encoderVec.toSeq ++ Seq(funnel, pib, atb, memory)
 
   val ctrlSources: Seq[CtrlAsyncSource] = (0 until components.length).map(i => LazyModule(new CtrlAsyncSource)).toSeq
-  val ctrlSinks:   Seq[CtrlAsyncSink]   = components.map(comp => LazyModule(new CtrlAsyncSink(comp.compBaseAddress)))
+  val ctrlSinks: Seq[CtrlAsyncSink] = components.map(comp =>
+    LazyModule(new CtrlAsyncSink(comp.compBaseAddress, deferReset = comp eq funnel))
+  )
 
   /**
    * control path:
@@ -186,6 +188,9 @@ class Trace(
     encoderModVec.map(encoder => dontTouch(encoder.io))
 
     compMods.zip(ctrlSinkMods).map { case (comp, sink) => comp.bus <> sink.io.bus }
+    val funnelEndpoint = ctrlSinkMods(hart_num)
+    funnelMod.io.quiesce             := funnelEndpoint.io.quiesce.get
+    funnelEndpoint.io.resetReady.get := funnelMod.io.resetReady
 
     /**
      * data path(message stream):

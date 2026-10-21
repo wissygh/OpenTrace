@@ -38,7 +38,8 @@ class CtrlAsyncSource(implicit p: Parameters) extends LazyModule with TraceParam
   lazy val module = new CtrlAsyncSourceImp(this)
 }
 
-class CtrlAsyncSink(baseAddr: Int)(implicit p: Parameters) extends LazyModule with TraceParameters {
+class CtrlAsyncSink(baseAddr: Int, deferReset: Boolean = false)(implicit p: Parameters)
+    extends LazyModule with TraceParameters {
   val sinkNode = TLAsyncCrossingSink(ctrlAsyncBridge)
   val tlslavenode = TLManagerNode(Seq(TLSlavePortParameters.v1(
     Seq(TLSlaveParameters.v1(
@@ -57,15 +58,21 @@ class CtrlAsyncSink(baseAddr: Int)(implicit p: Parameters) extends LazyModule wi
       val bus            = Flipped(new Control2BusRegBundle)
       val active         = Output(Bool())
       val componentReset = Output(AsyncReset())
+      val resetReady     = Option.when(deferReset)(Input(Bool()))
+      val quiesce        = Option.when(deferReset)(Output(Bool()))
     })
 
     val (tl, _)  = tlslavenode.in(0)
-    val endpoint = Module(new trace.control.TraceControlEndpoint(baseAddr, tl.params))
+    val endpoint = Module(new trace.control.TraceControlEndpoint(baseAddr, tl.params, deferReset))
     endpoint.io.a <> tl.a
     tl.d <> endpoint.io.d
     io.bus <> endpoint.io.bus
     io.active         := endpoint.io.active
     io.componentReset := endpoint.io.componentReset
+    if (deferReset) {
+      endpoint.io.resetReady.get := io.resetReady.get
+      io.quiesce.get             := endpoint.io.quiesce.get
+    }
 
   }
   lazy val module = new CtrlAsyncSinkImp(this)

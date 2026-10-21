@@ -21,12 +21,16 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters)
     val out           = Decoupled(new TraceBeat(funnelAtbDataBeats))
     val control       = new TraceControl
     val inputPending  = Input(Bool())
+    val quiesce       = Input(Bool())
+    val resetReady    = Output(Bool())
   })
   val core = Module(new TraceFunnelCore(wrapper.numSources, encoderAtbDataBeats))
   core.io.in <> io.in
   core.io.sourceControl <> io.sourceControl
   core.io.control <> io.control
   core.io.enable  := funnelControl.regOut.Enable.asBool
+  core.io.quiesce := io.quiesce
+  io.resetReady   := core.io.idle
   core.io.disable := VecInit((0 until wrapper.numSources).map(i => funnelDisInput.regOut.DisInput.asUInt(i)))
   io.out <> core.io.out
   val fifoIsEmpty = core.io.empty && !io.inputPending
