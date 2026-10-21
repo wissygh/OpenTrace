@@ -36,6 +36,9 @@ class TraceSourceLink(sourceId: Int) extends RawModule {
   io.out <> staging.io.out
   bridge.io.control.flushReq := io.control.flushReq
   bridge.io.control.syncReq  := io.control.syncReq || staging.io.syncReq
-  io.control.flushAck        := bridge.io.control.flushAck && staging.io.empty
-  io.empty                   := staging.io.empty && !bridge.io.out.valid
+  // An inactive/reset producer has no queue frontier, but must still return
+  // ack low when req is withdrawn so a disabled Funnel can finish release.
+  io.control.flushAck := staging.io.empty &&
+    Mux(bridge.io.sinkResetActive, io.control.flushReq, bridge.io.control.flushAck)
+  io.empty := staging.io.empty && !bridge.io.out.valid
 }

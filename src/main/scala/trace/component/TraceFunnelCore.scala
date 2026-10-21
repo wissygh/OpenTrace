@@ -19,7 +19,12 @@ class TraceFunnelCore(numSources: Int, dataBytes: Int = 4) extends Module {
   })
   val arbiter    = Module(new PacketArbiter(numSources, dataBytes))
   val discarding = Wire(Vec(numSources, Bool()))
-  val flushing   = io.control.flushReq
+  val flush      = Module(new FunnelFlushController)
+  flush.io.disableEvent := RegNext(io.enable, false.B) && !io.enable
+  flush.io.request      := io.control.flushReq
+  flush.io.complete     := io.idle && io.sourceControl.map(_.flushAck).reduce(_ && _)
+  flush.io.released     := !io.sourceControl.map(_.flushAck).reduce(_ || _)
+  val flushing = flush.io.upstreamReq
   arbiter.io.enable := (io.enable || flushing) && !io.quiesce
   for (i <- 0 until numSources) {
     // Table 50 requires disabled inputs to be consumed and discarded, rather
@@ -42,8 +47,9 @@ class TraceFunnelCore(numSources: Int, dataBytes: Int = 4) extends Module {
     // discard their old frontier and never leak packets into the output.
     arbiter.io.disable(i) := flushing && io.sourceControl(i).flushAck
   }
-  io.control.flushAck := reset.asBool || (flushing && io.idle && io.sourceControl.map(_.flushAck).reduce(_ && _))
+  io.control.flushAck := reset.asBool || flush.io.ack
   io.out <> arbiter.io.out
-  io.idle  := arbiter.io.idle && !discarding.asUInt.orR
-  io.empty := io.idle && !io.in.map(_.valid).reduce(_ || _)
+  io.idle := arbiter.io.idle && !discarding.asUInt.orR
+  // While disabled, post-frontier packets remain upstream for the next Enable.
+  io.empty := io.idle && !flush.io.busy && (!io.enable || !io.in.map(_.valid).reduce(_ || _))
 }

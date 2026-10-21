@@ -36,9 +36,10 @@ class TraceAsyncBridge[T <: Data](gen: T, depth: Int = 16, stages: Int = 3) exte
   queue.io.deq_clock := io.sinkClock
   queue.io.deq_reset := sinkReset.asBool
 
-  val request     = Wire(Bool())
-  val syncRequest = Wire(Bool())
-  val syncAck     = Wire(Bool())
+  val request       = Wire(Bool())
+  val syncRequest   = Wire(Bool())
+  val syncAck       = Wire(Bool())
+  val flushReleased = Wire(Bool())
   withClockAndReset(io.sourceClock, sourceReset) {
     val flush     = AsyncResetSynchronizerShiftReg(request, stages)
     val flushSeen = RegNext(flush, false.B)
@@ -54,6 +55,7 @@ class TraceAsyncBridge[T <: Data](gen: T, depth: Int = 16, stages: Int = 3) exte
     io.in.ready                              := queue.io.enq.ready && !marker && !marked
     when(queue.io.enq.fire && marker)(marked := true.B)
     when(!flush)(marked                      := false.B)
+    flushReleased                            := RegNext(!flush && !marked, true.B)
   }
   withClockAndReset(io.sinkClock, sinkReset) {
     // Register the request before it crosses; no pulse is sampled directly.
@@ -67,13 +69,16 @@ class TraceAsyncBridge[T <: Data](gen: T, depth: Int = 16, stages: Int = 3) exte
     when(pending && acknowledged)(pending := false.B)
     when(io.control.syncReq)(queued       := true.B)
     syncRequest                           := pending
-    val done  = RegInit(false.B)
-    val entry = queue.io.deq
+    val done           = RegInit(false.B)
+    val sourceReleased = AsyncResetSynchronizerShiftReg(flushReleased, stages)
+    val entry          = queue.io.deq
     io.out.valid := entry.valid && !entry.bits.marker && !done
     io.out.bits  := entry.bits.data
     entry.ready  := Mux(entry.bits.marker, io.control.flushReq && !done, io.out.ready && !done)
     when(entry.fire && entry.bits.marker)(done := true.B)
-    when(!io.control.flushReq)(done            := false.B)
-    io.control.flushAck                        := sinkReset.asBool || done
+    // Keep acknowledgment high through the request's return crossing. Dropping
+    // it immediately here can merge two flushes into one source-side level.
+    when(!io.control.flushReq && sourceReleased)(done := false.B)
+    io.control.flushAck                               := sinkReset.asBool || done
   }
 }
