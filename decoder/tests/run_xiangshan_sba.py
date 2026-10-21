@@ -5,15 +5,18 @@ import os
 from pathlib import Path
 import re
 import socket
+import shutil
 import subprocess
 import time
 from .check_xiangshan_sba import check
+from decoder.artifacts import write_json
 
 
 class RPC:
-    def __init__(self, port, timeout=300):
+    def __init__(self, port, timeout=300, transcript=None):
         self.socket = socket.create_connection(('127.0.0.1', port), timeout=timeout)
         self.pending = b''
+        self.transcript = transcript
 
     def run(self, command):
         start = time.monotonic()
@@ -26,7 +29,12 @@ class RPC:
             self.pending += data
         response, self.pending = self.pending.split(b'\x1a', 1)
         code, separator, value = response.decode().partition('|')
-        print(f'[SBA RPC {time.monotonic() - start:.1f}s] {command}: {code}|{value}', flush=True)
+        elapsed = time.monotonic() - start
+        print(f'[SBA RPC {elapsed:.1f}s] {command}: {code}|{value}', flush=True)
+        if self.transcript is not None:
+            with Path(self.transcript).open('a') as output:
+                output.write(json.dumps({'command': command, 'return_code': code, 'result': value,
+                                         'elapsed_seconds': elapsed}) + '\n')
         if separator != '|' or code != '0':
             raise RuntimeError(f'OpenOCD command failed: {command}: {response!r}')
         return value
@@ -81,7 +89,7 @@ def collect(rpc, directory, symbols):
     for name, address in (('wp', 0x20040020), ('dropped', 0x20000f10),
                           ('loss_markers', 0x20000f18), ('stall_cycles', 0x20000f20)):
         metadata[name] = read(address)
-    (directory / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+    write_json(directory / 'metadata.json', metadata)
     wp = metadata['wp']
     if metadata['dropped'] or metadata['loss_markers'] or not 0 < wp < 0x400 or wp & 3:
         raise RuntimeError(f'loss/Wrap or invalid SRAM pointer: {metadata}')
@@ -93,7 +101,7 @@ def collect(rpc, directory, symbols):
             capture.write(word.to_bytes(4, 'little'))
             print(f'[SBA-WORD] {offset:04x} {word:08x}', flush=True)
     metadata['rp'] = read(0x20040028)
-    (directory / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+    write_json(directory / 'metadata.json', metadata)
     if metadata['rp'] != wp:
         raise RuntimeError('RAMData reads did not advance RP exactly once per word')
     (directory / 'trace.json').write_text(json.dumps(
@@ -136,17 +144,22 @@ def run(args):
         raise RuntimeError('output directory must be empty; existing run evidence will not be overwritten')
     binary = directory / 'workload.bin'
     elf = directory / 'workload.elf'
+    source_copy = directory / 'workload'
+    shutil.copytree(resources, source_copy)
     subprocess.run([args.cross_prefix + 'gcc', '-march=rv64imc_zicsr_zifencei', '-mabi=lp64',
                     '-mcmodel=medany', '-nostdlib', '-static', '-Wl,--no-relax',
-                    '-Wl,-T,' + str(resources / 'workload.ld'),
-                    str(resources / 'sba-workload.S'), '-o', str(elf)], check=True)
+                    '-Wl,-T,' + str(source_copy / 'workload.ld'),
+                    str(source_copy / 'sba-workload.S'), '-o', str(elf)], check=True)
     subprocess.run([args.cross_prefix + 'objcopy', '-O', 'binary', str(elf), str(binary)], check=True)
     nm = subprocess.check_output([args.cross_prefix + 'nm', str(elf)], text=True)
+    (directory / 'workload.symbols.txt').write_text(nm)
+    with (directory / 'workload.disasm').open('w') as disasm:
+        subprocess.run([args.cross_prefix + 'objdump', '-d', '-S', str(elf)], stdout=disasm, check=True)
     symbols = {name: int(address, 16) for address, _, name in (line.split() for line in nm.splitlines())
                if name in ('trace_begin', 'trace_done')}
     if set(symbols) != {'trace_begin', 'trace_done'}:
         raise RuntimeError('workload ELF is missing its entry/exit symbols')
-    (directory / 'symbols.json').write_text(json.dumps(symbols, indent=2) + '\n')
+    write_json(directory / 'symbols.json', symbols)
     rbb_port, tcl_port = free_port(), free_port()
     while tcl_port == rbb_port:
         tcl_port = free_port()
@@ -166,14 +179,14 @@ def run(args):
                 if emu.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError('emu did not start its remote_bitbang listener')
                 time.sleep(0.2)
-            openocd = subprocess.Popen([args.openocd, '-f', str(resources / 'openocd-sba.cfg')],
+            openocd = subprocess.Popen([args.openocd, '-f', str(source_copy / 'openocd-sba.cfg')],
                                       cwd=directory, env=env, stdout=debugger, stderr=subprocess.STDOUT)
             print('[XS-SBA] 等待OpenOCD识别Debug Module、halt并开放Tcl RPC', flush=True)
             while rpc is None:
                 if emu.poll() is not None or openocd.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError('OpenOCD did not become ready; inspect openocd.log')
                 try:
-                    rpc = RPC(tcl_port)
+                    rpc = RPC(tcl_port, transcript=directory / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
             collect(rpc, directory, symbols)

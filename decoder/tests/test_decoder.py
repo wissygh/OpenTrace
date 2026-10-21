@@ -277,7 +277,7 @@ class ElfAndCliTests(unittest.TestCase):
             result = subprocess.run(command, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             event = json.loads(result.stdout)
-            self.assertEqual((event['hart_id'], event['pc']), (4, 0x1000))
+            self.assertEqual((event['hart_id'], event['pc']), (4, '0x1000'))
             capture.write_bytes(capture.read_bytes()[:-1])
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 

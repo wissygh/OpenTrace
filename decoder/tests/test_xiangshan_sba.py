@@ -1,4 +1,7 @@
 import unittest
+import json
+from pathlib import Path
+import tempfile
 from unittest.mock import Mock, patch
 from decoder.encapsulation import DecodeError
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
@@ -52,6 +55,20 @@ class XiangShanSBAChecks(unittest.TestCase):
             self.assertTrue(listening(24690))
             self.assertFalse(listening(24691))
             connect.assert_not_called()
+
+    def test_rpc_transcript_keeps_success_and_target_failure(self):
+        connection = Mock()
+        connection.recv.side_effect = [b'0|0x1901\x1a', b'1|SBA failed\x1a']
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = Path(tmp) / 'rpc.jsonl'
+            with patch('socket.create_connection', return_value=connection):
+                rpc = RPC(1234, transcript=transcript)
+            rpc.run('read_memory 0x20040004 32 1')
+            with self.assertRaises(RuntimeError):
+                rpc.run('read_memory 0x20040000 32 1')
+            rows = [json.loads(line) for line in transcript.read_text().splitlines()]
+            self.assertEqual([row['return_code'] for row in rows], ['0', '1'])
+            self.assertEqual(rows[1]['result'], 'SBA failed')
 
 
 if __name__ == '__main__':
