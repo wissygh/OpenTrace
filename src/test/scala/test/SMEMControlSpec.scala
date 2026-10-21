@@ -25,10 +25,12 @@ private class SMEMControlHarness extends Module with TraceParameters {
   val core = Module(new SMEMSinkCore(window))
   val writer = Module(new SMEMAXIWriter)
   registers.io.bus.b2c := io.bus.b2c; io.bus.c2b := registers.io.bus.c2b
-  core.io.in <> io.in; core.io.enable := registers.io.enable; core.io.stopOnWrap := registers.io.stopOnWrap
+  val guard = Module(new TraceSinkPacketGuard)
+  guard.io.in <> io.in; guard.io.out <> core.io.in; guard.io.active := !io.activeReset
+   core.io.enable := registers.io.enable; core.io.stopOnWrap := registers.io.stopOnWrap
   core.io.abort := io.activeReset; core.io.configuration <> registers.io.configuration
   core.io.request <> writer.io.request; core.io.response <> writer.io.response
-  registers.io.committed := core.io.committed; registers.io.empty := core.io.empty
+  registers.io.committed := core.io.committed; registers.io.empty := core.io.empty && guard.io.empty
   registers.io.stop := core.io.stop; registers.io.wrap := core.io.wrap
   registers.io.fault := core.io.fault; registers.io.faultAddress := core.io.faultAddress
   io.axi <> writer.io.axi; io.committed := core.io.committed
@@ -116,6 +118,20 @@ class SMEMControlSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       d.io.committed.expect((base + 4).U)
       write(0, 1); (read(0) & 8) shouldBe BigInt(8)
       println("[SMEM-control] 4/4 重新启用后事务地址和提交独立，无旧 B/旧配置污染")
+      write(0, 3)
+      d.io.in.bits.packetBytes.poke(7.U); d.io.in.bits.bytes.poke(3.U)
+      d.io.in.bits.last.poke(false.B); d.io.in.bits.data.poke(0x11111111L.U)
+      d.io.in.valid.poke(true.B); d.io.in.ready.expect(true.B); d.clock.step(); d.io.in.valid.poke(false.B)
+      d.io.activeReset.poke(true.B); d.clock.step(3); d.io.activeReset.poke(false.B); d.clock.step(3)
+      (read(0) & 8) shouldBe BigInt(0)
+      d.io.in.bits.bytes.poke(2.U); d.io.in.bits.last.poke(true.B); d.io.in.bits.data.poke(0x222222.U)
+      d.io.in.valid.poke(true.B); d.io.in.ready.expect(true.B); d.clock.step(); d.io.in.valid.poke(false.B)
+      d.clock.step(3); (read(0) & 8) shouldBe BigInt(8)
+      d.io.in.bits.packetBytes.poke(4.U); d.io.in.bits.bytes.poke(3.U)
+      write(0, 3); packet(BigInt("24232221", 16)); finish()
+      d.io.committed.expect((base + 4).U)
+      println("[SMEM-control] 输入半包Active reset：Empty等待guard丢完旧tail，新packet从base完整提交")
+
     }
   }
 }
