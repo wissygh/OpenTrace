@@ -67,3 +67,15 @@ object TraceSMEMMain extends App {
     println(s"[SMEM-rtl] ${bus.busName} 双 hart / 64-bit 地址 / 32-bit AXI 写口生成完成")
   }
 }
+
+
+object TraceHPMMain extends App {
+  implicit val p: Parameters = Parameters.empty
+  val top = LazyModule(new Trace(BusType.TL, numHarts = 2, enableHPM = true))
+  (new ChiselStage).execute(
+    Array("--target-dir", "./build/rtl/tl-2hart-hpm", "--split-verilog"),
+    Seq(ChiselGeneratorAnnotation(() => top.module),
+      FirtoolOption("--disable-all-randomization"), FirtoolOption("--disable-annotation-unknown"),
+      circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
+  println("[core-HPM-rtl] 双 hart 独立 HPM 选择/增量端口及默认无 HPM 端口配置生成完成")
+}

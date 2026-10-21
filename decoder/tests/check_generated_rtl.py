@@ -30,13 +30,15 @@ def ports(source):
     return result
 
 
-def main(directory='build/rtl', include_smem=False):
+def main(directory='build/rtl', include_smem=False, include_hpm=False):
     directory = Path(directory)
     configurations = [('tl', 1, False), ('axi', 1, False), ('apb', 1, False),
                       ('tl-2hart-sram', 2, False), ('axi-2hart-sram', 2, False),
                       ('apb-2hart-sram', 2, False), ('tl-2hart-atb', 2, True)]
     if include_smem:
         configurations += [('tl-2hart-smem', 2, False), ('axi-2hart-smem', 2, False), ('apb-2hart-smem', 2, False)]
+    if include_hpm:
+        configurations += [('tl-2hart-hpm', 2, False)]
     manifest = []
     for name, harts, atb in configurations:
         top = directory / name / 'Trace.sv'
@@ -75,6 +77,16 @@ def main(directory='build/rtl', include_smem=False):
                 raise ValueError(f'{top}: internal packet metadata exposed on standard ATB')
         elif any(key.startswith('io_atbm_') for key in actual):
             raise ValueError(f'{top}: SRAM configuration unexpectedly exports an ATB sink')
+        hpm = name.endswith('-hpm')
+        if hpm:
+            for hart in range(harts):
+                for event in range(2):
+                    prefix = f'io_hpm_{hart}_eventVec_{event}_'
+                    require(prefix + 'hpmaddr', 'output', 5)
+                    require(prefix + 'hpmevent', 'output', 55)
+                    require(prefix + 'inc', 'input', 6)
+        elif any(key.startswith('io_hpm_') for key in actual):
+            raise ValueError(f'{top}: default profile unexpectedly exports core HPM pins')
         bus = name.split('-')[0]
         bus_ports = {
             'tl': [('ctrlTLMaster_0_a_valid', 'input', 1), ('ctrlTLMaster_0_d_ready', 'input', 1),
@@ -114,4 +126,4 @@ def main(directory='build/rtl', include_smem=False):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl', include_smem='--smem' in sys.argv[2:])
+    main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl', include_smem='--smem' in sys.argv[2:], include_hpm='--hpm' in sys.argv[2:])
