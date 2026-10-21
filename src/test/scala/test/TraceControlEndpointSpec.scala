@@ -54,9 +54,10 @@ class TraceControlEndpointSpec extends AnyFlatSpec with ChiselScalatestTester wi
       d.reset.poke(true.B); d.clock.step(2); d.reset.poke(false.B)
       d.io.active.expect(false.B)
       def offer(write: Boolean, offset: Int = 0, value: BigInt = 0, source: Int = 0,
-          size: Int = 2, mask: Int = 15, corrupt: Boolean = false): Unit = {
+          size: Int = 2, mask: Int = 15, corrupt: Boolean = false, partialOpcode: Boolean = false): Unit = {
         d.io.a.valid.poke(true.B)
-        d.io.a.bits.opcode.poke(if (write) TLMessages.PutFullData else TLMessages.Get)
+        d.io.a.bits.opcode.poke(if (!write) TLMessages.Get else
+          if (partialOpcode) TLMessages.PutPartialData else TLMessages.PutFullData)
         d.io.a.bits.source.poke(source.U); d.io.a.bits.size.poke(size.U)
         d.io.a.bits.address.poke((base + offset).U); d.io.a.bits.mask.poke(mask.U)
         d.io.a.bits.data.poke(value.U); d.io.a.bits.corrupt.poke(corrupt.B)
@@ -75,8 +76,15 @@ class TraceControlEndpointSpec extends AnyFlatSpec with ChiselScalatestTester wi
       write(0, 1); d.clock.step(4); d.io.active.expect(true.B)
       (read() & 1) shouldBe BigInt(1)
       write(0, 7); ((d.io.control.peek().litValue >> 1) & 1) shouldBe BigInt(1)
+      for (partial <- Seq(false, true)) {
+        val before = d.io.writes.peek().litValue
+        offer(true, 0x100, BigInt("87654321", 16), partialOpcode = partial)
+        accepted(); response(true)
+        d.io.writes.expect((before + 1).U)
+        read(0x100) shouldBe BigInt("87654321", 16)
+      }
       write(0x100, BigInt("12345678", 16))
-      println("[control-bus] 1/4 Active=0 可访问本端，Active=1 同步释放组件，配置与数据写入通过")
+      println("[control-bus] 1/4 Active同步释放；PutFullData/PutPartialData整word写入均恰好一次")
 
       d.io.d.ready.poke(false.B)
       offer(false, 0x100, source = 5); accepted()
@@ -106,10 +114,15 @@ class TraceControlEndpointSpec extends AnyFlatSpec with ChiselScalatestTester wi
         d.io.active.expect(true.B); d.io.writes.expect(writes.U); d.io.reads.expect(reads.U)
         d.io.scratch.expect("hdeadbeef".U)
       }
+      for (partial <- Seq(false, true); mask <- 0 until 15) {
+        offer(true, 0x100, 0, mask = mask, partialOpcode = partial)
+        accepted(); response(true, denied = true)
+        d.io.writes.expect(writes.U); d.io.scratch.expect("hdeadbeef".U)
+      }
       println("[control-bus] 3/4 窄访问/未对齐/部分 mask/corrupt 请求被拒绝，不触发 Active 或 CSR 副作用")
 
       d.io.d.ready.poke(false.B)
-      offer(true, value = 0, source = 7); accepted()
+      offer(true, value = 0, source = 7, partialOpcode = true); accepted()
       d.io.active.expect(false.B); d.io.scratch.expect(0.U)
       d.clock.step(4); d.io.d.valid.expect(true.B); d.io.d.bits.source.expect(7.U)
       ((d.io.control.peek().litValue >> 1) & 1) shouldBe BigInt(0)

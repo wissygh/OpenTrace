@@ -102,7 +102,11 @@ class SingleHartSramSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
         val lanes = if (bytePort) 4 else 1
         val shift = if (bytePort) 0 else (address & 7) * 8
         bus.d.ready.poke(false.B)
-        bus.a.bits.address.poke(address.U); bus.a.bits.opcode.poke(if (write) TLMessages.PutFullData else TLMessages.Get)
+        // XiangShan Uncache uses the masked edge.Put overload even for a
+        // complete word. Debug SBA uses PutFullData on its separate route.
+        bus.a.bits.address.poke(address.U)
+        bus.a.bits.opcode.poke(if (!write) TLMessages.Get else
+          if (bytePort) TLMessages.PutFullData else TLMessages.PutPartialData)
         bus.a.bits.size.poke((if (doubleword) 3 else 2).U)
         bus.a.bits.mask.poke((if (bytePort) BigInt(1) else
           (if (doubleword) BigInt(255) else BigInt(15)) << (address & 7)).U)
@@ -127,7 +131,7 @@ class SingleHartSramSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
       val encoder = 0x20000000; val funnel = 0x20010000; val ram = 0x20040000
       d.io.cpu.a.bits.data.getWidth shouldBe 64
       d.io.sba.a.bits.data.getWidth shouldBe 8
-      println("[single-SRAM][1/5] 实际Trace SoCMisc入口：64-bit外设总线转32-bit寄存器，SBA8-bit组装访问，配置/应答反压")
+      println("[single-SRAM][1/5] 实际Trace SoCMisc入口：CPU64的PutPartialData整word写入，SBA8的PutFullData组装访问")
       for (address <- Seq(encoder, funnel, ram)) {
         (access(address) & 1) shouldBe BigInt(0)
         access(address, write = true, value = 1, bytePort = true)
