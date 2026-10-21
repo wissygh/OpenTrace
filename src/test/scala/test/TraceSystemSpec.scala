@@ -224,7 +224,11 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         while ((access(address, hold = 4) & 8) == 0 && attempts < 20) attempts += 1
         attempts should be < 20
       }
-      println("[Trace-system][3/5] 软件停止、真实Empty读回和D反压保持通过；发起标准ATB AF端到端flush")
+      access(funnel, write = true, value = 1)
+      var drainAttempts = 0
+      while ((access(funnel, hold = 4) & 0xb) != 9 && drainAttempts < 30) drainAttempts += 1
+      drainAttempts should be < 30
+      println("[Trace-system][3/5] 先停encoder再清Funnel Enable，自动flush后Empty/Enable读回通过；随后额外验证外部ATB AF")
       val flushes = d.io.flushes.peek().litValue
       d.io.flush.poke(true.B)
       until(d.io.flushes.peek().litValue > flushes, 3000)

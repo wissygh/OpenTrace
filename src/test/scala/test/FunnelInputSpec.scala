@@ -77,7 +77,10 @@ class FunnelInputSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       d.io.in(0).ready.expect(true.B); d.io.in(1).ready.expect(true.B)
       d.io.out.valid.expect(true.B); d.io.out.bits.data.expect(0x22.U); d.clock.step()
       d.io.in.foreach(_.valid.poke(false.B)); d.io.sourceControl.foreach(_.flushAck.poke(true.B))
-      d.io.control.flushAck.expect(true.B); d.io.empty.expect(true.B)
+      d.io.control.flushAck.expect(true.B); d.io.empty.expect(false.B)
+      d.io.control.flushReq.poke(false.B); d.clock.step()
+      d.io.sourceControl.foreach(_.flushAck.poke(false.B)); d.clock.step()
+      d.io.empty.expect(true.B)
       println("[Funnel-mask][4/4] AF flush仍丢弃disabled数据，只输出可用源，确认两源旧前沿后Empty")
     }
   }
