@@ -26,7 +26,7 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration check-rtl
+.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl
 
 check-rtl:
 	@echo "[rtl-check] 1/4 编译并检查合法/非法 profile"
@@ -50,6 +50,10 @@ test-encoder:
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-traps
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-context
 
+test-smem:
+	@echo "[SMEM-test] packet 提交/StopOnWrap/错误/abort 及 AXI AW/W/B 交互"
+	mill -i OpenTrace.test.testOnly trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec
+
 test-atb:
 	@echo "[ATB-test] AF/SYNCREQ/ATCLKEN/ATWAKEUP 与多时钟端到端验证"
 	mill -i OpenTrace.test.testOnly trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.component.TraceATBAdapterSpec trace.component.PacketGenSpec
@@ -69,7 +73,7 @@ test-decoder:
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.TraceParametersSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.TraceATBAdapterSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.TraceParametersSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核 SRAM 捕获：启动与完整执行流解码"
