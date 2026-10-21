@@ -22,7 +22,10 @@ trait FunnelControl extends ControlBase { self: FunnelImp =>
   val funnelImpl = Module(new CSRModule("FunnelImpl", new FunnelImplBundle) {})
     .setAddr(CtrlReg.FunnelImpl)
 
-  val funnelDisInput = Module(new CSRModule("FunnelDisInput", new FunnelDisInputBundle) {})
+  val funnelDisInput = Module(new CSRModule(
+    "FunnelDisInput",
+    new FunnelDisInputBundle(wrapper.asInstanceOf[trace.component.Funnel].numSources)
+  ) {})
     .setAddr(CtrlReg.FunnelDisInput)
 
   /**
@@ -60,6 +63,9 @@ class FunnelImplBundle extends CSRBundle {
   val CompType = TrcompTypeField(11, 8).withReset(TrcompTypeField.Funnel)
 }
 
-class FunnelDisInputBundle extends CSRBundle {
-  val DisInput = RW(15, 0)
+class FunnelDisInputBundle(numSources: Int = 16) extends CSRBundle {
+  require(numSources > 0 && numSources <= 16)
+  // Absent input bits are hardwired zero, including writes of 0xffff used for
+  // discovery. Reset-to-zero is a valid choice for the standard Undef reset.
+  val DisInput = RW(numSources - 1, 0).withReset(0.U)
 }

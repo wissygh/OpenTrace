@@ -9,11 +9,12 @@ import trace.interface.TraceBeat
 class PacketArbiter(numSources: Int, dataBeats: Int) extends Module {
   require(numSources > 0)
   val io = IO(new Bundle {
-    val in      = Vec(numSources, Flipped(Decoupled(new TraceBeat(dataBeats))))
-    val enable  = Input(Bool())
-    val disable = Input(Vec(numSources, Bool()))
-    val idle    = Output(Bool())
-    val out     = Decoupled(new TraceBeat(dataBeats))
+    val in       = Vec(numSources, Flipped(Decoupled(new TraceBeat(dataBeats))))
+    val enable   = Input(Bool())
+    val disable  = Input(Vec(numSources, Bool()))
+    val idle     = Output(Bool())
+    val selected = Output(Vec(numSources, Bool()))
+    val out      = Decoupled(new TraceBeat(dataBeats))
   })
   val locked     = RegInit(false.B)
   val owner      = RegInit(0.U(math.max(1, log2Ceil(numSources)).W))
@@ -21,6 +22,7 @@ class PacketArbiter(numSources: Int, dataBeats: Int) extends Module {
   val rrRequests = Mux(locked, UIntToOH(owner, numSources), requests.asUInt)
   val rr         = TLArbiter.roundRobin(numSources, rrRequests, io.out.fire && io.out.bits.last)
   val grant      = Mux(locked, UIntToOH(owner, numSources), rr & requests.asUInt)
+  io.selected  := VecInit(grant.asBools)
   io.out.valid := Mux1H(grant.asBools, io.in.map(_.valid))
   io.out.bits  := Mux1H(grant.asBools, io.in.map(_.bits))
   for (i <- 0 until numSources) io.in(i).ready := grant(i) && io.out.ready
