@@ -38,6 +38,7 @@ private class ATBCrossingHarness extends Module {
   val sinkClock = sinkLevel.asClock
   val funnel = Module(new TraceFunnelCore(2))
   funnel.io.enable := true.B
+  funnel.io.quiesce := false.B
   funnel.io.disable.foreach(_ := false.B)
   for (i <- 0 until 2) {
     val sourceClock = if (i == 0) clock else sourceLevel.asClock

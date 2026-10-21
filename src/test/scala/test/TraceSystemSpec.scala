@@ -73,8 +73,10 @@ private class TraceSystemHarness extends Module {
 
 class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
   behavior of "actual Trace control and data domains"
-  for (resetSource <- Seq(false, true)) {
-  it should s"configure real TL registers through all clock crossings, source restart=$resetSource" in {
+  for (restart <- Seq("none", "source", "funnel")) {
+  val resetSource = restart == "source"
+  val resetFunnel = restart == "funnel"
+  it should s"configure real TL registers through all clock crossings, restart=$restart" in {
     test(new TraceSystemHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       d.clock.setTimeout(20000)
       d.io.control.a.valid.poke(false.B); d.io.control.d.ready.poke(true.B)
@@ -164,6 +166,28 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         d.clock.step(100)
         println("[Trace-system] source0 Active reset后从0x2000继续，source1/合流器未复位，旧完整包必须保留并报loss")
       }
+      if (resetFunnel) {
+        access(funnel, write = true, value = 0)
+        var attempts = 0
+        while ((access(funnel) & 1) != 0 && attempts < 20) attempts += 1
+        attempts should be < 20
+        access(funnel, write = true, value = 1)
+        attempts = 0
+        while ((access(funnel) & 1) == 0 && attempts < 20) attempts += 1
+        attempts should be < 20
+        access(funnel, write = true, value = 3)
+        d.clock.step(300) // both source-link epochs finish reset and request Format30
+        for (group <- 4 until 8) {
+          for (hart <- 0 until 2) {
+            d.io.fromCore(hart).blocks(0).valid.poke(true.B)
+            d.io.fromCore(hart).blocks(0).bits.iaddr.poke(((if (hart == 0) 0x1000 else 0x8000) + group * 4).U)
+          }
+          val before = d.io.coreCycles.peek().litValue
+          until(d.io.coreCycles.peek().litValue != before)
+          d.io.fromCore.foreach(_.blocks(0).valid.poke(false.B)); d.clock.step(4)
+        }
+        println("[Trace-system] 仅Funnel通过TL关闭/读回确认/重新启用；两个encoder与ATB保持运行，各源link loss后继续")
+      }
       d.io.ready.poke(true.B)
       // The actual control write stops trace without synthetic core lookahead.
       encoders.foreach(address => access(address, write = true, value = 3))
@@ -191,14 +215,14 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         Iterator.iterate(Paths.get("").toAbsolutePath)(_.getParent).takeWhile(_ != null)
           .find(p => Files.isRegularFile(p.resolve("build.sc"))).get)
       val out = workspace.resolve(Paths.get("build", "validation")); Files.createDirectories(out)
-      val stem = if (resetSource) "trace-system-reset" else "trace-system"
+      val stem = if (resetSource) "trace-system-reset" else if (resetFunnel) "trace-system-funnel-reset" else "trace-system"
       Files.write(out.resolve(s"$stem.bin"), capture)
       val nopCode = Array.fill[Byte](0x1020)(0)
       for (index <- 0 until nopCode.length / 4) nopCode(index * 4) = 0x13
       Files.write(out.resolve("trace-system-code.bin"), nopCode)
       val config = """{"source_bits":8,"sources":{"0":{"hart_id":0,"raw":"trace-system-code.bin","base":"0x1000","xlen":64},"1":{"hart_id":1,"raw":"trace-system-code.bin","base":"0x8000","xlen":64}}}"""
       Files.write(out.resolve(s"$stem.json"), config.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-      println(s"[Trace-system][5/5] 导出真实top捕获，sourceReset=$resetSource；decoder比较保留指令和明确loss后的新段")
+      println(s"[Trace-system][5/5] 导出真实top捕获，restart=$restart；decoder比较保留指令和明确loss后的新段")
     }
   }
 }

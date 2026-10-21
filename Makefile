@@ -61,7 +61,7 @@ check-smem-rtl:
 
 test-smem:
 	@echo "[SMEM-test] packet 提交/StopOnWrap/错误/abort 及 AXI AW/W/B 交互"
-	mill -i OpenTrace.test.testOnly trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec
+	mill -i OpenTrace.test.testOnly trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec
 
 test-atb:
 	@echo "[ATB-test] AF/SYNCREQ/ATCLKEN/ATWAKEUP 与多时钟端到端验证"
@@ -90,6 +90,7 @@ test-system:
 	mill -i OpenTrace.test.testOnly trace.TraceSystemSpec
 	python3 -m decoder.tests.check_trace_system build/validation
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-reset
+	python3 -m decoder.tests.check_trace_system build/validation trace-system-funnel-reset
 
 test-integration:
 	@echo "[trace-integration] 双核完整执行流经过真实仲裁和 SRAM 存储后交给 decoder"
@@ -104,13 +105,14 @@ test-decoder:
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.TraceATBAdapterSpec trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.TraceSystemSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.control.CoreHPMSpec trace.control.PIBControlSpec trace.TraceParametersSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec trace.component.TraceATBAdapterSpec trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.TraceSystemSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.control.CoreHPMSpec trace.control.PIBControlSpec trace.TraceParametersSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核 SRAM 捕获：启动与完整执行流解码"
 	python3 -m decoder.check_rtl_capture build/validation/two-hart-from-core.bin
 	python3 -m decoder.tests.check_trace_system build/validation
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-reset
+	python3 -m decoder.tests.check_trace_system build/validation trace-system-funnel-reset
 	python3 -m decoder.tests.check_multihart_flow build/validation
 	python3 -m decoder.tests.check_multihart_flow build/validation two-hart-smem
 	python3 -m decoder.tests.check_multihart_flow build/validation two-hart-pib
