@@ -52,6 +52,20 @@ object TraceVariantsMain extends App {
   }
 }
 
+/** Check the non-power-of-two topology and the advertised source-count limit. */
+object TraceLimitsMain extends App {
+  implicit val p: Parameters = Parameters.empty
+  for (harts <- Seq(3, 16)) {
+    val top = LazyModule(new Trace(BusType.TL, numHarts = harts))
+    (new ChiselStage).execute(
+      Array("--target-dir", s"./build/rtl/tl-${harts}hart-sram", "--split-verilog"),
+      Seq(ChiselGeneratorAnnotation(() => top.module),
+        FirtoolOption("--disable-all-randomization"), FirtoolOption("--disable-annotation-unknown"),
+        circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
+    println(s"[Funnel-limit] $harts hart实际TL顶层、独立encoder/CDC/staging、Funnel和SRAM生成完成")
+  }
+}
+
 
 /** The address window is a test configuration, not a platform memory map. */
 object TraceSMEMMain extends App {

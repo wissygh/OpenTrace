@@ -5,9 +5,27 @@ import org.scalatest.matchers.should.Matchers
 
 class TraceParametersSpec extends AnyFlatSpec with Matchers {
   behavior of "implemented trace profile"
+  it should "allocate distinct control windows and in-band source IDs through the sixteen-hart limit" in {
+    for (harts <- Seq(1, 2, 3, 16)) {
+      val profile = new TraceParameters { override def hart_num = harts }
+      val encoders = (0 until harts).map(i => profile.encoderBaseAddr + i * profile.ctrlMemStep)
+      val windows = encoders ++ Seq(profile.funnelBaseAddr, profile.atbbridgeBaseAddr,
+        profile.pibBaseAddr, profile.ramSinkAddr)
+      windows.distinct.size shouldBe harts + 4
+      for (base <- windows) {
+        (base & (profile.ctrlMemStep - 1)) shouldBe 0
+        base should be >= profile.traceBaseAddr
+        base.toLong + profile.ctrlMemStep - 1 should be <= profile.traceBaseAddr.toLong + profile.ctrlMask
+      }
+      encoders.map(profile.srcId) shouldBe (0 until harts)
+      println(s"[source-map] $harts hart，${windows.size}个独立64KiB控制窗口，srcID=0..${harts - 1}无重叠")
+    }
+  }
+
   it should "accept defaults and reject configurations that cannot preserve the advertised wire geometry" in {
     new TraceParameters {}.validateImplementationParameters()
     new TraceParameters { override def hart_num = 2 }.validateImplementationParameters()
+    new TraceParameters { override def hart_num = 16 }.validateImplementationParameters()
     new TraceParameters { override def buffer_num = 255 }.validateImplementationParameters()
     val invalid = Seq[() => TraceParameters](
       () => new TraceParameters { override def hart_num = 0 },

@@ -30,7 +30,17 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl test-pib test-system
+.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel
+
+test-funnel:
+	@echo "[Funnel-test] 1/3/16源公平性、包边界、输入屏蔽、Active关闭与Disable自动排空"
+	mill -i OpenTrace.test.testOnly trace.component.PacketArbiterSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec trace.component.FunnelInputSpec trace.component.FunnelDrainSpec
+
+check-limits-rtl:
+	@echo "[Funnel-limit] 3 hart非2次幂与16 hart上限实际TL/SRAM顶层"
+	mill -i OpenTrace.test.testOnly trace.TraceParametersSpec
+	mill -i OpenTrace.test.runMain trace.TraceLimitsMain
+	python3 -m decoder.tests.check_generated_rtl build/rtl --smem --hpm --pib --limits
 
 check-rtl:
 	@echo "[rtl-check] 1/4 编译并检查合法/非法 profile"
