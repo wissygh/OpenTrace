@@ -39,9 +39,10 @@ class PIB(baseAddr: Int, val hasSerializer: Boolean = false)(implicit p: Paramet
 class PIBImp(wrapper: PIB)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with PIBControl {
   val io = IO(new Bundle {
-    val in      = Flipped(Decoupled(new TraceBeat(4)))
-    val pins    = new PIBTracePins
-    val syncReq = Output(Bool())
+    val in             = Flipped(Decoupled(new TraceBeat(4)))
+    val pins           = new PIBTracePins
+    val syncReq        = Output(Bool())
+    val transportEmpty = Input(Bool())
   })
   val serializer = Module(new PIBSerializer)
   serializer.io.in <> io.in
@@ -53,6 +54,6 @@ class PIBImp(wrapper: PIB)(baseAddr: Int)(implicit p: Parameters) extends Compon
   serializer.io.calibrate := PIBControl.regOut.Calibrate.asBool
   io.pins <> serializer.io.pins
   io.syncReq := serializer.io.syncReq
-  PIBControl.empty.foreach(_ := serializer.io.empty)
+  PIBControl.empty.foreach(_ := serializer.io.empty && io.transportEmpty)
   connectCtrlReg()
 }

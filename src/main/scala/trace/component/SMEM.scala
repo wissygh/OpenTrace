@@ -19,6 +19,7 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
     val axi = new AXI4Bundle(AXI4BundleParameters(64, 32, 1))
     // Must reset with the memory interconnect; software Active must not cancel AW/W/B.
     val transactionReset = Input(AsyncReset())
+    val transportEmpty   = Input(Bool())
   })
   val registers = Module(new SMEMRegisters(baseAddr, wrapper.window))
   val core      = withReset(io.transactionReset)(Module(new SMEMSinkCore(wrapper.window)))
@@ -33,7 +34,7 @@ class SMEMImp(wrapper: SMEM)(baseAddr: Int)(implicit p: Parameters) extends Comp
   core.io.request <> writer.io.request
   core.io.response <> writer.io.response
   registers.io.committed    := core.io.committed
-  registers.io.empty        := core.io.empty
+  registers.io.empty        := core.io.empty && io.transportEmpty
   registers.io.stop         := core.io.stop
   registers.io.wrap         := core.io.wrap
   registers.io.fault        := core.io.fault

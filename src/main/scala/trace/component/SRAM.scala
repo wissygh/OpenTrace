@@ -13,7 +13,9 @@ class SRAM(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr
 class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters)
     extends ComponentBaseImp(wrapper)(baseAddr) with SRAMControl {
   require(funnelAtbDataWidth == 32)
-  val io   = IO(new Bundle { val in = Flipped(Decoupled(new TraceBeat(funnelAtbDataBeats))) })
+  val io = IO(new Bundle {
+    val in = Flipped(Decoupled(new TraceBeat(funnelAtbDataBeats))); val transportEmpty = Input(Bool())
+  })
   val core = Module(new SRAMSinkCore(buffer_num))
   core.io.in <> io.in
   core.io.enable     := ramControl.regOut.Enable.asBool
@@ -24,7 +26,7 @@ class SRAMImp(wrapper: SRAM)(baseAddr: Int)(implicit p: Parameters)
   core.io.readPointer.valid  := ramRPLow.w.wen && ramRPLow.w.wdata(31, 2) < buffer_num.U
   core.io.readPointer.bits   := ramRPLow.w.wdata(31, 2)
   core.io.read               := bus.b2c.readEn && bus.b2c.address === ((baseAddr & ctrlMask) + CtrlReg.RAMData).U
-  val fifoIsEmpty = core.io.empty
+  val fifoIsEmpty = core.io.empty && io.transportEmpty
   val fifoIsFull  = core.io.stop
   ramControl.fifoIsEmpty := fifoIsEmpty
   ramControl.fifoIsFull  := fifoIsFull

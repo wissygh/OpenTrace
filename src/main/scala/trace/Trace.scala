@@ -209,10 +209,20 @@ class Trace(
       funnelMod.io.in(i) <> crossing.io.out
       crossing.io.control <> funnelMod.io.sourceControl(i)
     }
+    val guardReset = ResetCatchAndSync(io.clock_trace, io.reset_trace.asBool).asAsyncReset
+    val sinkGuard  = withClockAndReset(io.clock_trace, guardReset)(Module(new TraceSinkPacketGuard))
+    sinkGuard.io.in <> funnelMod.io.out
+    sinkGuard.io.active := !(if (useAtbSink) atbMod.reset.asBool
+                             else if (usePibSink) pibMod.reset.asBool
+                             else memoryMod.reset.asBool)
+    atbMod.io.transportEmpty := (if (useAtbSink) sinkGuard.io.empty else true.B)
+    pibMod.io.transportEmpty := (if (usePibSink) sinkGuard.io.empty else true.B)
+    ramMod.foreach(_.io.transportEmpty := (if (!useAtbSink && !usePibSink) sinkGuard.io.empty else true.B))
+    smemMod.foreach(_.io.transportEmpty := sinkGuard.io.empty)
     pibMod.io.in.valid := false.B
     pibMod.io.in.bits  := 0.U.asTypeOf(pibMod.io.in.bits)
     if (useAtbSink) {
-      atbMod.io.in <> funnelMod.io.out
+      atbMod.io.in <> sinkGuard.io.out
       funnelMod.io.control <> atbMod.io.upstream
       val crossing = Module(new ATBAsyncBridge(funnelAtbDataBeats))
       crossing.io.sourceClock := io.clock_trace
@@ -230,17 +240,17 @@ class Trace(
       ramMod.get.io.in.bits  := 0.U.asTypeOf(ramMod.get.io.in.bits)
     } else {
       if (usePibSink) {
-        pibMod.io.in <> funnelMod.io.out
+        pibMod.io.in <> sinkGuard.io.out
         io.pib.get <> pibMod.io.pins
         ramMod.get.io.in.valid := false.B
         ramMod.get.io.in.bits  := 0.U.asTypeOf(ramMod.get.io.in.bits)
       } else if (smemWindow.nonEmpty) {
         val sink = smemMod.get
-        sink.io.in <> funnelMod.io.out
+        sink.io.in <> sinkGuard.io.out
         sink.io.transactionReset := ResetCatchAndSync(io.clock_trace, io.reset_trace.asBool).asAsyncReset
         io.smem.get <> sink.io.axi
       } else {
-        ramMod.get.io.in <> funnelMod.io.out
+        ramMod.get.io.in <> sinkGuard.io.out
       }
       atbMod.io.in.valid            := false.B
       atbMod.io.in.bits             := 0.U.asTypeOf(atbMod.io.in.bits)
