@@ -18,6 +18,8 @@ def main(directory='build/validation', stem='trace-system'):
         expected = [base + 4 * i for i in range(4)]
         if stem == 'trace-system-reset' and source == 0:
             expected = [0x1000, 0x2000, 0x2004, 0x2008, 0x200c]
+        if stem == 'trace-system-mask' and source == 0:
+            expected = [0x2000 + 4 * i for i in range(4)]
         if stem == 'trace-system-funnel-reset':
             # The live encoders retain their last accepted ingress group and
             # report its PC explicitly in the requested new Format30 anchor.
@@ -40,6 +42,8 @@ def main(directory='build/validation', stem='trace-system'):
         losses = [e for e in events if e['kind'] == 'support' and e['qual_status'] == 2]
         if sorted(e['source_id'] for e in losses) != [0, 1]:
             raise SystemExit(f'Funnel reset did not report one loss per source: {losses!r}')
+    if stem == 'trace-system-mask' and any(e['kind'] == 'support' and e['qual_status'] == 2 for e in events):
+        raise SystemExit('intentional input masking/restart must not fabricate reset loss')
     count = sum(e['kind'] == 'instruction' for e in events)
     print(f'[top->decoder][3/3] 真实Empty/AF结束后{count}条可确定退休指令与停止/丢失状态通过', file=sys.stderr)
     print(f'{stem} capture decoded successfully: {len(capture)} bytes, ' +

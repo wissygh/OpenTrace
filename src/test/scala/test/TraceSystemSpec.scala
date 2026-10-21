@@ -73,9 +73,10 @@ private class TraceSystemHarness extends Module {
 
 class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
   behavior of "actual Trace control and data domains"
-  for (restart <- Seq("none", "source", "funnel")) {
+  for (restart <- Seq("none", "source", "funnel", "mask")) {
   val resetSource = restart == "source"
   val resetFunnel = restart == "funnel"
+  val maskSource = restart == "mask"
   it should s"configure real TL registers through all clock crossings, restart=$restart" in {
     test(new TraceSystemHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       d.clock.setTimeout(20000)
@@ -134,6 +135,11 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       }
       access(atb, write = true, value = 3 | (0x20 << 8))
       access(funnel, write = true, value = 3)
+      if (maskSource) {
+        access(funnel + 8, write = true, value = 0xffff)
+        access(funnel + 8) shouldBe BigInt(3) // actual two-input WARL discovery
+        access(funnel + 8, write = true, value = 1)
+      }
       encoders.foreach(address => access(address, write = true, value = 7))
       until(d.io.toCore.forall(_.enable.peek().litToBoolean))
       println("[Trace-system][2/5] 下游到上游启用，真实srcID发现通过；ATREADY反压期间注入两核输入")
@@ -148,6 +154,28 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         d.clock.step(4)
       }
       d.clock.step(200)
+      if (maskSource) {
+        access(encoders.head, write = true, value = 3)
+        var attempts = 0
+        while ((access(encoders.head) & 8) == 0 && attempts < 20) attempts += 1
+        attempts should be < 20
+        d.io.ready.poke(true.B)
+        val previous = d.io.flushes.peek().litValue
+        d.io.flush.poke(true.B)
+        until(d.io.flushes.peek().litValue > previous, 3000)
+        d.io.flush.poke(false.B); d.clock.step(150)
+        access(funnel + 8, write = true, value = 0)
+        access(encoders.head, write = true, value = 7)
+        until(d.io.toCore(0).enable.peek().litToBoolean)
+        for (group <- 0 until 4) {
+          d.io.fromCore(0).blocks(0).valid.poke(true.B)
+          d.io.fromCore(0).blocks(0).bits.iaddr.poke((0x2000 + group * 4).U)
+          val before = d.io.coreCycles.peek().litValue
+          until(d.io.coreCycles.peek().litValue != before)
+          d.io.fromCore(0).blocks(0).valid.poke(false.B); d.clock.step(4)
+        }
+        println("[Trace-system] DisInput屏蔽source0且独立排空；停encoder/AF后解除屏蔽，由真实support/Format30开启新段")
+      }
       if (resetSource) {
         access(encoders.head, write = true, value = 0) // destructive source reset without resetting Funnel
         access(encoders.head, write = true, value = 1)
@@ -215,7 +243,7 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         Iterator.iterate(Paths.get("").toAbsolutePath)(_.getParent).takeWhile(_ != null)
           .find(p => Files.isRegularFile(p.resolve("build.sc"))).get)
       val out = workspace.resolve(Paths.get("build", "validation")); Files.createDirectories(out)
-      val stem = if (resetSource) "trace-system-reset" else if (resetFunnel) "trace-system-funnel-reset" else "trace-system"
+      val stem = if (resetSource) "trace-system-reset" else if (resetFunnel) "trace-system-funnel-reset" else if (maskSource) "trace-system-mask" else "trace-system"
       Files.write(out.resolve(s"$stem.bin"), capture)
       val nopCode = Array.fill[Byte](0x1020)(0)
       for (index <- 0 until nopCode.length / 4) nopCode(index * 4) = 0x13
