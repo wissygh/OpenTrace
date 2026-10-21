@@ -76,14 +76,14 @@ class EncoderCapabilitiesSpec extends AnyFlatSpec with ChiselScalatestTester wit
       println("[capabilities] 1/3 真实 CSR 复位与读回：E-Trace 0/0、8-bit 固定 srcID、无 data trace")
       write(0, 7)
       write(1, BigInt("ffffffff", 16))
-      d.io.values(1).expect((identity | 1).U)
+      d.io.values(1).expect((identity | 33).U)
       for (index <- Seq(2, 3, 4)) write(index, BigInt("ffffffff", 16))
       d.io.values(2).expect(0.U); d.io.values(3).expect(0.U); d.io.values(4).expect(implementation.U)
       val control = d.io.values(0).peek().litValue
       ((control >> 24) & 7) shouldBe BigInt(0)
       ((control >> 4) & 7) shouldBe BigInt(7)
       ((control >> 9) & 1) shouldBe BigInt(0)
-      println("[capabilities] 2/3 全 1 能力探测：只保留 NoAddrDiff，可选压缩模式/数据功能/来源改写均被拒绝")
+      println("[capabilities] 2/3 全1能力探测：NoAddrDiff/JumpTargetCache可写，未实现模式/数据/来源改写仍拒绝")
       for (pc <- Seq(0x1000, 0x1004)) {
         d.io.block.valid.poke(true.B); d.io.block.iaddr.poke(pc.U)
         var accepted = false
@@ -92,10 +92,10 @@ class EncoderCapabilitiesSpec extends AnyFlatSpec with ChiselScalatestTester wit
         assert(accepted)
       }
       d.io.block.valid.poke(false.B); d.io.stop.poke(true.B); tick(); d.io.stop.poke(false.B); tick(10)
-      frames.toSeq shouldBe Seq(ETraceReference.support(3), ETraceReference.support(3, fullAddress = true),
+      frames.toSeq shouldBe Seq(ETraceReference.support(3), ETraceReference.support(3, fullAddress = true, jumpCache = true),
         ETraceReference.synchronization(3, 0x1000), ETraceReference.address(3, 0x1004, 0x1000, fullAddress = true),
-        ETraceReference.support(3, fullAddress = true, status = 1))
-      println("[capabilities] 3/3 CSR -> PacketGen 字节对拍通过：support 仅声明 fullAddr，实际地址编码一致")
+        ETraceReference.support(3, fullAddress = true, status = 1, jumpCache = true))
+      println("[capabilities] 3/3 CSR→PacketGen对拍通过：support声明fullAddr/cache，真实地址编码一致")
       write(1, 0); d.io.values(1).expect(identity.U)
     }
   }

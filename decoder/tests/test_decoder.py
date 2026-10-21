@@ -237,7 +237,7 @@ class ExecutionTests(unittest.TestCase):
 
     def test_unsupported_modes_and_missing_instruction_bytes_fail_explicitly(self):
         d = self.decoder(program(0x1000, [0x13]))
-        for options in (2, 8, 16):
+        for options in (2, 8):
             with self.assertRaises(DecodeError):
                 d.consume(Packet(0, support(options=options)))
         with self.assertRaisesRegex(DecodeError, 'mapped'):

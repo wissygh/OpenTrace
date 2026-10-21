@@ -27,9 +27,11 @@ object ETraceReference {
     frame(source, payload(Seq[(BigInt, Int)]((3, 2), (0, 2), (if (taken) 0 else 1, 1),
       (privilege, 3), (time, 64), (context, 32), (pc >> 1, AlignedWidth))))
 
-  def support(source: Int, fullAddress: Boolean = false, status: Int = 0, tracing: Boolean = true): Seq[Int] =
+  def support(source: Int, fullAddress: Boolean = false, status: Int = 0, tracing: Boolean = true,
+      jumpCache: Boolean = false, branchPrediction: Boolean = false): Seq[Int] =
     frame(source, payload(Seq((BigInt(3), 2), (BigInt(3), 2), (if (tracing) BigInt(1) else BigInt(0), 1),
-      (BigInt(0), 1), (BigInt(status), 2), (if (fullAddress) BigInt(32) else BigInt(0), 6),
+      (BigInt(0), 1), (BigInt(status), 2),
+      (BigInt((if (fullAddress) 32 else 0) | (if (jumpCache) 16 else 0) | (if (branchPrediction) 8 else 0)), 6),
       (BigInt(0), 1), (BigInt(0), 1), (BigInt(0), 2))))
 
   def trap(source: Int, pc: BigInt, cause: Int, tval: BigInt = 0, interrupt: Boolean = false,
@@ -67,5 +69,15 @@ object ETraceReference {
       if (taken) bits else bits.setBit(i)
     }
     frame(source, payload(Seq((BigInt(1), 2), (BigInt(0), 5), (map, 31))))
+  }
+
+  def cachedTarget(source: Int, pc: BigInt, outcomes: Seq[Boolean] = Seq.empty): Seq[Int] = {
+    require(outcomes.size <= 31)
+    val map = outcomes.zipWithIndex.foldLeft(BigInt(0)) { case (bits, (taken, i)) =>
+      if (taken) bits else bits.setBit(i)
+    }
+    val fields = Seq[(BigInt, Int)]((0, 2), (1, 1), ((pc >> 1) & 255, 8), (outcomes.size, 5))
+    frame(source, payload(fields ++ (if (outcomes.isEmpty) Seq.empty else
+      Seq((map, Seq(1, 3, 7, 15, 31).find(_ >= outcomes.size).get)))))
   }
 }
