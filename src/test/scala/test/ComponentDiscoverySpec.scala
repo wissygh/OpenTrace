@@ -33,7 +33,7 @@ class ComponentDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with
     test(new ComponentDiscoveryHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       d.io.write.poke(false.B); d.io.select.poke(0.U); d.io.data.poke(0.U)
       d.reset.poke(true.B); d.clock.step(2); d.reset.poke(false.B)
-      val words = Seq(0x101, 0x801, 0x1901, 0xa01, 0xe01)
+      var words = Seq(0x101, 0x801, 0x1901, 0xa01, 0xe01)
       def check(): Unit = {
         for ((word, i) <- words.zipWithIndex) d.io.values(i).expect(word.U)
         (d.io.values(6).peek().litValue & ((3 << 9) | (7 << 12))) shouldBe BigInt(0)
@@ -42,7 +42,9 @@ class ComponentDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with
       check()
       for (index <- 0 until 7; word <- Seq(BigInt(0), BigInt("ffffffff", 16))) {
         d.io.select.poke(index.U); d.io.data.poke(word.U); d.io.write.poke(true.B)
-        d.clock.step(); d.io.write.poke(false.B); check()
+        d.clock.step(); d.io.write.poke(false.B)
+        if (index == 4) words = words.updated(4, 0xe01 | (((word >> 12).toInt & 7) << 12))
+        check()
       }
       println("[discovery] Encoder/Funnel/RAM/PIB/ATB 完整 Impl 位布局与只读值通过")
       println("[discovery] PIB 占位组件的 Enable/Mode/时钟/校准均读回 0，不宣称未实现输出")

@@ -9,6 +9,7 @@ class TraceATBAdapterSpec extends AnyFlatSpec with ChiselScalatestTester with Ma
   behavior of "TraceATBAdapter"
   it should "use one Bridge ID and keep it stable over a packet and stalls" in {
     test(new TraceATBAdapter) { d =>
+      d.io.asyncFreq.poke(0.U)
       d.io.atbm.atclken.poke(true.B)
       d.io.atbm.af.valid.poke(false.B)
       d.io.atbm.syncReq.poke(false.B)

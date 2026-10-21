@@ -62,6 +62,7 @@ private class MultiHartTraceHarness(words: Int = 16, useSMEM: Boolean = false, u
   if (usePIB) {
     val serializer = Module(new PIBSerializer)
     serializer.io.in <> arbiter.io.out
+    serializer.io.asyncFreq := 0.U
     serializer.io.enable := io.sinkEnable
     serializer.io.mode := 5.U
     serializer.io.divider := 1.U

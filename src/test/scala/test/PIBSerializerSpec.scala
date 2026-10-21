@@ -14,6 +14,7 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
     bits.grouped(width).map(group => group.zipWithIndex.map { case (bit, i) => bit << i }.sum).toSeq
   }
   private def setup(d: PIBSerializer, mode: Int, center: Boolean = false, divider: Int = 1): Unit = {
+    d.io.asyncFreq.poke(0.U)
     d.io.enable.poke(false.B); d.io.mode.poke(mode.U); d.io.center.poke(center.B)
     d.io.divider.poke(divider.U); d.io.calibrate.poke(false.B)
     d.io.in.valid.poke(false.B); d.io.in.bits.data.poke(0.U); d.io.in.bits.bytes.poke(0.U)

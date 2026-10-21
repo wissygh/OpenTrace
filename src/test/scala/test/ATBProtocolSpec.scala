@@ -87,6 +87,7 @@ class ATBProtocolSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
 
   it should "flush through disable and stall, honor ATCLKEN, and assert registered wakeup" in {
     test(new TraceATBAdapter) { d =>
+      d.io.asyncFreq.poke(0.U)
       initialize(d)
       println("[ATB-test] Bridge：缓存两拍，禁用并发起 AF，检查 stall/ATCLKEN/ATWAKEUP")
       d.io.in.valid.poke(true.B)
@@ -122,6 +123,7 @@ class ATBProtocolSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
 
   it should "insert synchronization bytes after the current packet without splitting its payload" in {
     test(new TraceATBAdapter) { d =>
+      d.io.asyncFreq.poke(0.U)
       initialize(d)
       val bytes = ArrayBuffer[Int]()
       def tick(): Unit = {

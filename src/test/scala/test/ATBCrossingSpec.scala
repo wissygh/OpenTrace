@@ -70,6 +70,7 @@ private class ATBCrossingHarness extends Module {
     }
   }
   val adapter = Module(new TraceATBAdapter)
+  adapter.io.asyncFreq := 0.U
   adapter.io.in <> funnel.io.out
   adapter.io.upstream <> funnel.io.control
   adapter.io.enable := true.B

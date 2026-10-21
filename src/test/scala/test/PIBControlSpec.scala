@@ -19,6 +19,7 @@ private class PIBControlHarness extends Module {
   val serializer = Module(new PIBSerializer(startupAlignment = false))
   csr.w.wen := io.write.valid; csr.w.wdata := io.write.bits
   serializer.io.in <> io.in
+  serializer.io.asyncFreq := csr.regOut.AsyncFreq.asUInt
   serializer.io.enable := csr.regOut.Enable.asBool
   serializer.io.mode := csr.regOut.Mode.asUInt
   serializer.io.divider := csr.regOut.Divider.asUInt
