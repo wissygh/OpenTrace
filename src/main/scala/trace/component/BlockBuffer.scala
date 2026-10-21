@@ -17,12 +17,13 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
   require(stallReserve <= block_buffer_depth_p, "BlockBuffer cannot cover configured core stall latency")
 
   val io = IO(new Bundle {
-    val fromCore     = Input(new FromCore)
-    val deqReady     = Input(Bool())
-    val bufferIsFull = Output(Bool())
-    val overflow     = Output(Bool())
-    val empty        = Output(Bool())
-    val deqEntry     = Output(new BlockBufferEntry)
+    val fromCore       = Input(new FromCore)
+    val deqReady       = Input(Bool())
+    val bufferIsFull   = Output(Bool())
+    val overflow       = Output(Bool())
+    val droppedEntries = Output(UInt(log2Ceil(BlockNum + 1).W))
+    val empty          = Output(Bool())
+    val deqEntry       = Output(new BlockBufferEntry)
   })
 
   // trace compress: Nxt -> Cur
@@ -165,10 +166,11 @@ class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParamet
   }
 
   // dequeue
-  io.deqEntry     := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
-  io.bufferIsFull := lossPending || freeEntries < stallReserve.U
-  io.overflow     := dropped
-  io.empty        := fifoIsEmpty && !lossPending
+  io.deqEntry       := Mux(fifoIsEmpty, 0.U.asTypeOf(new BlockBufferEntry), fifo(deqPtr.value))
+  io.bufferIsFull   := lossPending || freeEntries < stallReserve.U
+  io.droppedEntries := Mux(dropped, enqCount, 0.U)
+  io.overflow       := dropped
+  io.empty          := fifoIsEmpty && !lossPending
 }
 
 class BlockPtr(entries: Int) extends CircularQueuePtr[BlockPtr](entries) {}

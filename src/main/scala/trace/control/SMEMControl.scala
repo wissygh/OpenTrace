@@ -64,21 +64,21 @@ class SMEMRegisters(baseAddr: Int, window: SMEMWindow) extends Module with Trace
   io.configuration.bits.limit   := nextLimit
   io.configuration.bits.pointer := nextPointer
   when(io.configuration.fire) {
-    start   := nextStart
-    limit   := nextLimit
-    pointer := nextPointer
-    edited  := true.B
+    start                   := nextStart
+    limit                   := nextLimit
+    pointer                 := nextPointer
+    edited                  := true.B
     when(pointerWrite)(wrap := false.B)
   }
   when(controlWrite) {
-    enable     := request.dataWrite(1)
-    stopOnWrap := request.dataWrite(8)
+    enable                            := request.dataWrite(1)
+    stopOnWrap                        := request.dataWrite(8)
     when(request.dataWrite(1))(edited := false.B)
   }
   when(io.stop)(enable := false.B)
-  when(io.wrap)(wrap := true.B)
-  io.enable     := enable && !reset.asBool
-  io.stopOnWrap := stopOnWrap
+  when(io.wrap)(wrap   := true.B)
+  io.enable            := enable && !reset.asBool
+  io.stopOnWrap        := stopOnWrap
   val control = Cat(0.U(23.W), stopOnWrap, 0.U(3.W), 1.U(1.W), io.empty, 0.U(1.W), enable, !reset.asBool)
   // Vendor status: bits[1:0]=fault; bit2=capture invalid due to a write error;
   // bits[5:4]=next committed byte offset; bit8=busy. Fault clears on valid config.

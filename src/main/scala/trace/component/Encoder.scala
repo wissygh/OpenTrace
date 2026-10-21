@@ -283,4 +283,13 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   }
 
   connectCtrlReg()
+  val statistics = Module(new EncoderStatistics(baseAddr))
+  statistics.io.bus.b2c        := bus.b2c
+  statistics.io.droppedEntries := blockBuffer.io.droppedEntries
+  statistics.io.lossMarker     := block.valid && block.traceLost && packetGen.io.blockReady
+  statistics.io.coreStall      := stallHart
+  statistics.io.packetWait     := packetGen.io.packet.valid && !fifo.io.packetEnq.ready
+  statistics.io.downstreamWait := io.out.valid && !io.out.ready
+  statistics.io.packetAccepted := fifo.io.packetEnq.fire
+  when(statistics.io.selected)(bus.c2b.dataRead := statistics.io.bus.c2b.dataRead)
 }
