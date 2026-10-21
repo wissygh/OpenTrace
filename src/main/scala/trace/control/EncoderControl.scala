@@ -140,31 +140,6 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
       .setAddr(CtrlReg.filterCompAddrGen(CtrlReg.TeComp0SMatchHigh, j))
   )
 
-  /**
-   * custom hpm
-   */
-  val teHpmAddrVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
-    Module(new CSRModule(s"TeHpmAddr$i", new HpmAddrBundle))
-      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0Addr, i))
-  ))
-
-  val teHpmEventLowVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
-    Module(new CSRModule(s"TeHpmEventLow$i", new HpmEventLowBundle))
-      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventLow, i))
-  ))
-
-  val teHpmEventHighVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
-    Module(new CSRModule(s"TeHpmEventHigh$i", new HpmEventHighBundle))
-      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventHigh, i))
-  ))
-
-  val teHpmEventDataVec = Option.when(supportHPM)(Range(0, hpmevent_num).map(i =>
-    Module(new CSRModule(s"TeHpmEventData$i", new HpmEventDataBundle) with HasHpmEventDataBundle {
-      reg.ALL := inc
-    })
-      .setAddr(CtrlReg.hpmAddrGen(CtrlReg.TeHpm0EventData, i))
-  ))
-
   val filterMods: Seq[CSRModule[_]] = teFilterControlVec ++ teFilterMatchInstVec ++
     teFilterMatchEcauseLowVec ++ teFilterMatchEcauseHighVec ++
     teFilterMatchValueImpdefVec ++ teFilterMatchMaskImpdefVec ++
@@ -173,10 +148,6 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
   val comptatorMods: Seq[CSRModule[_]] = teCompControlVec ++
     teCompPMatchLowVec ++ teCompPMatchHighVec ++
     teCompSMatchLowVec ++ teCompSMatchHighVec
-
-  val hpmMods: Seq[CSRModule[_]] = if (supportHPM)
-    teHpmAddrVec.get ++ teHpmEventLowVec.get ++ teHpmEventHighVec.get ++ teHpmEventDataVec.get
-  else Seq()
 
   override val controlMods: Seq[CSRModule[_]] = Seq(
     teControl,
@@ -188,7 +159,7 @@ trait EncoderControl extends ControlBase { self: EncoderImp =>
     tsControl,
     tsCounterLow,
     tsCounterHigh
-  ) ++ filterMods ++ comptatorMods ++ hpmMods
+  ) ++ filterMods ++ comptatorMods
 
 }
 
@@ -473,7 +444,8 @@ class HpmAddrBundle extends CSRBundle {
 object HpmAddrField extends CSREnum with WARLApply {
   val Disable = Value(0.U)
 
-  override def isLegal(enumeration: CSREnumType): Bool = (enumeration.asUInt >= 3.U) && (enumeration.asUInt <= 31.U)
+  override def isLegal(enumeration: CSREnumType): Bool =
+    enumeration.asUInt === 0.U || (enumeration.asUInt >= 3.U && enumeration.asUInt <= 31.U)
 }
 
 // from xs mhpmevent

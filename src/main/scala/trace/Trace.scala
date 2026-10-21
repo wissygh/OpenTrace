@@ -17,21 +17,27 @@ import trace.control._
 import trace.interface._
 import utils._
 
-class TraceTopIO(numHarts: Int = 1, useAtbSink: Boolean = false, useSMEMSink: Boolean = false) extends Bundle
+class TraceTopIO(
+    numHarts:    Int = 1,
+    useAtbSink:  Boolean = false,
+    useSMEMSink: Boolean = false,
+    enableHPM:   Boolean = false
+) extends Bundle
     with TraceParameters {
-  val fromCore    = Input(Vec(numHarts, new FromCore))
-  val toCore      = Output(Vec(numHarts, new ToCore))
-  val hpm         = Option.when(supportHPM)(Vec(numHarts, new Hpm))
-  val smem        = Option.when(useSMEMSink)(new AXI4Bundle(AXI4BundleParameters(64, 32, 1)))
-  val atbm        = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
-  val clock_atb   = Option.when(useAtbSink)(Input(Clock()))
-  val reset_atb_n = Option.when(useAtbSink)(Input(Bool()))
-  val clock_core  = Input(Clock())
-  val reset_core  = Input(Reset())
-  val clock_ctrl  = Input(Clock())
-  val reset_ctrl  = Input(Reset())
-  val clock_trace = Input(Clock())
-  val reset_trace = Input(Reset())
+  override def supportHPM = enableHPM
+  val fromCore            = Input(Vec(numHarts, new FromCore))
+  val toCore              = Output(Vec(numHarts, new ToCore))
+  val hpm                 = Option.when(supportHPM)(Vec(numHarts, new Hpm))
+  val smem                = Option.when(useSMEMSink)(new AXI4Bundle(AXI4BundleParameters(64, 32, 1)))
+  val atbm                = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
+  val clock_atb           = Option.when(useAtbSink)(Input(Clock()))
+  val reset_atb_n         = Option.when(useAtbSink)(Input(Bool()))
+  val clock_core          = Input(Clock())
+  val reset_core          = Input(Reset())
+  val clock_ctrl          = Input(Clock())
+  val reset_ctrl          = Input(Reset())
+  val clock_trace         = Input(Clock())
+  val reset_trace         = Input(Reset())
 }
 
 class Trace(
@@ -39,16 +45,18 @@ class Trace(
     xs_socmisc:     Boolean = false,
     val numHarts:   Int = 1,
     val useAtbSink: Boolean = false,
-    val smemWindow: Option[SMEMWindow] = None
+    val smemWindow: Option[SMEMWindow] = None,
+    val enableHPM:  Boolean = false
 )(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
   require(!useAtbSink || smemWindow.isEmpty, "select only one output sink")
   require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
-  override def hart_num = numHarts
+  override def hart_num   = numHarts
+  override def supportHPM = enableHPM
   validateImplementationParameters()
 
-  val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i)))
+  val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i, enableHPM)))
   val funnel     = LazyModule(new Funnel(funnelBaseAddr, numHarts))
   val pib        = LazyModule(new PIB(pibBaseAddr))
   val atb        = LazyModule(new ATBBridge(atbbridgeBaseAddr))
@@ -148,7 +156,7 @@ class Trace(
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyRawModuleImp(wrapper) {
-    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty))
+    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty, enableHPM))
 
     /**
      * io

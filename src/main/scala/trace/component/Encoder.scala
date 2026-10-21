@@ -14,13 +14,15 @@ import trace.interface._
 import utility.CircularQueuePtr
 import utility.HasCircularQueuePtrHelper
 
-class Encoder(baseAddr: Int)(implicit p: Parameters) extends ComponentBase(baseAddr) {
+class Encoder(baseAddr: Int, val enableHPM: Boolean = false)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
+  override def supportHPM  = enableHPM
   override lazy val module = new EncoderImp(this)(baseAddr)
 }
 
 class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with EncoderControl {
+  override def supportHPM = wrapper.enableHPM
   val io = IO(new Bundle {
     val fromCore = Input(new FromCore)
     val toCore   = Output(new ToCore)
@@ -213,25 +215,6 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val instTraceEnable = ingressEnabled
 
   /**
-   * hpm
-   */
-  io.hpm.foreach { iovec =>
-    val addrVec  = teHpmAddrVec.get
-    val eventVec = teHpmEventHighVec.get.zip(teHpmEventLowVec.get).map { case (hi, lo) => hi.rdata ## lo.rdata }
-    val incVec   = teHpmEventDataVec.get
-
-    (0 until hpmevent_num).map { i =>
-      iovec.eventVec(i).hpmaddr  := addrVec(i).rdata
-      iovec.eventVec(i).hpmevent := Mux(iovec.eventVec(i).hpmaddr =/= 0.U, eventVec(i), 0.U)
-      incVec(i) match {
-        case m: HasHpmEventDataBundle =>
-          m.inc := iovec.eventVec(i).inc
-        case _ =>
-      }
-    }
-  }
-
-  /**
    * interface -> packetGen -> fifo -> atb
    */
 
@@ -283,13 +266,20 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   }
 
   connectCtrlReg()
+  io.hpm.foreach { port =>
+    val hpm = Module(new CoreHPMRegisters(baseAddr))
+    hpm.io.bus.b2c := bus.b2c
+    hpm.io.port <> port
+    hpm.io.time := timestamp.io.value
+    when(hpm.io.selected)(bus.c2b.dataRead := hpm.io.bus.c2b.dataRead)
+  }
   val statistics = Module(new EncoderStatistics(baseAddr))
-  statistics.io.bus.b2c        := bus.b2c
-  statistics.io.droppedEntries := blockBuffer.io.droppedEntries
-  statistics.io.lossMarker     := block.valid && block.traceLost && packetGen.io.blockReady
-  statistics.io.coreStall      := stallHart
-  statistics.io.packetWait     := packetGen.io.packet.valid && !fifo.io.packetEnq.ready
-  statistics.io.downstreamWait := io.out.valid && !io.out.ready
-  statistics.io.packetAccepted := fifo.io.packetEnq.fire
+  statistics.io.bus.b2c                         := bus.b2c
+  statistics.io.droppedEntries                  := blockBuffer.io.droppedEntries
+  statistics.io.lossMarker                      := block.valid && block.traceLost && packetGen.io.blockReady
+  statistics.io.coreStall                       := stallHart
+  statistics.io.packetWait                      := packetGen.io.packet.valid && !fifo.io.packetEnq.ready
+  statistics.io.downstreamWait                  := io.out.valid && !io.out.ready
+  statistics.io.packetAccepted                  := fifo.io.packetEnq.fire
   when(statistics.io.selected)(bus.c2b.dataRead := statistics.io.bus.c2b.dataRead)
 }
