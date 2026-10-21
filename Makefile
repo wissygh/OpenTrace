@@ -30,7 +30,12 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel
+.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart
+
+test-single-hart:
+	@echo "[single-hart] 实际Trace/SRAM，SoCMisc CPU/SBA配置与decoder完整执行流"
+	mill -i OpenTrace.test.testOnly trace.SingleHartSramSpec
+	python3 -m decoder.tests.check_single_hart_sram build/validation
 
 test-funnel:
 	@echo "[Funnel-test] 1/3/16源公平性、包边界、输入屏蔽、Active关闭与Disable自动排空"
