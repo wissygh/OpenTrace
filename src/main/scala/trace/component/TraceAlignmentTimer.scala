@@ -34,7 +34,7 @@ class TraceAlignmentTimer extends Module {
     count   := 0.U
     pending := false.B
   }.elsewhen(!pending) {
-    count := Mux(io.request, threshold, sum(14, 0))
+    count                    := Mux(io.request, threshold, sum(14, 0))
     when(io.request)(pending := true.B)
   }
 }

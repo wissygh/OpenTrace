@@ -270,7 +270,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     val hpm = Module(new CoreHPMRegisters(baseAddr))
     hpm.io.bus.b2c := bus.b2c
     hpm.io.port <> port
-    hpm.io.time := timestamp.io.value
+    hpm.io.time                            := timestamp.io.value
     when(hpm.io.selected)(bus.c2b.dataRead := hpm.io.bus.c2b.dataRead)
   }
   val statistics = Module(new EncoderStatistics(baseAddr))
