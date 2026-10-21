@@ -17,6 +17,8 @@ class Profile:
     time_width: int = 64
     ecause_width: int = 8
     encoder_mode_width: int = 1
+    f0s_width: int = 1
+    cache_size: int = 8
     max_steps: int = 100000
 
     def __post_init__(self):
@@ -24,7 +26,8 @@ class Profile:
             raise DecodeError('invalid instruction address geometry')
         if not (1 <= self.privilege_width <= 3 and 0 <= self.context_width <= 64 and
                 0 <= self.time_width <= 64 and 1 <= self.ecause_width <= 64 and
-                1 <= self.encoder_mode_width <= 8 and self.max_steps > 0):
+                1 <= self.encoder_mode_width <= 8 and 0 <= self.f0s_width <= 2 and
+                0 <= self.cache_size <= 16 and self.max_steps > 0):
             raise DecodeError('invalid discovery profile')
 
 
@@ -48,7 +51,15 @@ def unpack(payload, profile, options):
     packet = {'format': fmt}
     aw = profile.address_width - profile.address_lsb
     if fmt == 0:
-        raise DecodeError('Format 0 branch prediction / target cache is not implemented')
+        sf = b.take(profile.f0s_width) if profile.f0s_width else (1 if options & 16 else 0)
+        if sf != 1 or not options & 16 or not profile.cache_size:
+            raise DecodeError('Format 0 requires an enabled, supported optional format')
+        packet.update(subformat=sf, index=b.take(profile.cache_size), branches=b.take(5),
+                      notify=False, updiscon=False)
+        branches = packet['branches']
+        packet['branch_map'] = (b.take((1 << branches.bit_length()) - 1) & ((1 << branches) - 1)
+                                if branches else 0)
+        return packet
     if fmt == 3:
         sf = b.take(2)
         packet['subformat'] = sf
@@ -114,6 +125,7 @@ class ExecutionDecoder:
         self.context = None
         self.time = None
         self.events = []
+        self.target_cache = {}
 
     def _instr(self, pc):
         image = self.contexts.get(self.context, self.image)
@@ -162,6 +174,9 @@ class ExecutionDecoder:
         else:
             self.pc += instr.size
         self.pc &= self.mask
+        if stop and self.options & 16:
+            index = (self.pc >> self.profile.address_lsb) & ((1 << self.profile.cache_size) - 1)
+            self.target_cache[index] = self.pc
         self.last_pc = old
         return stop
 
@@ -207,8 +222,10 @@ class ExecutionDecoder:
         if fmt == 3:
             sf = packet['subformat']
             if sf == 3:
-                if packet['mode'] or packet['options'] & (2 | 8 | 16):
-                    raise DecodeError('implicit return, branch prediction and target cache modes are not implemented')
+                if packet['mode'] or packet['options'] & (2 | 8):
+                    raise DecodeError('implicit return and branch prediction modes are not implemented')
+                if packet['options'] & 16 and not self.profile.cache_size:
+                    raise DecodeError('jump target cache requires non-zero cache_size discovery')
                 if packet['denable']:
                     raise DecodeError('data trace is not implemented')
                 self.options = packet['options']
@@ -228,6 +245,7 @@ class ExecutionDecoder:
                     self.awaiting_handler = False
                     self.branches = self.branch_map = 0
                     self.inferred_address = False
+                self.target_cache.clear()
                 self._emit('support', **packet)
                 return self.events
             if sf == 2:
@@ -254,6 +272,7 @@ class ExecutionDecoder:
                 self._emit('trap', ecause=packet['ecause'], interrupt=bool(packet['interrupt']),
                            tval=packet.get('tval'), handler=bool(packet['thaddr']))
                 if not packet['thaddr']:
+                    self.target_cache.clear()
                     self.awaiting_handler = True
                     self.inferred_address = False
                     self.branches = self.branch_map = 0
@@ -289,10 +308,20 @@ class ExecutionDecoder:
             self.context, self.privilege, self.time = packet['context'], packet['privilege'], packet['time']
             self.start_of_trace = False
             self.awaiting_handler = False
+            self.target_cache.clear()
             return self.events
         if self.start_of_trace:
             # A circular capture may begin with packets preceding this hart's sync.
             self._emit('unsynchronized', format=fmt)
+            return self.events
+        if fmt == 0:
+            if packet['index'] not in self.target_cache:
+                raise DecodeError(f"jump target cache index {packet['index']} is invalid")
+            self.address = self.target_cache[packet['index']]
+            self.stop_at_last_branch = False
+            self.branch_map |= packet['branch_map'] << self.branches
+            self.branches += packet['branches']
+            self._follow(self.address, packet)
             return self.events
         if fmt == 2 or packet['branches']:
             self.stop_at_last_branch = False

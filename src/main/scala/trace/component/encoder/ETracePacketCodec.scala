@@ -25,6 +25,15 @@ object ETracePacketCodec {
   def branchOnly(map: UInt, width: Int): UInt =
     extend(Cat(map(30, 0), 0.U(5.W), 1.U(2.W)), width)
 
+  def cachedTarget(index: UInt, count: UInt, map: UInt, subformatWidth: Int, width: Int): UInt = {
+    require(subformatWidth > 0)
+    val suffix = Cat(index, 1.U(subformatWidth.W), 0.U(2.W))
+    val choices = Seq(1, 3, 7, 15, 31).map { size =>
+      (count <= size.U) -> extend(Cat(map(size - 1, 0), count, suffix), width)
+    }
+    Mux(count === 0.U, extend(Cat(0.U(5.W), suffix), width), PriorityMux(choices))
+  }
+
   /** Preserve a sign bit before rounding to bytes, including all-zero/all-one
     * payloads. valid is separate: payload value zero is not an absence marker.
     */

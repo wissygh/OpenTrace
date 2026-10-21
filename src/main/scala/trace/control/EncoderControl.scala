@@ -225,7 +225,7 @@ class TeInstFeaturesBundle extends CSRBundle with TraceParameters {
   val EnSiJump          = RO(2).withReset(0.U)
   val EnImRet           = RO(3).withReset(0.U)
   val EnBranchPred      = RO(4).withReset(0.U)
-  val EnJumpTargetCache = RO(5).withReset(0.U)
+  val EnJumpTargetCache = (if (supportJumpCache) RW(5) else RO(5)).withReset(0.U)
   val ImRetMode         = RO(7, 6).withReset(0.U)
   val EnRepHistoty      = RO(8).withReset(0.U)
   val EnAllJumps        = RO(9).withReset(0.U)

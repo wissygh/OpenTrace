@@ -116,7 +116,7 @@ class Format1NoAddr extends Bundle with TraceParameters {
 class Format00NoAddress extends Bundle with TraceParameters {
   val branch_fmt   = UInt(2.W) // 00 ; 01-11: cannot occur
   val branch_count = UInt(32.W)
-  val subformat    = UInt(2.W)
+  val subformat    = UInt(f0s_width_p.W)
   val format       = UInt(2.W)
 }
 
@@ -128,7 +128,7 @@ class Format00Address extends Bundle with TraceParameters {
   val address       = UInt((iaddress_width_p - iaddress_lsb_p).W)
   val branch_fmt    = UInt(2.W) // 10: address; 11 address-fail; 00-01: cannot occur
   val branch_count  = UInt(32.W)
-  val subformat     = UInt(2.W)
+  val subformat     = UInt(f0s_width_p.W)
   val format        = UInt(2.W)
 }
 
@@ -149,7 +149,7 @@ class Format01Branchmap extends Bundle with TraceParameters {
   val branch_map = UInt(31.W)
   val branches   = UInt(5.W)
   val index      = UInt(cache_size_p.W)
-  val subformat  = UInt(2.W)
+  val subformat  = UInt(f0s_width_p.W)
   val format     = UInt(2.W)
 }
 
@@ -158,7 +158,7 @@ class Format01Nobranchmap extends Bundle with TraceParameters {
   val irreport  = Bool()
   val branches  = UInt(5.W)
   val index     = UInt(cache_size_p.W)
-  val subformat = UInt(2.W)
+  val subformat = UInt(f0s_width_p.W)
   val format    = UInt(2.W)
 }
 

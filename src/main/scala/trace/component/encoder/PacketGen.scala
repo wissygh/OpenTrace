@@ -158,6 +158,10 @@ class PacketGen extends Module with TraceParameters {
   val supportChangesConfig = WireDefault(false.B)
   val supportConfig        = WireDefault(activeConfig)
   val finishesCurrent      = WireDefault(false.B)
+  val targetCache          = Module(new TraceJumpTargetCache)
+  targetCache.io.address := address
+  targetCache.io.update  := generated.fire && carriesAddress && previousJump && activeConfig(4) && !syncPacket
+  targetCache.io.clear   := generated.fire && (syncPacket || supportPacket)
 
   def emitPayload(value: UInt): Unit = {
     payload := ETracePacketCodec.extend(value, payload_max_width)
@@ -206,13 +210,20 @@ class PacketGen extends Module with TraceParameters {
   def addressPacket(requestedNotify: Bool, beforeSync: Bool): Unit = {
     val delta = Wire(UInt(iaddress_width_p.W))
     delta := Mux(activeConfig(5), address, address - reference)
-    payload := ETracePacketCodec.address(
+    val addressPayload = ETracePacketCodec.address(
       count(4, 0),
       map(30, 0),
       delta(iaddress_width_p - 1, iaddress_lsb_p),
       requestedNotify,
       beforeSync,
       payload_max_width
+    )
+    val cached = activeConfig(4) && previousJump && targetCache.io.hit && !curNotify &&
+      !requestedNotify && !beforeSync
+    payload := Mux(
+      cached,
+      ETracePacketCodec.cachedTarget(targetCache.io.index, count(4, 0), map(30, 0), f0s_width_p, payload_max_width),
+      addressPayload
     )
     emit             := true.B
     consumesBranches := true.B
