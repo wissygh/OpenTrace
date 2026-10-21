@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chiseltest._
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.devices.tilelink.{DevNullParams, TLError}
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import org.scalatest.flatspec.AnyFlatSpec
@@ -11,16 +12,24 @@ import org.scalatest.matchers.should.Matchers
 import java.nio.file.{Files, Paths}
 import trace.interface._
 
-/** Same control topology as XiangShan SoCMisc: a CPU word port and a
-  * byte-beat Debug SBA port share the actual xs_socmisc Trace entrance.
+/** Same control topology as XiangShan SoCMisc: an eight-byte peripheral bus
+  * with another eight-byte slave and a byte-beat Debug SBA port share the
+  * actual four-byte xs_socmisc Trace entrance.
   */
-private class SingleHartSramDesign(implicit p: Parameters) extends LazyModule {
+private class SingleHartSramDesign(adaptCPUWidth: Boolean = true)(implicit p: Parameters) extends LazyModule {
   val trace = LazyModule(new Trace(BusType.TL, xs_socmisc = true))
   val xbar = TLXbar()
+  val peripherals = TLXbar()
+  val otherSlave = LazyModule(new TLError(
+    DevNullParams(address = Seq(AddressSet(0x30000000L, 0xfff)), maxAtomic = 8, maxTransfer = 8),
+    beatBytes = 8))
   val cpu = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1("cpu", sourceId = IdRange(0, 1))))))
   val sba = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLMasterParameters.v1("sba", sourceId = IdRange(0, 1))))))
   trace.ctrlnode.get := TLBuffer() := xbar
-  xbar := cpu
+  otherSlave.node := peripherals
+  peripherals := cpu
+  if (adaptCPUWidth) xbar := TLFIFOFixer() := TLFragmenter(4, 8, holdFirstDeny = true) := TLWidthWidget(8) := peripherals
+  else xbar := peripherals
   xbar := TLBuffer() := TLWidthWidget(1) := sba
   val cpuIO = InModuleBody(cpu.makeIOs())
   val sbaIO = InModuleBody(sba.makeIOs())
@@ -35,9 +44,9 @@ private class SingleHartSramDesign(implicit p: Parameters) extends LazyModule {
   lazy val module = new Imp
 }
 
-private class SingleHartSramHarness extends Module {
+private class SingleHartSramHarness(adaptCPUWidth: Boolean = true) extends Module {
   implicit val p: Parameters = Parameters.empty
-  val design = LazyModule(new SingleHartSramDesign)
+  val design = LazyModule(new SingleHartSramDesign(adaptCPUWidth))
   val top = Module(design.module)
   val cpu = design.cpuIO.getWrappedValue.head
   val sba = design.sbaIO.getWrappedValue.head
@@ -53,6 +62,15 @@ private class SingleHartSramHarness extends Module {
 
 class SingleHartSramSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
   behavior of "single-hart actual Trace SRAM and SoCMisc control route"
+  it should "reject the original unadapted mixed-width peripheral crossbar before RTL generation" in {
+    val failure = intercept[IllegalArgumentException] {
+      _root_.circt.stage.ChiselStage.emitCHIRRTL(new SingleHartSramHarness(adaptCPUWidth = false))
+    }
+    failure.getMessage should include("data widths don't match")
+    failure.getMessage should include("4B")
+    failure.getMessage should include("8B")
+    println("[single-SRAM][regression] 原接线4B Trace与8B外设并接时复现同一Xbar位宽异常")
+  }
   it should "configure through CPU and byte SBA then read the complete execution stream via SRAM CSR" in {
     test(new SingleHartSramHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       d.clock.setTimeout(20000)
@@ -77,14 +95,19 @@ class SingleHartSramSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
         while (!condition && n < 1000) { d.clock.step(); n += 1 }
         assert(n < 1000, what)
       }
-      def access(address: Int, write: Boolean = false, value: BigInt = 0, bytePort: Boolean = false): BigInt = {
+      def access(address: Int, write: Boolean = false, value: BigInt = 0,
+          bytePort: Boolean = false, doubleword: Boolean = false): BigInt = {
+        require(!doubleword || !bytePort)
         val bus = if (bytePort) d.io.sba else d.io.cpu
         val lanes = if (bytePort) 4 else 1
+        val shift = if (bytePort) 0 else (address & 7) * 8
         bus.d.ready.poke(false.B)
         bus.a.bits.address.poke(address.U); bus.a.bits.opcode.poke(if (write) TLMessages.PutFullData else TLMessages.Get)
-        bus.a.bits.mask.poke((if (bytePort) 1 else 15).U)
+        bus.a.bits.size.poke((if (doubleword) 3 else 2).U)
+        bus.a.bits.mask.poke((if (bytePort) BigInt(1) else
+          (if (doubleword) BigInt(255) else BigInt(15)) << (address & 7)).U)
         for (lane <- 0 until (if (write) lanes else 1)) {
-          bus.a.bits.data.poke((if (bytePort) (value >> (8 * lane)) & 255 else value).U)
+          bus.a.bits.data.poke((if (bytePort) (value >> (8 * lane)) & 255 else value << shift).U)
           bus.a.valid.poke(true.B); waitFor("control A ready")(bus.a.ready.peek().litToBoolean)
           d.clock.step(); bus.a.valid.poke(false.B)
         }
@@ -95,19 +118,28 @@ class SingleHartSramSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
           bus.d.bits.opcode.expect(if (write) TLMessages.AccessAck else TLMessages.AccessAckData)
           val data = bus.d.bits.data.peek().litValue
           d.clock.step(2); bus.d.valid.expect(true.B); bus.d.bits.data.expect(data.U)
-          result |= data << (if (bytePort) 8 * lane else 0)
+          result |= (if (bytePort) data << (8 * lane) else (data >> shift) &
+            (if (doubleword) (BigInt(1) << 64) - 1 else BigInt("ffffffff", 16)))
           bus.d.ready.poke(true.B); d.clock.step()
         }
         result
       }
       val encoder = 0x20000000; val funnel = 0x20010000; val ram = 0x20040000
-      println("[single-SRAM][1/5] 实际Trace SoCMisc入口：CPU32-bit和SBA8-bit组装访问，配置/应答反压")
+      d.io.cpu.a.bits.data.getWidth shouldBe 64
+      d.io.sba.a.bits.data.getWidth shouldBe 8
+      println("[single-SRAM][1/5] 实际Trace SoCMisc入口：64-bit外设总线转32-bit寄存器，SBA8-bit组装访问，配置/应答反压")
       for (address <- Seq(encoder, funnel, ram)) {
         (access(address) & 1) shouldBe BigInt(0)
         access(address, write = true, value = 1, bytePort = true)
         waitFor("Active release") { (access(address) & 1) == 1 }
       }
       access(ram + 4, bytePort = true) shouldBe BigInt(0x1901)
+      access(ram + 4) shouldBe BigInt(0x1901) // high word/lane on the 64-bit peripheral bus
+      ((access(encoder + 8) >> 28) & 15) shouldBe BigInt(8)
+      access(ram + 0x1c) shouldBe BigInt(0) // absent high address register, upper word/lane
+      val discovered = access(ram, doubleword = true) // two 32-bit register reads, one 64-bit reply
+      (discovered >> 32) shouldBe BigInt(0x1901)
+      (discovered & BigInt("ffffffff", 16)) shouldBe BigInt(9)
       access(ram + 0x18, bytePort = true) shouldBe BigInt(0x3fc)
       access(ram + 0x20, write = true, value = 0, bytePort = true)
       access(ram, write = true, value = 3 | (1 << 8))
