@@ -1,3 +1,7 @@
+# Clang PCH files embed absolute test directories. Reusing them through ccache
+# after a Mill sandbox/test-name move can reference removed files.
+export CCACHE_DISABLE ?= 1
+
 compile:
 	mill -i OpenTrace.compile
 
