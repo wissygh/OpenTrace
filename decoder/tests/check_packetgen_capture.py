@@ -10,6 +10,10 @@ from decoder.__main__ import load_config
 
 
 def main(directory, stem='packetgen-execution'):
+    if stem == 'packetgen-support':
+        for mode in ('unchanged', 'full-address', 'instruction-off', 'encoder-off'):
+            main(directory, f'packetgen-support-{mode}')
+        return
     directory = Path(directory)
     print('[encoder->decoder][1/3] 读取 RTL 采集与对应 raw 指令镜像', file=sys.stderr)
     decoder = load_config(directory / f'{stem}.json')
@@ -46,7 +50,20 @@ def main(directory, stem='packetgen-execution'):
         contexts = [e for e in events if e['kind'] == 'context']
         if actual_contexts != [0, 0, 1, 1, 1, 2, 2] or len(contexts) != 1 or contexts[0]['time'] != 0x1234:
             raise SystemExit(f'context capture metadata mismatch: {actual_contexts!r}, {contexts!r}')
-    extent = ('保留下来的全部退休指令' if stem == 'packetgen-loss' else '全部退休指令'
+    if stem.startswith('packetgen-support-'):
+        mode = stem.removeprefix('packetgen-support-')
+        expected_support = [(0, 1, 0), (2, 1, 0)]
+        if mode == 'full-address':
+            expected_support += [(0, 1, 32)]
+        elif mode in ('instruction-off', 'encoder-off'):
+            expected_support += [(0, 0, 0), (0, 1, 0)]
+        elif mode != 'unchanged':
+            raise SystemExit(f'unknown support capture mode: {mode}')
+        expected_support += [(1, 1, 32 if mode == 'full-address' else 0)]
+        support = [(e['qual_status'], e['ienable'], e['options']) for e in events if e['kind'] == 'support']
+        if support != expected_support or not decoder.decoders[3].start_of_trace:
+            raise SystemExit(f'support capture ordering mismatch: {support!r} != {expected_support!r}')
+    extent = ('保留下来的全部退休指令' if stem == 'packetgen-loss' or stem.startswith('packetgen-support-') else '全部退休指令'
               if stem in ('packetgen-lifecycle', 'packetgen-traps', 'packetgen-context') else '至最后 trace 锚点的退休前缀')
     print(f'[encoder->decoder][3/3] {len(actual)} 条指令与{extent}逐条一致：' +
           ', '.join(f'0x{pc:x}' for pc in actual), file=sys.stderr)
