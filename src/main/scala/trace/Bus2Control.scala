@@ -47,6 +47,7 @@ class CtrlAsyncSink(baseAddr: Int, deferReset: Boolean = false)(implicit p: Para
       regionType = RegionType.UNCACHED,
       supportsGet = TransferSizes(ctrlBeatBytes, ctrlBeatBytes),
       supportsPutFull = TransferSizes(ctrlBeatBytes, ctrlBeatBytes),
+      supportsPutPartial = TransferSizes(ctrlBeatBytes, ctrlBeatBytes),
       fifoId = Some(0)
     )),
     ctrlBeatBytes

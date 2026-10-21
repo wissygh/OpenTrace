@@ -33,8 +33,11 @@ class TraceControlEndpoint(baseAddr: Int, busParameters: TLBundleParameters, def
   io.d.valid := pending
   io.d.bits  := response
 
-  val read  = io.a.bits.opcode === TLMessages.Get
-  val write = io.a.bits.opcode === TLMessages.PutFullData
+  val read = io.a.bits.opcode === TLMessages.Get
+  // CPU uncached stores may use PutPartialData even when every word lane is
+  // present. Both opcodes have identical CSR semantics for that full mask.
+  // Partial masks still return denied without issuing a CSR write.
+  val write = io.a.bits.opcode === TLMessages.PutFullData || io.a.bits.opcode === TLMessages.PutPartialData
   val legal = (read || write) && io.a.bits.size === log2Ceil(ctrlBeatBytes).U &&
     io.a.bits.address(1, 0) === 0.U && io.a.bits.mask.andR &&
     io.a.bits.param === 0.U && !io.a.bits.corrupt
