@@ -11,7 +11,7 @@ class Mictor38Bundle extends Bundle {
   val NC3     = Output(Bool()) // pin  03
   val NC4     = Output(Bool()) // pin  04
   val GND5    = Output(Bool()) // pin  05
-  val TRC_CLK = Input(Bool())  // pin  06  trace
+  val TRC_CLK = Output(Bool()) // pin  06  trace
   val TRIGIN  = Input(Bool())  // pin  07  debug
   val TRIGOUT = Output(Bool()) // pin  08  debug
   val nRESET  = Input(Bool())  // pin  09  debug

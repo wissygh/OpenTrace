@@ -21,10 +21,12 @@ class TraceTopIO(
     numHarts:    Int = 1,
     useAtbSink:  Boolean = false,
     useSMEMSink: Boolean = false,
-    enableHPM:   Boolean = false
+    enableHPM:   Boolean = false,
+    usePibSink:  Boolean = false
 ) extends Bundle
     with TraceParameters {
   override def supportHPM = enableHPM
+  val pib                 = Option.when(usePibSink)(new PIBTracePins)
   val fromCore            = Input(Vec(numHarts, new FromCore))
   val toCore              = Output(Vec(numHarts, new ToCore))
   val hpm                 = Option.when(supportHPM)(Vec(numHarts, new Hpm))
@@ -46,10 +48,12 @@ class Trace(
     val numHarts:   Int = 1,
     val useAtbSink: Boolean = false,
     val smemWindow: Option[SMEMWindow] = None,
-    val enableHPM:  Boolean = false
+    val enableHPM:  Boolean = false,
+    val usePibSink: Boolean = false
 )(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
+  require(!usePibSink || (!useAtbSink && smemWindow.isEmpty), "PIB is an exclusive output sink")
   require(!useAtbSink || smemWindow.isEmpty, "select only one output sink")
   require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
   override def hart_num   = numHarts
@@ -58,7 +62,7 @@ class Trace(
 
   val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i, enableHPM)))
   val funnel     = LazyModule(new Funnel(funnelBaseAddr, numHarts))
-  val pib        = LazyModule(new PIB(pibBaseAddr))
+  val pib        = LazyModule(new PIB(pibBaseAddr, usePibSink))
   val atb        = LazyModule(new ATBBridge(atbbridgeBaseAddr))
   val ram        = Option.when(smemWindow.isEmpty)(LazyModule(new SRAM(ramSinkAddr)))
   val smem       = smemWindow.map(window => LazyModule(new SMEM(ramSinkAddr, window)))
@@ -156,7 +160,7 @@ class Trace(
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyRawModuleImp(wrapper) {
-    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty, enableHPM))
+    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty, enableHPM, usePibSink))
 
     /**
      * io
@@ -205,6 +209,8 @@ class Trace(
       funnelMod.io.in(i) <> crossing.io.out
       crossing.io.control <> funnelMod.io.sourceControl(i)
     }
+    pibMod.io.in.valid := false.B
+    pibMod.io.in.bits  := 0.U.asTypeOf(pibMod.io.in.bits)
     if (useAtbSink) {
       atbMod.io.in <> funnelMod.io.out
       funnelMod.io.control <> atbMod.io.upstream
@@ -223,7 +229,12 @@ class Trace(
       ramMod.get.io.in.valid := false.B
       ramMod.get.io.in.bits  := 0.U.asTypeOf(ramMod.get.io.in.bits)
     } else {
-      if (smemWindow.nonEmpty) {
+      if (usePibSink) {
+        pibMod.io.in <> funnelMod.io.out
+        io.pib.get <> pibMod.io.pins
+        ramMod.get.io.in.valid := false.B
+        ramMod.get.io.in.bits  := 0.U.asTypeOf(ramMod.get.io.in.bits)
+      } else if (smemWindow.nonEmpty) {
         val sink = smemMod.get
         sink.io.in <> funnelMod.io.out
         sink.io.transactionReset := ResetCatchAndSync(io.clock_trace, io.reset_trace.asBool).asAsyncReset
@@ -240,7 +251,7 @@ class Trace(
       atbMod.io.atbm.syncReq        := false.B
       atbMod.io.upstream.flushAck   := true.B
       funnelMod.io.control.flushReq := false.B
-      funnelMod.io.control.syncReq  := false.B
+      funnelMod.io.control.syncReq  := (if (usePibSink) pibMod.io.syncReq else false.B)
     }
 
     // hpm

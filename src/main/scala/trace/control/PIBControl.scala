@@ -13,7 +13,7 @@ import trace.component.PIBImp
 
 trait PIBControl extends ControlBase { self: PIBImp =>
 
-  val PIBControl = Module(new PIBControlRegister)
+  val PIBControl = Module(new PIBControlRegister(wrapper.asInstanceOf[trace.component.PIB].hasSerializer))
     .setAddr(CtrlReg.PIBControl)
 
   val PIBImpl = Module(new CSRModule("PIBImpl", new PIBImplBundle) {})
@@ -25,20 +25,41 @@ trait PIBControl extends ControlBase { self: PIBImp =>
   )
 }
 
-class PIBControlRegister extends CSRModule("PIBControl", new PIBControlBundle) {
+class PIBControlRegister(implemented: Boolean = false)
+    extends CSRModule("PIBControl", new PIBControlBundle(implemented)) {
+  val empty = Option.when(implemented)(IO(Input(Bool())))
   regOut.Active := !reset.asBool
+  if (implemented) {
+    regOut.Emptry := empty.get
+    // Configuration cannot alter a queued or actively transmitted packet.
+    reg.Mode      := reg.Mode
+    reg.Divider   := reg.Divider
+    reg.ClkCenter := reg.ClkCenter
+    reg.Calibrate := reg.Calibrate
+    when(wen && !reg.Enable.asBool && empty.get) {
+      when(wdata.Mode.isLegal)(reg.Mode := wdata.Mode)
+      reg.Divider   := wdata.Divider
+      reg.ClkCenter := PIBModeField.isParallel(wdata.Mode) && wdata.ClkCenter.asBool
+      reg.Calibrate := wdata.Calibrate
+    }
+  }
 }
 
-class PIBControlBundle extends CSRBundle {
+class PIBControlBundle(implemented: Boolean = false) extends CSRBundle {
   val Active = RW(0).withReset(0.U)
-  val Enable = RO(1).withReset(0.U)
+  val Enable = (if (implemented) RW(1) else RO(1)).withReset(0.U)
   val Emptry = RO(3).withReset(1.U)
-  // The serializer is not implemented; discovery must not enable a dead output.
-  val Mode      = RO(7, 4).withReset(0.U)
-  val ClkCenter = RO(8).withReset(0.U)
-  val Calibrate = RO(9).withReset(0.U)
+  val Mode = if (implemented) PIBModeField(7, 4, wNoFilter).withReset(PIBModeField.Off)
+  else RO(7, 4).withReset(0.U)
+  val ClkCenter = (if (implemented) RW(8) else RO(8)).withReset(0.U)
+  val Calibrate = (if (implemented) RW(9) else RO(9)).withReset(0.U)
   val AsyncFreq = RO(14, 12).withReset(0.U)
-  val Divider   = RO(31, 16).withReset(0.U)
+  val Divider = if (implemented) PIBDividerField(31, 16, wNoFilter).withReset(PIBDividerField.Default)
+  else RO(31, 16).withReset(0.U)
+}
+
+object PIBDividerField extends CSREnum with WARLApply {
+  val Default = Value(31.U)
 }
 
 object PIBModeField extends CSREnum with WARLApply {
