@@ -16,19 +16,21 @@ class TraceAsyncEntry[T <: Data](gen: T) extends Bundle {
   */
 class TraceAsyncBridge[T <: Data](gen: T, depth: Int = 16, stages: Int = 3) extends RawModule {
   val io = IO(new Bundle {
-    val sourceClock   = Input(Clock())
-    val sourceReset   = Input(AsyncReset())
-    val sinkClock     = Input(Clock())
-    val sinkReset     = Input(AsyncReset())
-    val in            = Flipped(Decoupled(gen.cloneType))
-    val sourceControl = Flipped(new TraceControl)
-    val out           = Decoupled(gen.cloneType)
-    val control       = new TraceControl
+    val sourceClock     = Input(Clock())
+    val sourceReset     = Input(AsyncReset())
+    val sinkClock       = Input(Clock())
+    val sinkReset       = Input(AsyncReset())
+    val in              = Flipped(Decoupled(gen.cloneType))
+    val sourceControl   = Flipped(new TraceControl)
+    val out             = Decoupled(gen.cloneType)
+    val sinkResetActive = Output(Bool())
+    val control         = new TraceControl
   })
   val combinedReset = io.sourceReset.asBool || io.sinkReset.asBool
   val sourceReset   = ResetCatchAndSync(io.sourceClock, combinedReset, stages).asAsyncReset
   val sinkReset     = ResetCatchAndSync(io.sinkClock, combinedReset, stages).asAsyncReset
-  val queue         = Module(new AsyncQueue(new TraceAsyncEntry(gen), AsyncQueueParams(depth, stages, safe = true)))
+  io.sinkResetActive := sinkReset.asBool
+  val queue = Module(new AsyncQueue(new TraceAsyncEntry(gen), AsyncQueueParams(depth, stages, safe = true)))
   queue.io.enq_clock := io.sourceClock
   queue.io.enq_reset := sourceReset.asBool
   queue.io.deq_clock := io.sinkClock

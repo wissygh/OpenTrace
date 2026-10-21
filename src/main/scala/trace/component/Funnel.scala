@@ -20,6 +20,7 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters)
     val sourceControl = Vec(wrapper.numSources, Flipped(new TraceControl))
     val out           = Decoupled(new TraceBeat(funnelAtbDataBeats))
     val control       = new TraceControl
+    val inputPending  = Input(Bool())
   })
   val core = Module(new TraceFunnelCore(wrapper.numSources, encoderAtbDataBeats))
   core.io.in <> io.in
@@ -28,7 +29,7 @@ class FunnelImp(wrapper: Funnel)(baseAddr: Int)(implicit p: Parameters)
   core.io.enable  := funnelControl.regOut.Enable.asBool
   core.io.disable := VecInit((0 until wrapper.numSources).map(i => funnelDisInput.regOut.DisInput.asUInt(i)))
   io.out <> core.io.out
-  val fifoIsEmpty = core.io.empty
+  val fifoIsEmpty = core.io.empty && !io.inputPending
   val fifoIsFull  = false.B
   controlMods.foreach {
     case m: HasCtrlBundle =>

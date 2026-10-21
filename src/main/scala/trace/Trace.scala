@@ -198,16 +198,20 @@ class Trace(
         encoder.io.fromCore := ingressPort
       }
     }
+    val sourcePending = Wire(Vec(numHarts, Bool()))
+    funnelMod.io.inputPending := sourcePending.asUInt.orR
     encoderModVec.zipWithIndex.foreach { case (encoder, i) =>
-      val crossing = Module(new TraceAsyncBridge(new TraceBeat(encoderAtbDataBeats)))
-      crossing.io.sourceClock := io.clock_core
-      crossing.io.sourceReset := encoder.reset.asAsyncReset
-      crossing.io.sinkClock   := io.clock_trace
-      crossing.io.sinkReset   := funnelMod.reset.asAsyncReset
+      val crossing = Module(new TraceSourceLink(i))
+      crossing.io.sourceClock     := io.clock_core
+      crossing.io.sourceReset     := encoder.reset.asAsyncReset
+      crossing.io.sinkClock       := io.clock_trace
+      crossing.io.sinkReset       := funnelMod.reset.asAsyncReset
+      crossing.io.systemSinkReset := io.reset_trace.asAsyncReset
       crossing.io.in <> encoder.io.out
       encoder.io.control <> crossing.io.sourceControl
       funnelMod.io.in(i) <> crossing.io.out
       crossing.io.control <> funnelMod.io.sourceControl(i)
+      sourcePending(i) := !crossing.io.empty
     }
     val guardReset = ResetCatchAndSync(io.clock_trace, io.reset_trace.asBool).asAsyncReset
     val sinkGuard  = withClockAndReset(io.clock_trace, guardReset)(Module(new TraceSinkPacketGuard))
