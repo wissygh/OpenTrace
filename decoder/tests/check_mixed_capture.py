@@ -98,14 +98,21 @@ def main(directory):
         if (root / 'dut/trace.bin').exists():
             return check(root)
         cases = sorted(root.glob('seed-*'))
-        if not cases:
-            raise ValueError('no mixed-format capture cases found')
-        results = {case.name: check(case) for case in cases}
-        captures = [(case / 'dut/trace.bin').read_bytes() for case in cases]
-        if any(capture != captures[0] for capture in captures):
-            raise ValueError('backpressure changed the generated packet stream')
-        write_json(root / 'diff/comparison.json', {'status': 'passed', 'cases': results,
-                   'backpressure_invariant': True, 'reference_kind': 'module stimulus, not independent ROB'})
+        result = {'status': 'failed', 'cases': {}, 'reference_kind': 'module stimulus, not independent ROB'}
+        try:
+            if not cases:
+                raise ValueError('no mixed-format capture cases found')
+            for case in cases:
+                result['cases'][case.name] = check(case)
+            captures = [(case / 'dut/trace.bin').read_bytes() for case in cases]
+            if any(capture != captures[0] for capture in captures):
+                raise ValueError('backpressure changed the generated packet stream')
+            result.update(status='passed', backpressure_invariant=True)
+        except (ValueError, OSError, KeyError) as exc:
+            result['error'] = str(exc)
+            raise
+        finally:
+            write_json(root / 'diff/comparison.json', result)
         print(f'[mixed-packets] {len(cases)} seeded stalls produce byte-identical SRAM captures')
 
 
