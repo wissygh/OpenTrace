@@ -56,8 +56,12 @@ private class MixedPacketStorageHarness extends Module with TraceParameters {
 }
 
 class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
-  private case class Entry(pc: Int, kind: Int = 0, context: Int = 0, ctype: Int = 0,
+  private val relocation = BigInt("80000000", 16)
+  private def pc(offset: Int): BigInt = relocation + offset
+  private val imageBase = pc(0x1000)
+  private case class Entry(offset: Int, kind: Int = 0, context: Int = 0, ctype: Int = 0,
       notifyRequested: Boolean = false, cause: Int = 0, lost: Boolean = false, size: Int = 1, time: Int = 0) {
+    def pc: BigInt = PacketMixedFormatsSpec.this.pc(offset)
     def retired: Boolean = !lost && kind != 1 && kind != 2
   }
   behavior of "all instruction packet formats in a shared execution stream"
@@ -117,13 +121,14 @@ class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with
           Entry(0x8208, context = 4, notifyRequested = true), Entry(0x820c, context = 4),
           Entry(0x9000, context = 5, ctype = 2), Entry(0x9004, context = 5, size = 0), Entry(0x9006, context = 5, size = 0))
       val entries = prefix ++ cache ++ traps ++ prediction
-      println(s"[mixed-packets][1/5] seed=$seed：冷预测map→长正确run/失败→cache/context→interrupt/xret/exception→loss/同步→压缩尾指令")
+      assert(entries.filter(_.retired).forall(_.pc > relocation), "all retired PCs must exceed 0x80000000")
+      println(s"[mixed-packets][1/5] seed=$seed PC=0x${imageBase.toString(16)}..0x${pc(0x9006).toString(16)}（非MMIO地址）：冷预测map→长正确run/失败→cache/context→interrupt/xret/exception→loss/同步→压缩尾指令")
       entries.foreach { entry =>
         drive(entry)
         var accepted = false
         var budget = 2000
         while (!accepted && budget > 0) { accepted = d.io.blockReady.peek().litToBoolean; tick(); budget -= 1 }
-        assert(accepted, s"mixed-format input timeout at 0x${entry.pc.toHexString}")
+        assert(accepted, s"mixed-format input timeout at 0x${entry.pc.toString(16)}")
       }
       d.io.block.valid.poke(false.B); d.io.stop.poke(true.B); tick(); d.io.stop.poke(false.B)
       var budget = 10000
@@ -136,27 +141,27 @@ class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with
       println(s"[mixed-packets][2/5] FIFO/SRAM真实反压${stalled}周期，停顿len/全部data保持，停止排空完成")
 
       def support(status: Int = 0) = ETraceReference.support(3, jumpCache = true, branchPrediction = true, status = status)
-      val expected = Seq(support(), ETraceReference.synchronization(3, 0x1000),
-        ETraceReference.branchOnly(3, Seq.fill(31)(true)), ETraceReference.address(3, 0x10fc, 0x1000, notifyRequested = true),
-        ETraceReference.prediction(3, 31), ETraceReference.address(3, 0x1184, 0x10fc, notifyRequested = true),
-        ETraceReference.address(3, 0x1188, 0x1184), support(1), ETraceReference.synchronization(3, 0x3000, context = 1),
-        ETraceReference.address(3, 0x4000, 0x3000, Seq(false)), ETraceReference.address(3, 0x4100, 0x4000),
-        ETraceReference.cachedTarget(3, 0x4000, Seq(false)), ETraceReference.context(3, 2, time = 0x1234),
-        ETraceReference.cachedTarget(3, 0x4100), ETraceReference.address(3, 0x4104, 0x4100),
-        ETraceReference.synchronization(3, 0x4000, context = 3), ETraceReference.address(3, 0x4100, 0x4000, beforeSync = true),
-        ETraceReference.trap(3, 0x5000, 7, interrupt = true, context = 3),
-        ETraceReference.address(3, 0x4104, 0x5000, beforeSync = true),
-        ETraceReference.trap(3, 0x6000, 11, handler = false, context = 3),
-        ETraceReference.synchronization(3, 0x7000, context = 3),
-        ETraceReference.address(3, 0x7008, 0x7000, Seq(false), notifyRequested = true),
-        ETraceReference.address(3, 0x700c, 0x7008), support(1), ETraceReference.synchronization(3, 0x8000, context = 4),
-        ETraceReference.prediction(3, 31, Some(0x8080), 0x8000, notifyRequested = true),
-        ETraceReference.prediction(3, 31, Some(0x8100), 0x8080, failed = true, notifyRequested = true),
-        ETraceReference.address(3, 0x8108, 0x8100, notifyRequested = true), support(2),
-        ETraceReference.synchronization(3, 0x8200, context = 4),
-        ETraceReference.address(3, 0x8208, 0x8200, Seq(false), notifyRequested = true),
-        ETraceReference.address(3, 0x820c, 0x8208), ETraceReference.synchronization(3, 0x9000, context = 5),
-        ETraceReference.address(3, 0x9006, 0x9000), support(1))
+      val expected = Seq(support(), ETraceReference.synchronization(3, pc(0x1000)),
+        ETraceReference.branchOnly(3, Seq.fill(31)(true)), ETraceReference.address(3, pc(0x10fc), pc(0x1000), notifyRequested = true),
+        ETraceReference.prediction(3, 31), ETraceReference.address(3, pc(0x1184), pc(0x10fc), notifyRequested = true),
+        ETraceReference.address(3, pc(0x1188), pc(0x1184)), support(1), ETraceReference.synchronization(3, pc(0x3000), context = 1),
+        ETraceReference.address(3, pc(0x4000), pc(0x3000), Seq(false)), ETraceReference.address(3, pc(0x4100), pc(0x4000)),
+        ETraceReference.cachedTarget(3, pc(0x4000), Seq(false)), ETraceReference.context(3, 2, time = 0x1234),
+        ETraceReference.cachedTarget(3, pc(0x4100)), ETraceReference.address(3, pc(0x4104), pc(0x4100)),
+        ETraceReference.synchronization(3, pc(0x4000), context = 3), ETraceReference.address(3, pc(0x4100), pc(0x4000), beforeSync = true),
+        ETraceReference.trap(3, pc(0x5000), 7, interrupt = true, context = 3),
+        ETraceReference.address(3, pc(0x4104), pc(0x5000), beforeSync = true),
+        ETraceReference.trap(3, pc(0x6000), 11, handler = false, context = 3),
+        ETraceReference.synchronization(3, pc(0x7000), context = 3),
+        ETraceReference.address(3, pc(0x7008), pc(0x7000), Seq(false), notifyRequested = true),
+        ETraceReference.address(3, pc(0x700c), pc(0x7008)), support(1), ETraceReference.synchronization(3, pc(0x8000), context = 4),
+        ETraceReference.prediction(3, 31, Some(pc(0x8080)), pc(0x8000), notifyRequested = true),
+        ETraceReference.prediction(3, 31, Some(pc(0x8100)), pc(0x8080), failed = true, notifyRequested = true),
+        ETraceReference.address(3, pc(0x8108), pc(0x8100), notifyRequested = true), support(2),
+        ETraceReference.synchronization(3, pc(0x8200), context = 4),
+        ETraceReference.address(3, pc(0x8208), pc(0x8200), Seq(false), notifyRequested = true),
+        ETraceReference.address(3, pc(0x820c), pc(0x8208)), ETraceReference.synchronization(3, pc(0x9000), context = 5),
+        ETraceReference.address(3, pc(0x9006), pc(0x9000)), support(1))
       frames.size shouldBe expected.size
       frames.zip(expected).zipWithIndex.foreach { case ((actual, golden), index) =>
         withClue(s"mixed packet #$index: ") { actual shouldBe golden }
@@ -176,8 +181,8 @@ class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with
       for (name <- Seq("workload", "dut", "ref", "diff")) Files.createDirectories(out.resolve(name))
       Files.write(out.resolve("dut/trace.bin"), capture.map(_.toByte).toArray)
       val code = Array.fill[Byte](0x8008)(0)
-      def put(pc: Int, word: Int, size: Int = 4): Unit =
-        for (i <- 0 until size) code(pc - 0x1000 + i) = ((word >> (i * 8)) & 255).toByte
+      def put(address: BigInt, word: Int, size: Int = 4): Unit =
+        for (i <- 0 until size) code((address - imageBase).toInt + i) = ((word >> (i * 8)) & 255).toByte
       entries.filter(_.retired).foreach { e =>
         val word = e.kind match {
           case 4 => 0x1463 // bne x0,x0,+8
@@ -188,18 +193,18 @@ class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with
         }
         put(e.pc, word, if (e.size == 0) 2 else 4)
       }
-      put(0x6000, 0x73) // ecall does not retire
+      put(pc(0x6000), 0x73) // ecall does not retire
       val jump = 0x9000 - 0x820c
-      put(0x820c, (((jump >> 20) & 1) << 31) | (((jump >> 1) & 1023) << 21) |
+      put(pc(0x820c), (((jump >> 20) & 1) << 31) | (((jump >> 1) & 1023) << 21) |
         (((jump >> 11) & 1) << 20) | (((jump >> 12) & 255) << 12) | 0x6f)
       Files.write(out.resolve("workload/code.bin"), code)
       Files.writeString(out.resolve("dut/trace.json"),
-        """{"sources":{"3":{"hart_id":7,"raw":"../workload/code.bin","base":"0x1000","xlen":64}}}""")
-      Files.writeString(out.resolve("ref/retired-pcs.json"), entries.filter(_.retired).map(e => s"\"0x${e.pc.toHexString}\"").mkString("[", ",", "]"))
+        """{"sources":{"3":{"hart_id":7,"raw":"../workload/code.bin","base":"0x80001000","xlen":64}}}""")
+      Files.writeString(out.resolve("ref/retired-pcs.json"), entries.filter(_.retired).map(e => s"\"0x${e.pc.toString(16)}\"").mkString("[", ",", "]"))
       Files.writeString(out.resolve("ref/packet-golden.json"), expected.map(p =>
         p.map(b => f"$b%02x").mkString("\"", " ", "\"")).mkString("[", ",", "]"))
       Files.writeString(out.resolve("ref/input.jsonl"), entries.map(e =>
-        s"{\"pc\":\"0x${e.pc.toHexString}\",\"itype\":${e.kind},\"context\":${e.context},\"ctype\":${e.ctype},\"retired\":${e.retired},\"loss\":${e.lost}}\n").mkString)
+        s"{\"pc\":\"0x${e.pc.toString(16)}\",\"itype\":${e.kind},\"context\":${e.context},\"ctype\":${e.ctype},\"retired\":${e.retired},\"loss\":${e.lost}}\n").mkString)
       println(s"[mixed-packets][5/5] 导出${entries.count(_.retired)}条模块退休参考/真实镜像及SRAM采集；不冒称香山ROB真值")
     }
   }

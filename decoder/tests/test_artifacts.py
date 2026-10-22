@@ -154,6 +154,18 @@ class SBACaptureArtifacts(unittest.TestCase):
                     self.assertEqual(result['first_mismatch']['sample_index'], 1)
                     self.assertTrue((base / 'dut/packets.jsonl').exists())
 
+    def test_low_or_boundary_instruction_regions_are_not_dram_evidence(self):
+        for start in (0x1000, 0x20000000, 0x80000000):
+            with self.subTest(start=start), tempfile.TemporaryDirectory() as tmp:
+                base = Path(tmp)
+                self.fixture(base)
+                (base / 'symbols.json').write_text(json.dumps({'trace_begin': hex(start),
+                                                               'trace_done': hex(start + 32)}))
+                with self.assertRaisesRegex(DecodeError, 'strictly above'):
+                    check(base)
+                result = json.loads((base / 'diff/comparison.json').read_text())
+                self.assertEqual((result['status'], result['stage']), ('failed', 'inputs'))
+
     def test_failed_recheck_cannot_reuse_stale_success_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

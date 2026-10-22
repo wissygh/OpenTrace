@@ -55,6 +55,10 @@ def check_stages(directory, result):
     metadata = json.loads(layout.input('dut', 'metadata.json').read_text())
     symbols = json.loads(layout.input('workload', 'symbols.json').read_text())
     start, done = number(symbols['trace_begin']), number(symbols['trace_done'])
+    result['instruction_region'] = {'begin_pc': start, 'end_pc_exclusive': done,
+                                    'strictly_above': '0x80000000'}
+    if not 0x80000000 < start < done:
+        raise DecodeError('workload instruction range must be strictly above 0x80000000')
     capture = layout.input('dut', 'trace.bin').read_bytes()
     with (layout.dut / 'sram-raw.hex').open('w') as output:
         for offset in range(0, len(capture), 16):

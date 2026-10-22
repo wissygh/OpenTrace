@@ -30,6 +30,11 @@ def check(directory):
         decoder.finish()
         expected = [number(pc) for pc in json.loads((ref / 'retired-pcs.json').read_text())]
         actual = [event['pc'] for event in events if event['kind'] == 'instruction']
+        image_base = number(json.loads((dut / 'trace.json').read_text())['sources']['3']['base'])
+        result['instruction_address_range'] = {'minimum_pc': min(actual), 'maximum_pc': max(actual),
+                                               'strictly_above': '0x80000000'}
+        if any(pc <= 0x80000000 for pc in (*actual, *expected)):
+            raise ValueError('mixed-format instruction PCs must be strictly above 0x80000000')
         result.update(bytes=len(data), retired_instructions=len(actual), decoded_pcs=actual, expected_pcs=expected)
         with (diff / 'pc-matches.tsv').open('w') as output:
             output.write('index\tstimulus_pc\tdecoded_pc\tstatus\n')
@@ -48,7 +53,8 @@ def check(directory):
         if [(e['ecause'], e['interrupt'], e['handler']) for e in traps] != [(7, True, True), (11, False, False)]:
             raise ValueError(f'mixed trap event mismatch: {traps}')
         epcs = [e['pc'] for e in events if e['kind'] == 'exception_pc']
-        if epcs != [0x6000] or 0x6000 in actual:
+        exception_pc = image_base + 0x5000
+        if epcs != [exception_pc] or exception_pc in actual:
             raise ValueError(f'non-retired exception PC mismatch: {epcs}')
         contexts = [e for e in events if e['kind'] == 'context']
         if len(contexts) != 1 or contexts[0]['context'] != 2 or contexts[0]['time'] != 0x1234:
@@ -80,7 +86,7 @@ def check(directory):
             raise ValueError(f'actual capture lacks packet variants: {sorted(missing)}')
         result.update(status='passed', packets=sum(len(rows) for rows in coverage.values()))
         print(f'[mixed-packets->decoder] {len(data)}bytes/{result["packets"]}packets/'
-              f'{len(actual)}retired PCs matched; all {len(REQUIRED)} packet variants observed', flush=True)
+              f'{len(actual)}retired PCs matched at {min(actual):#x}..{max(actual):#x}; all {len(REQUIRED)} packet variants observed', flush=True)
         return result
     except (ValueError, OSError, KeyError) as exc:
         failure = exc
