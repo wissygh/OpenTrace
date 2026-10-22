@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from decoder.__main__ import load_config
+from decoder.__main__ import load_config, number
 from decoder.artifacts import DecodeArtifacts, write_json, write_jsonl
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
 from decoder.tests.run_xiangshan_sba import Tee
@@ -97,7 +97,7 @@ def check(directory):
     failure = None
     try:
         metadata = json.loads((dut / 'capture-metadata.json').read_text())
-        if metadata['status'] != 'captured' or metadata['a0'] != 0 or metadata['pc'] != 0x80001ca0:
+        if metadata['status'] != 'captured' or metadata['a0'] != 0 or number(metadata['pc']) != 0x80001ca0:
             raise ValueError('CoreMark did not reach the successful exit breakpoint')
         if metadata['dropped'] or metadata['loss_markers']:
             raise ValueError('CoreMark encoder dropped retirement')

@@ -53,6 +53,20 @@ class SRAMFSTMonitorTests(unittest.TestCase):
 
 
 class CoreMarkStorageChecks(unittest.TestCase):
+    def test_exit_pc_accepts_the_shared_hex_json_representation(self):
+        for pc in ('0x80001ca0', 0x80001ca0):
+            with self.subTest(pc=pc), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for category in ('dut/logs', 'workload', 'ref', 'diff'):
+                    (root / category).mkdir(parents=True)
+                (root / 'dut/capture-metadata.json').write_text(json.dumps({
+                    'status': 'captured', 'a0': 0, 'pc': pc, 'dropped': 0, 'loss_markers': 0}))
+                (root / 'dut/logs/uart.log').write_text('')
+                # A valid exit reaches the independent CRC validation; it must
+                # not be rejected merely because write_json serializes hex PCs.
+                with self.assertRaisesRegex(ValueError, 'iteration count'):
+                    check(root)
+
     def test_original_benchmark_crc_and_iterations_must_pass(self):
         text = ('Iterations : 2\nseedcrc : 0xe9f5\n[0]crclist : 0xe714\n'
                 '[0]crcmatrix : 0x1fd7\n[0]crcstate : 0x8e3a\n[0]crcfinal : 0x72be\n')
