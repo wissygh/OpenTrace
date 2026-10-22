@@ -52,4 +52,23 @@ class TraceParametersSpec extends AnyFlatSpec with Matchers {
     }
     println(s"[profile] 默认/双 hart 合法，${invalid.size} 组来源/包长/总线/存储/容量非法配置均拒绝")
   }
+  it should "propagate the platform ingress budget and reject undersized or overflowing reservations" in {
+    import freechips.rocketchip.diplomacy.LazyModule
+    import org.chipsalliance.cde.config.Parameters
+    implicit val p: Parameters = Parameters.empty
+    val config = TraceIngressConfig(64, 16)
+    config.reservedEntries(3) shouldBe 51
+    val top = LazyModule(new Trace(numHarts = 3, ingress = config))
+    top.block_buffer_depth_p shouldBe 64
+    top.core_stall_response_cycles_p shouldBe 16
+    for (encoder <- top.encoderVec) {
+      encoder.block_buffer_depth_p shouldBe 64; encoder.core_stall_response_cycles_p shouldBe 16
+    }
+    for (bad <- Seq(TraceIngressConfig(16, 16), TraceIngressConfig(64, Int.MaxValue)))
+      intercept[IllegalArgumentException](bad.reservedEntries(3))
+    intercept[IllegalArgumentException](TraceIngressConfig(0, 1))
+    intercept[IllegalArgumentException](TraceIngressConfig(16, -1))
+    println("[ingress-profile] 64 entries/16-cycle response/51-entry reserve透传至全部encoder，非法和整数溢出预算拒绝")
+  }
+
 }

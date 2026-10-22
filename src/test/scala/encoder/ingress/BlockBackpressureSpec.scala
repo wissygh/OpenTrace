@@ -25,10 +25,10 @@ private class StallStatusHarness extends Module {
 
 class BlockBackpressureSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
   behavior of "core stall and ingress capacity"
-  for (latency <- 0 to 2) {
-    it should s"preserve peak three-group input with $latency cycles of core stall response latency" in {
-      test(new BlockBuffer(latency)) { d =>
-        println(s"[core-stall] 响应延迟=$latency：峰值 3 group/拍，先阻塞 consumer，再交替入队/出队并回绕")
+  for ((latency, depth) <- Seq((0, 16), (1, 16), (2, 16), (16, 64), (16, 65))) {
+    it should s"preserve peak three-group input with $latency cycles of core stall response latency and depth $depth" in {
+      test(new BlockBuffer(latency, depth)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+        println(s"[core-stall] 响应延迟=$latency：峰值 3 group/拍，depth=$depth，先阻塞 consumer，再交替入队/出队并回绕")
         d.io.fromCore.priv.poke(Priv.M); d.io.fromCore.time.poke(0.U)
         d.io.fromCore.context.poke(0.U); d.io.fromCore.ctype.poke(Ctype.None)
         d.io.fromCore.cause.poke(0.U); d.io.fromCore.tval.poke(0.U)
@@ -40,11 +40,12 @@ class BlockBackpressureSpec extends AnyFlatSpec with ChiselScalatestTester with 
           b.bits.trigNotify.poke(false.B); b.bits.sijump.foreach(_.poke(false.B))
         }
         d.io.deqReady.poke(false.B); d.reset.poke(true.B); d.clock.step(); d.reset.poke(false.B)
-        val expected = mutable.Queue[Int]()
+        val expected = mutable.Queue[BigInt]()
         val delayed = mutable.Queue.fill(latency)(false)
-        var pc = 0x1000
+        val base = BigInt("80001000", 16)
+        var pc = base
         var stalled = 0
-        for (cycle <- 0 until 180) {
+        for (cycle <- 0 until 360) {
           val stall = d.io.bufferIsFull.peek().litToBoolean
           if (stall) stalled += 1
           val effective = if (latency == 0) stall else { delayed.enqueue(stall); delayed.dequeue() }
@@ -65,7 +66,7 @@ class BlockBackpressureSpec extends AnyFlatSpec with ChiselScalatestTester with 
         expected shouldBe empty
         stalled should be > 0
         d.io.empty.expect(true.B)
-        println(s"[core-stall] 延迟=$latency：${(pc - 0x1000) / 4} 条 group 全部顺序一致，无 trace loss")
+        println(s"[core-stall] 延迟=$latency：${(pc - base) / 4} 条 group 全部顺序一致，无 trace loss")
       }
     }
   }

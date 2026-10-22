@@ -49,7 +49,7 @@ def check(directory):
         result['packet_formats'] = sorted({f'{p["fields"]["format"]}' +
             (str(p['fields']['subformat']) if p['fields']['format'] == 3 else '') for p in packets})
         result['support_statuses'] = [e['qual_status'] for e in events if e['kind'] == 'support']
-        contract = {'controls': [0, 1, 1, 1, 0, 1, 1], 'stall': [0, 1], 'overflow': [0, 2, 1]}
+        contract = {'controls': [0, 1, 1, 1, 0, 1, 1], 'stall': [0, 1], 'stall-16': [0, 1], 'overflow': [0, 2, 1]}
         if root.name in contract and result['support_statuses'] != contract[root.name]:
             raise ValueError(f'acceptance support sequence differs: {result["support_statuses"]}')
         if any(e['source_id'] != 0 or e['hart_id'] != 0 for e in events):

@@ -30,7 +30,7 @@ def ports(source):
     return result
 
 
-def main(directory='build/rtl', include_smem=False, include_hpm=False, include_pib=False, include_limits=False):
+def main(directory='build/rtl', include_smem=False, include_hpm=False, include_pib=False, include_limits=False, include_ingress=False):
     directory = Path(directory)
     configurations = [('tl', 1, False), ('axi', 1, False), ('apb', 1, False),
                       ('tl-2hart-sram', 2, False), ('axi-2hart-sram', 2, False),
@@ -43,6 +43,8 @@ def main(directory='build/rtl', include_smem=False, include_hpm=False, include_p
         configurations += [('tl-2hart-pib', 2, False), ('axi-2hart-pib', 2, False), ('apb-2hart-pib', 2, False)]
     if include_limits:
         configurations += [('tl-3hart-sram', 3, False), ('tl-16hart-sram', 16, False)]
+    if include_ingress:
+        configurations += [('tl-1hart-ingress', 1, False)]
     manifest = []
     for name, harts, atb in configurations:
         top = directory / name / 'Trace.sv'
@@ -139,4 +141,4 @@ def main(directory='build/rtl', include_smem=False, include_hpm=False, include_p
 if __name__ == '__main__':
     main(sys.argv[1] if len(sys.argv) > 1 else 'build/rtl', include_smem='--smem' in sys.argv[2:],
          include_hpm='--hpm' in sys.argv[2:], include_pib='--pib' in sys.argv[2:],
-         include_limits='--limits' in sys.argv[2:])
+         include_limits='--limits' in sys.argv[2:], include_ingress='--ingress' in sys.argv[2:])

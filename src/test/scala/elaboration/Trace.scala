@@ -107,3 +107,15 @@ object TracePIBMain extends App {
     println(s"[PIB-rtl] ${bus.busName} 双 hart -> PIB 独占输出生成完成")
   }
 }
+
+/** Platform ingress budget selected for the current XiangShan Default Top. */
+object TraceIngressMain extends App {
+  implicit val p: Parameters = Parameters.empty
+  val top = LazyModule(new Trace(BusType.TL, ingress = TraceIngressConfig(64, 16)))
+  (new ChiselStage).execute(
+    Array("--target-dir", "./build/rtl/tl-1hart-ingress", "--split-verilog"),
+    Seq(ChiselGeneratorAnnotation(() => top.module),
+      FirtoolOption("--disable-all-randomization"), FirtoolOption("--disable-annotation-unknown"),
+      circt.stage.CIRCTTargetAnnotation(circt.stage.CIRCTTarget.SystemVerilog)))
+  println("[ingress-rtl] 实际TL/SRAM顶层64-entry raw queue、16-cycle响应、51-entry余量生成完成")
+}

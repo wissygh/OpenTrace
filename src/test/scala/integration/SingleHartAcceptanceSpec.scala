@@ -9,13 +9,14 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.nio.file.{Files, Paths}
 import trace.Control2BusRegBundle
+import trace.TraceIngressConfig
 import trace.interface._
 import InstructionReference._
 
 /** Single-clock functional acceptance; independent-domain/reset behavior remains
   * covered by the actual four-clock TraceSystemSpec, rather than assumed here.
   */
-private class SingleHartAcceptanceHarness extends Module {
+private class SingleHartAcceptanceHarness(ingress: TraceIngressConfig = TraceIngressConfig()) extends Module {
   implicit val p: Parameters = Parameters.empty
   val io = IO(new Bundle {
     val bus = new Control2BusRegBundle
@@ -23,7 +24,7 @@ private class SingleHartAcceptanceHarness extends Module {
     val toCore = Output(new ToCore)
     val transfer = Input(Bool())
   })
-  val encoder = withReset(reset.asAsyncReset) { Module(LazyModule(new Encoder(0x20000000)).module) }
+  val encoder = withReset(reset.asAsyncReset) { Module(LazyModule(new Encoder(0x20000000, ingress = ingress)).module) }
   val funnel = withReset(reset.asAsyncReset) { Module(LazyModule(new Funnel(0x20010000)).module) }
   val ram = withReset(reset.asAsyncReset) { Module(LazyModule(new SRAM(0x20040000)).module) }
   val components = Seq(encoder -> 0, funnel -> 1, ram -> 4)
@@ -153,25 +154,27 @@ class SingleHartAcceptanceSpec extends AnyFlatSpec with ChiselScalatestTester wi
       println("[single-acceptance][4/4] build/validation/single-hart-acceptance/controls，下一步decoder完整指令对拍")
     }
   }
-  it should "retain every offered retirement when a bounded core obeys stall during downstream backpressure" in {
-    test(new SingleHartAcceptanceHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+  for (latency <- Seq(1, 16)) {
+  it should s"retain every offered retirement when a bounded core obeys stall with $latency cycle feedback" in {
+    test(new SingleHartAcceptanceHarness(TraceIngressConfig(if (latency == 1) 16 else 64, latency))).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       initialize(d)
       write(d, 0x40000, 0x103); write(d, 0x10000, 3); write(d, 0, 0x2007 | (15 << 20))
       d.clock.step(30); d.io.transfer.poke(false.B)
       val g = d.io.core.blocks(0)
       g.bits.iaddr.poke(pc(0x1000).U); g.bits.itype.poke(Itype.OtherUninferableJump)
       var offered = 0; var stalled = 0; var cycles = 0
-      var delayedStall = false
+      val delayed = scala.collection.mutable.Queue.fill(latency)(false)
       while (offered < 100) {
         assert(cycles < 6000, "bounded-stall core did not finish")
         d.io.transfer.poke((cycles >= 280 && cycles % 17 > 4).B)
         val stall = d.io.toCore.stall.peek().litToBoolean
         // One complete additional cycle may arrive after a stall is observed.
-        val valid = !delayedStall
+        delayed.enqueue(stall)
+        val valid = !delayed.dequeue()
         g.valid.poke(valid.B)
         if (valid) offered += 1
         if (stall) stalled += 1
-        d.clock.step(); delayedStall = stall; cycles += 1
+        d.clock.step(); cycles += 1
       }
       g.valid.poke(false.B); d.io.transfer.poke(true.B); d.clock.step(300)
       val bytes = capture(d)
@@ -187,9 +190,11 @@ class SingleHartAcceptanceSpec extends AnyFlatSpec with ChiselScalatestTester wi
       val code = Array.fill[Byte](4)(0)
       val word = 0x28067
       for (i <- 0 until 4) code(i) = ((word >> (i * 8)) & 255).toByte
-      saveCapture("stall", bytes, code, Seq.fill(offered)(pc(0x1000)), model.packets.toSeq)
-      println(s"[single-acceptance-stall] ${offered}条独立输入退休/${stalled}个stall周期/1拍反馈延迟，完整组件wire一致、drop/loss=0，恢复后全部排空")
+      saveCapture(if (latency == 1) "stall" else "stall-16", bytes, code, Seq.fill(offered)(pc(0x1000)), model.packets.toSeq)
+      println(s"[single-acceptance-stall] ${offered}条独立输入退休/${stalled}个stall周期/${latency}拍反馈延迟，完整组件wire一致、drop/loss=0，恢复后全部排空")
     }
+  }
+
   }
 
   it should "report actual ingress loss after old packets and resume with a fresh source synchronization" in {
