@@ -124,4 +124,59 @@ class XiangShanIngressSpec extends AnyFlatSpec with ChiselScalatestTester with M
       }
     }
   }
+  it should "preserve variable-sized ordinary ranges mixed with branches under real registered feedback" in {
+    val root = Paths.get(sys.env("MILL_WORKSPACE_ROOT"))
+    val rtl = root.resolve("delp/XiangShan-trace/build/rtl/TraceBuffer.sv")
+    test(new XSPipelineIngressHarness(rtl.toString, TraceIngressConfig(64, 16)))
+        .withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+      d.clock.setTimeout(20000)
+      d.io.consume.poke(false.B)
+      def clear(): Unit = d.io.rob.foreach(_.valid.poke(false.B))
+      for (b <- d.io.rob) {
+        b.valid.poke(false.B); b.bits.ftqIdx.value.poke(0.U); b.bits.ftqOffset.poke(0.U)
+        b.bits.tracePipe.itype.poke(0.U); b.bits.tracePipe.iretire.poke(0.U); b.bits.tracePipe.ilastsize.poke(false.B)
+      }
+      d.reset.poke(true.B); d.clock.step(3); d.reset.poke(false.B)
+      val expected = scala.collection.mutable.ArrayBuffer.empty[(BigInt, Int)]
+      val actual = scala.collection.mutable.ArrayBuffer.empty[(BigInt, Int)]
+      val random = new scala.util.Random(20261022)
+      var offered = 0
+      var totalHalfwords = 0
+      for (cycle <- 0 until 2500) {
+        val valid = offered < 300 && !d.io.blocked.peek().litToBoolean
+        clear()
+        if (valid) {
+          val n = 1 + random.nextInt(8)
+          var start = 0
+          var count = 0
+          for (i <- 0 until n) {
+            val kind = if (i == n-1 || random.nextInt(3) == 0) 5 else 0
+            val halves = 1 + random.nextInt(4)
+            val tag = (totalHalfwords & 1023)
+            val b = d.io.rob(i)
+            b.valid.poke(true.B); b.bits.ftqIdx.value.poke((tag / 16).U); b.bits.ftqOffset.poke((tag % 16).U)
+            b.bits.tracePipe.itype.poke(kind.U); b.bits.tracePipe.iretire.poke(halves.U)
+            b.bits.tracePipe.ilastsize.poke(false.B)
+            if (count == 0) start = tag
+            count += halves; totalHalfwords += halves
+            if (kind != 0) {
+              expected += ((BigInt("80010000", 16) + start * 4, count)); count = 0
+            }
+          }
+          offered += 1
+        }
+        val consume = cycle >= 160 && cycle % 5 != 0
+        d.io.consume.poke(consume.B); d.io.dropped.expect(0.U)
+        if (consume && d.io.head.valid.peek().litToBoolean) {
+          d.io.head.traceLost.expect(false.B)
+          actual += ((d.io.head.iaddr.peek().litValue, d.io.head.iretire.peek().litValue.toInt))
+        }
+        d.clock.step()
+      }
+      offered shouldBe 300
+      actual.toSeq shouldBe expected.toSeq
+      println(s"[XS-ingress-mixed] ${expected.size}个可变普通范围/分支group在实际TraceBuffer与64/16反馈下全部一致")
+    }
+  }
+
 }
