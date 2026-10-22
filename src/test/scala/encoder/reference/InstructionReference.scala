@@ -49,6 +49,12 @@ private[component] object InstructionReference {
     def close(status: Int = 1): Unit = if (segment.nonEmpty) {
       flush(); packets += ETraceReference.support(source, fullAddress = fullAddress, status = status)
     }
+    def disable(): Unit = {
+      val hadTrace = segment.nonEmpty
+      flush()
+      packets += ETraceReference.support(source, fullAddress = fullAddress, status = if (hadTrace) 1 else 0, tracing = false)
+    }
+    def enable(): Unit = packets += ETraceReference.support(source, fullAddress = fullAddress)
     private def flush(ending: Boolean = true): Unit = {
       if (segment.isEmpty) return
       val input = segment.toVector
@@ -107,7 +113,9 @@ private[component] object InstructionReference {
         } else if (sync && !pendingBefore) synchronize(b)
         else {
           if (b.ctype == 1) emit(ETraceReference.context(source, b.context, time = b.time, privilege = b.privilege))
-          if (previous.exists(isJump)) address(b, beforeSync = (end && ending) || next.exists(n => isTrap(n) || boundary(b, n)) || sync)
+          // Section 7.6.2: notify distinguishes a non-target notification;
+          // an instruction already reported as an indirect target keeps notify=0.
+          if (previous.exists(isJump)) address(b.copy(notification = false), beforeSync = (end && ending) || next.exists(n => isTrap(n) || boundary(b, n)) || sync)
           else if (b.notification || end || sync || next.exists(n => isTrap(n) || boundary(b, n))) address(b)
           else if (history.size == 31) { emit(ETraceReference.branchOnly(source, history)); history = Vector.empty }
         }
