@@ -3,6 +3,8 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import shutil
+import os
+from .capture_layout import CaptureLayout
 from .execution import unpack
 from .image import signed
 
@@ -36,8 +38,8 @@ def write_jsonl(path, rows):
 class DecodeArtifacts:
     """Attach to framing and execution; flush each record for failure diagnosis."""
     def __init__(self, directory, overwrite=False):
-        self.directory = Path(directory)
-        self.directory.mkdir(parents=True, exist_ok=True)
+        self.layout = CaptureLayout(directory).create()
+        self.directory = self.layout.dut
         names = DECODE_REPORT_FILES
         if not overwrite and any((self.directory / name).exists() for name in names):
             raise ValueError('decoder artifact files already exist; use a new output directory')
@@ -57,10 +59,10 @@ class DecodeArtifacts:
     def snapshot(self, capture, config):
         """Copy capture/config/images, retaining a self-contained decode config."""
         capture, config = Path(capture).resolve(), Path(config).resolve()
-        if capture != (self.directory / 'capture.bin').resolve():
-            shutil.copyfile(capture, self.directory / 'capture.bin')
+        if capture != (self.directory / 'trace.bin').resolve():
+            shutil.copyfile(capture, self.directory / 'trace.bin')
         data = json.loads(config.read_text())
-        snapshots = self.directory / 'workload'
+        snapshots = self.layout.workload / 'images'
         snapshots.mkdir(exist_ok=True)
         copied = {}
 
@@ -70,17 +72,20 @@ class DecodeArtifacts:
                     continue
                 original = (config.parent / description[field]).resolve()
                 if original not in copied:
-                    target = snapshots / f'{len(copied):02d}-{original.name}'
-                    shutil.copyfile(original, target)
-                    copied[original] = target.relative_to(self.directory).as_posix()
+                    if original.is_relative_to(self.layout.workload.resolve()):
+                        target = original
+                    else:
+                        target = snapshots / f'{len(copied):02d}-{original.name}'
+                        shutil.copyfile(original, target)
+                    copied[original] = Path(os.path.relpath(target, self.directory)).as_posix()
                 description[field] = copied[original]
             for context in description.get('contexts', {}).values():
                 image(context)
 
         for source in data['sources'].values():
             image(source)
-        write_json(self.directory / 'capture-config.json', data)
-        write_json(self.directory / 'inputs.json', {'capture': str(capture), 'config': str(config),
+        write_json(self.directory / 'trace.json', data)
+        write_json(self.layout.workload / 'inputs.json', {'capture': str(capture), 'config': str(config),
                    'workload': [{'original': str(path), 'snapshot': target} for path, target in copied.items()]})
 
     def frame(self, offset, raw, packet):
