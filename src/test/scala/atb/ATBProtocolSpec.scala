@@ -151,4 +151,26 @@ class ATBProtocolSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       d.io.empty.expect(true.B)
     }
   }
+
+  it should "clamp an empty disabled transmitter and hold new packets until reenabled" in {
+    test(new TraceATBAdapter) { d =>
+      d.io.asyncFreq.poke(0.U); initialize(d)
+      d.io.enable.poke(false.B); d.clock.step(3)
+      d.io.atbm.af.ready.expect(true.B); d.io.upstream.flushReq.expect(false.B)
+      d.io.in.valid.poke(true.B); d.io.in.bits.data.poke(0x1234.U)
+      d.io.in.bits.bytes.poke(1.U); d.io.in.bits.last.poke(true.B); d.io.in.bits.packetBytes.poke(2.U)
+      d.io.atbm.at.ready.poke(true.B); d.io.atbm.af.valid.poke(true.B)
+      for (_ <- 0 until 5) {
+        d.io.in.ready.expect(false.B); d.io.atbm.at.valid.expect(false.B)
+        d.io.atbm.af.ready.expect(true.B); d.io.upstream.flushReq.expect(false.B); d.clock.step()
+      }
+      d.io.atbm.af.valid.poke(false.B); d.clock.step(2)
+      d.io.enable.poke(true.B); d.io.in.ready.expect(true.B); d.clock.step()
+      d.io.in.valid.poke(false.B)
+      d.io.atbm.at.valid.expect(true.B); d.io.atbm.at.bits.data.expect(0x1234.U)
+      d.io.atbm.at.bits.bytes.expect(1.U); d.io.atbm.at.bits.id.expect(0x20.U)
+      d.clock.step(); d.io.atbm.at.valid.expect(false.B); d.io.empty.expect(true.B)
+      println("[ATB-disable] 禁用空transmitter按IHI0032C确认AF，不接新packet；重新Enable只传一次")
+    }
+  }
 }

@@ -210,4 +210,36 @@ class FifoSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
       dut.io.packetEnq.valid.poke(false.B)
     }
   }
+
+  it should "discard reset epochs and never expose stale tails or nonzero invalid lanes" in {
+    test(new Fifo(FifoParam(true, 13, 8, 4))) { d =>
+      d.io.control.flushReq.poke(false.B); d.io.control.syncReq.poke(false.B)
+      d.io.atbm.ready.poke(false.B); d.io.packetEnq.valid.poke(false.B)
+      d.io.packetEnq.bits.len.poke(7.U); d.io.packetEnq.bits.data.foreach(_.poke(0xee.U))
+      d.reset.poke(true.B); d.clock.step(2); d.reset.poke(false.B)
+      for (resetAfterFirstBeat <- Seq(false, true)) {
+        d.io.packetEnq.valid.poke(true.B); d.io.packetEnq.ready.expect(true.B); d.clock.step()
+        d.io.packetEnq.valid.poke(false.B)
+        d.io.atbm.valid.expect(true.B)
+        if (resetAfterFirstBeat) {
+          d.io.atbm.ready.poke(true.B); d.clock.step(); d.io.atbm.ready.poke(false.B)
+          d.io.atbm.bits.bytes.expect(2.U); d.io.atbm.bits.last.expect(true.B)
+        }
+        d.io.control.flushReq.poke(true.B); d.clock.step()
+        d.io.control.flushAck.expect(false.B)
+        d.reset.poke(true.B); d.clock.step(2)
+        d.io.control.flushReq.poke(false.B); d.reset.poke(false.B)
+        d.io.atbm.valid.expect(false.B); d.io.ctrl.fifoIsEmpty.expect(true.B)
+        d.io.packetEnq.bits.len.poke(1.U); d.io.packetEnq.bits.data(0).poke(0x21.U)
+        d.io.packetEnq.valid.poke(true.B); d.clock.step(); d.io.packetEnq.valid.poke(false.B)
+        d.io.atbm.bits.data.expect(0x21.U); d.io.atbm.bits.bytes.expect(0.U)
+        d.io.atbm.bits.packetBytes.expect(1.U); d.io.atbm.bits.last.expect(true.B)
+        d.clock.step(3); d.io.atbm.bits.data.expect(0x21.U)
+        d.io.atbm.ready.poke(true.B); d.clock.step(); d.io.atbm.ready.poke(false.B)
+        d.io.atbm.valid.expect(false.B); d.io.ctrl.fifoIsEmpty.expect(true.B)
+        d.io.packetEnq.bits.len.poke(7.U); d.io.packetEnq.bits.data.foreach(_.poke(0xee.U))
+      }
+      println("[FIFO-reset] 首beat/尾beat反压和flush中reset均丢弃旧epoch，新短包无旧tail和无效lane泄漏")
+    }
+  }
 }
