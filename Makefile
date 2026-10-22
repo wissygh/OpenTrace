@@ -30,7 +30,7 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart test-xiangshan-sba
+.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart test-xiangshan-sba test-packet-types
 
 XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
 XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
@@ -38,6 +38,11 @@ XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
 test-xiangshan-sba:
 	@echo "[XS-SBA] 启用已有emu的JTAG；外部SBA配置/停止/读SRAM，再与ROB采样对拍"
 	python3 -m decoder.tests.run_xiangshan_sba --emu "$(XIANGSHAN_EMU)" --output "$(XIANGSHAN_SBA_OUTPUT)"
+
+test-packet-types:
+	@echo "[mixed-packets] 3种seed反压：全部instruction格式→真实FIFO/SRAM→独立wire/PC参考与decoder"
+	mill -i OpenTrace.test.testOnly trace.component.PacketMixedFormatsSpec
+	python3 -m decoder.tests.check_mixed_capture build/validation/mixed-packets
 
 test-single-hart:
 	@echo "[single-hart] 实际Trace/SRAM，SoCMisc CPU/SBA配置与decoder完整执行流"
@@ -67,7 +72,7 @@ check-rtl:
 
 test-encoder:
 	@echo "[encoder-golden] 1/3 独立位布局、CSR 生命周期与实际 PacketGen 对拍"
-	mill -i OpenTrace.test.testOnly trace.component.ETraceCodecSpec trace.component.PacketGenSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.PacketFormat3Spec trace.component.PacketSupportSpec trace.component.PacketJumpCacheSpec trace.component.PacketBranchPredictionSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec
+	mill -i OpenTrace.test.testOnly trace.component.ETraceCodecSpec trace.component.PacketGenSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.PacketFormat3Spec trace.component.PacketSupportSpec trace.component.PacketJumpCacheSpec trace.component.PacketBranchPredictionSpec trace.component.PacketMixedFormatsSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec
 	@echo "[encoder-golden] 2/3 实际 RTL 捕获交给 decoder，比较退休 PC 前缀"
 	python3 -m decoder.tests.check_packetgen_capture build/validation
 	@echo "[encoder-golden] 3/3 停止/丢失/异常/context/support 捕获，比较完整退休流"
@@ -78,6 +83,7 @@ test-encoder:
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-support
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-jump-cache
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-branch-pred
+	python3 -m decoder.tests.check_mixed_capture build/validation/mixed-packets
 
 check-smem-rtl:
 	@echo "[SMEM-rtl] TL/AXI/APB 双 hart SMEM，显式测试地址窗口"
@@ -131,7 +137,7 @@ test-decoder:
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.PacketFormat3Spec trace.component.PacketSupportSpec trace.component.PacketJumpCacheSpec trace.component.PacketBranchPredictionSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SRAMControlSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec trace.component.FunnelInputSpec trace.component.FunnelDrainSpec trace.component.TraceATBAdapterSpec trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.TraceSystemSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.control.CoreHPMSpec trace.control.PIBControlSpec trace.TraceParametersSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.PacketFormat3Spec trace.component.PacketSupportSpec trace.component.PacketJumpCacheSpec trace.component.PacketBranchPredictionSpec trace.component.PacketMixedFormatsSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SRAMControlSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec trace.component.FunnelInputSpec trace.component.FunnelDrainSpec trace.component.TraceATBAdapterSpec trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.TraceSystemSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.control.CoreHPMSpec trace.control.PIBControlSpec trace.TraceParametersSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核 SRAM 捕获：启动与完整执行流解码"
@@ -152,3 +158,4 @@ test-trace:
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-support
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-jump-cache
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-branch-pred
+	python3 -m decoder.tests.check_mixed_capture build/validation/mixed-packets
