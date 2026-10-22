@@ -31,7 +31,7 @@ def check(directory):
         expected = [number(pc) for pc in json.loads((ref / 'retired-pcs.json').read_text())]
         actual = [event['pc'] for event in events if event['kind'] == 'instruction']
         image_base = number(json.loads((dut / 'trace.json').read_text())['sources']['3']['base'])
-        result['instruction_address_range'] = {'minimum_pc': min(actual), 'maximum_pc': max(actual),
+        result['instruction_address_range'] = {'minimum_pc': hex(min(actual)), 'maximum_pc': hex(max(actual)),
                                                'strictly_above': '0x80000000'}
         if any(pc <= 0x80000000 for pc in (*actual, *expected)):
             raise ValueError('mixed-format instruction PCs must be strictly above 0x80000000')

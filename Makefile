@@ -30,25 +30,43 @@ check-format:
 reformat:
 	mill OpenTrace.reformat
 
-.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart test-xiangshan-sba test-packet-types test-acceptance
+.PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart test-xiangshan-sba test-packet-types test-acceptance test-xiangshan-sba-pressure test-xiangshan-ingress check-ingress-rtl check-rtl-lint
 
 XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
 XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
+XIANGSHAN_SBA_PRESSURE_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-pressure-run
 
 test-xiangshan-sba:
 	@echo "[XS-SBA] 启用已有emu的JTAG；外部SBA配置/停止/读SRAM，再与ROB采样对拍"
 	python3 -m decoder.tests.run_xiangshan_sba --emu "$(XIANGSHAN_EMU)" --output "$(XIANGSHAN_SBA_OUTPUT)"
+
+test-xiangshan-sba-pressure:
+	@echo "[XS-SBA-pressure] 现有emu：外部SBA延迟启用SRAM，验证真实core stall与ROB退休流"
+	python3 -m decoder.tests.run_xiangshan_sba --emu "$(XIANGSHAN_EMU)" --output "$(XIANGSHAN_SBA_PRESSURE_OUTPUT)" --pressure
 
 test-packet-types:
 	@echo "[mixed-packets] 3种seed反压：全部instruction格式→真实FIFO/SRAM→独立wire/PC参考与decoder"
 	mill -i OpenTrace.test.testOnly trace.component.PacketMixedFormatsSpec
 	python3 -m decoder.tests.check_mixed_capture build/validation/mixed-packets
 
+test-xiangshan-ingress:
+	@echo "[XS-ingress] 复用用户现有TraceBuffer.sv，比较默认与64-entry/16-cycle预算；不编emu"
+	mill -i OpenTrace.test.testOnly trace.component.XiangShanIngressSpec
+
+check-ingress-rtl:
+	mill -i OpenTrace.test.runMain trace.TraceIngressMain
+	python3 -m decoder.tests.check_generated_rtl build/rtl --smem --hpm --pib --limits --ingress
+
+check-rtl-lint:
+	@echo "[rtl-lint] 根据生成manifest检查所有profile的pin连接与宽度截断"
+	python3 -m decoder.tests.lint_generated_rtl
+
 test-acceptance:
 	@echo "[single-acceptance] 实际Encoder/Funnel/SRAM：控制事件、1拍stall反馈、真实overflow→decoder"
 	mill -i OpenTrace.test.testOnly trace.component.SingleHartAcceptanceSpec
 	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/controls
 	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/stall
+	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/stall-16
 	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/overflow
 
 test-single-hart:
@@ -158,6 +176,7 @@ test-trace:
 	python3 -m decoder.tests.check_multihart_flow build/validation two-hart-pib
 	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/controls
 	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/stall
+	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/stall-16
 	python3 -m decoder.tests.check_acceptance_capture build/validation/single-hart-acceptance/overflow
 	@echo "[trace-test] 4/4 分支/跳转/压缩指令 RTL->decoder 执行流对拍"
 	python3 -m decoder.tests.check_packetgen_capture build/validation

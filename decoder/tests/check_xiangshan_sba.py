@@ -7,6 +7,7 @@ from decoder.__main__ import load_config, number
 from decoder.artifacts import DECODE_REPORT_FILES, DecodeArtifacts, write_json, write_jsonl
 from decoder.encapsulation import DecodeError
 from decoder.capture_layout import CaptureLayout
+from .xiangshan_sba_scenarios import reference
 
 
 COMMIT = re.compile(r'\[opentrace-commit\]\s+hart=\s*(\d+)\s+cycle=\s*(\d+)\s+'
@@ -55,7 +56,7 @@ def check_stages(directory, result):
     metadata = json.loads(layout.input('dut', 'metadata.json').read_text())
     symbols = json.loads(layout.input('workload', 'symbols.json').read_text())
     start, done = number(symbols['trace_begin']), number(symbols['trace_done'])
-    result['instruction_region'] = {'begin_pc': start, 'end_pc_exclusive': done,
+    result['instruction_region'] = {'trace_begin': start, 'trace_done': done,
                                     'strictly_above': '0x80000000'}
     if not 0x80000000 < start < done:
         raise DecodeError('workload instruction range must be strictly above 0x80000000')
@@ -87,10 +88,12 @@ def check_stages(directory, result):
         for row in commits:
             output.write(f"{row['index']}\t{row['hart_id']}\t{row['cycle']}\t{row['slot']}\t{row['pc']:#x}\t{row['in_workload']}\n")
     result.update(rob_samples=len(selected), rob_pcs=[row['pc'] for row in selected])
-    expected = [start, start + 2] + [start + x for _ in range(4) for x in (4, 6, 8)]
-    expected += [start + x for x in (12, 16, 20, 28, 30, 24, 26)]
+    scenario_path = layout.workload / 'scenario.json'
+    scenario = json.loads(scenario_path.read_text())['scenario'] if scenario_path.exists() else 'basic'
+    expected_a0, expected = reference(symbols, scenario)
+    result['scenario'] = scenario
     write_json(layout.diff / 'expected-pcs.json', {'expected_pcs': expected,
-               'basis': 'Fixed assembly workload with four loop iterations; separate from the independent ROB reference.'})
+               'basis': 'Fixed assembly workload; separate from the independent ROB reference.'})
 
     result['stage'] = 'capture-metadata'
     if metadata['memory_access'] != 'sysbus':
@@ -99,8 +102,10 @@ def check_stages(directory, result):
         raise DecodeError('encoder reported dropped input or a loss marker')
     if any(metadata[name] & 0xb != 9 for name in ('encoder', 'funnel', 'sram')):
         raise DecodeError('components were not disabled and empty before capture')
-    if number(metadata['pc']) != done or metadata['a0'] != 18:
-        raise DecodeError('hart did not finish the workload at its hardware breakpoint with a0=18')
+    if number(metadata['pc']) != done or metadata['a0'] != expected_a0:
+        raise DecodeError('hart did not finish the workload at its hardware breakpoint with the expected a0')
+    if scenario == 'pressure' and not (metadata['pressure_stalls_before_release'] > 0 and metadata['stall_cycles'] > 0):
+        raise DecodeError('pressure run lacks actual core-stall evidence before sink release')
     wp = metadata['wp']
     if not 0 < wp < 0x400 or wp & 3 or metadata['rp'] != wp or len(capture) != wp:
         raise DecodeError('SRAM Wrap/alignment/length/read-pointer mismatch')

@@ -51,7 +51,7 @@ jobs:
         run: make check-format
 
       - name: Compile and validate all supported RTL profiles
-        run: make check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl
+        run: make check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl check-ingress-rtl
 
       - name: Preserve RTL and profile manifest
         if: always()

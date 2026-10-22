@@ -13,6 +13,7 @@ import sys
 from .check_xiangshan_sba import check
 from decoder.artifacts import write_json
 from decoder.capture_layout import CaptureLayout
+from .xiangshan_sba_scenarios import reference
 
 
 class RPC:
@@ -46,15 +47,16 @@ class RPC:
         self.socket.close()
 
 
-def collect(rpc, directory, symbols):
+def collect(rpc, directory, symbols, scenario='basic'):
     directory = Path(directory)
     layout = CaptureLayout(directory).create()
+    expected_a0, _ = reference(symbols, scenario)
 
     def read(address):
-        return int(rpc.run(f'read_memory 0x{address:x} 32 1').strip(), 0)
+        return int(rpc.run(f'read_memory 0x{address:x} 32 1 phys').strip(), 0)
 
     def write(address, value):
-        rpc.run(f'write_memory 0x{address:x} 32 {{0x{value:x}}}')
+        rpc.run(f'write_memory 0x{address:x} 32 {{0x{value:x}}} phys')
 
     def register(name):
         value = rpc.run(f'reg {name}')
@@ -72,14 +74,27 @@ def collect(rpc, directory, symbols):
             raise RuntimeError(f'component Active did not release: {address:#x}')
     write(0x20040020, 0)
     write(0x20000f04, 1)
-    write(0x20040000, 0x103)  # StopOnWrap, Enable, Active
+    write(0x20040000, 0x101 if scenario == 'pressure' else 0x103)  # delayed sink enable for pressure
     write(0x20010000, 3)
     write(0x20000000, 0x2007)  # InstStallEna, InstTracing, Enable, Active
     print('[XS-SBA][2/5] 外部resume纯workload→完成地址硬件断点halt', flush=True)
     rpc.run(f"resume 0x{symbols['trace_begin']:x}")
+    pressure_stalls = 0
+    if scenario == 'pressure':
+        print('[XS-SBA][pressure] SRAM暂不接纳；外部SBA轮询实际stall计数，再放开sink', flush=True)
+        for _ in range(20):
+            pressure_stalls = read(0x20000f20)
+            if pressure_stalls:
+                break
+        else:
+            raise RuntimeError('pressure workload never asserted trace stall')
+        if read(0x20000f10) or read(0x20000f18):
+            raise RuntimeError('core exceeded the actual trace stall budget before sink release')
+        write(0x20040000, 0x103)
     rpc.run('wait_halt 120000')
-    metadata = {'memory_access': 'sysbus', 'pc': register('pc'), 'a0': register('a0')}
-    if metadata['pc'] != symbols['trace_done'] or metadata['a0'] != 18:
+    metadata = {'memory_access': 'sysbus', 'pc': register('pc'), 'a0': register('a0'),
+                'scenario': scenario, 'pressure_stalls_before_release': pressure_stalls}
+    if metadata['pc'] != symbols['trace_done'] or metadata['a0'] != expected_a0:
         raise RuntimeError(f'workload did not finish correctly: {metadata}')
     print('[XS-SBA][3/5] SBA按encoder→Funnel→SRAM停止；轮询Disable/Empty', flush=True)
     for name, address in (('encoder', 0x20000000), ('funnel', 0x20010000), ('sram', 0x20040000)):
@@ -160,7 +175,15 @@ def run(args):
     layout = CaptureLayout(directory).create()
     logs = layout.dut / 'logs'; logs.mkdir()
     with (logs / 'runner.log').open('w') as output, redirect_stdout(Tee(sys.stdout, output)):
-        return run_stages(args, layout)
+        try:
+            result = run_stages(args, layout)
+            write_json(layout.dut / 'run-result.json', {'status': 'passed'})
+            return result
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            write_json(layout.dut / 'run-result.json', {'status': 'failed', 'error': str(exc)})
+            if not (layout.diff / 'comparison.json').exists():
+                write_json(layout.diff / 'comparison.json', {'status': 'failed', 'stage': 'capture', 'error': str(exc)})
+            raise
 
 
 def run_stages(args, layout):
@@ -177,7 +200,7 @@ def run_stages(args, layout):
         subprocess.run([args.cross_prefix + 'gcc', '-march=rv64imc_zicsr_zifencei', '-mabi=lp64',
                         '-mcmodel=medany', '-nostdlib', '-static', '-Wl,--no-relax',
                         '-Wl,-T,' + str(source_copy / 'workload.ld'),
-                        str(source_copy / 'sba-workload.S'), '-o', str(elf)],
+                        str(source_copy / ('sba-pressure.S' if args.pressure else 'sba-workload.S')), '-o', str(elf)],
                        stdout=build_log, stderr=subprocess.STDOUT, check=True)
         subprocess.run([args.cross_prefix + 'objcopy', '-O', 'binary', str(elf), str(binary)],
                        stdout=build_log, stderr=subprocess.STDOUT, check=True)
@@ -186,10 +209,13 @@ def run_stages(args, layout):
     with (layout.workload / 'workload.disasm').open('w') as disasm:
         subprocess.run([args.cross_prefix + 'objdump', '-d', '-S', str(elf)], stdout=disasm, check=True)
     symbols = {name: int(address, 16) for address, _, name in (line.split() for line in nm.splitlines())
-               if name in ('trace_begin', 'trace_done')}
-    if set(symbols) != {'trace_begin', 'trace_done'}:
+               if name in ('trace_begin', 'trace_done', 'trace_loop', 'trace_target')}
+    if not {'trace_begin', 'trace_done'} <= set(symbols):
         raise RuntimeError('workload ELF is missing its entry/exit symbols')
-    write_json(layout.workload / 'symbols.json', symbols)
+    write_json(layout.workload / 'symbols.json', {name: hex(value) for name, value in symbols.items()})
+    scenario = 'pressure' if args.pressure else 'basic'
+    reference(symbols, scenario)
+    write_json(layout.workload / 'scenario.json', {'scenario': scenario})
     rbb_port, tcl_port = free_port(), free_port()
     while tcl_port == rbb_port:
         tcl_port = free_port()
@@ -219,7 +245,7 @@ def run_stages(args, layout):
                     rpc = RPC(tcl_port, transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
-            collect(rpc, directory, symbols)
+            collect(rpc, directory, symbols, scenario)
         finally:
             if rpc is not None:
                 rpc.close()
@@ -237,6 +263,7 @@ def main():
     parser.add_argument('--emu', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--openocd', default='openocd')
+    parser.add_argument('--pressure', action='store_true', help='hold SRAM disabled until real core trace stall, then release')
     parser.add_argument('--cross-prefix', default='riscv64-unknown-elf-')
     args = parser.parse_args()
     try:

@@ -3,9 +3,11 @@ import json
 from pathlib import Path
 import tempfile
 from unittest.mock import Mock, patch
+from types import SimpleNamespace
 from decoder.encapsulation import DecodeError
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
-from decoder.tests.run_xiangshan_sba import RPC, listening
+from decoder.tests.run_xiangshan_sba import RPC, listening, run
+from decoder.tests.xiangshan_sba_scenarios import reference
 
 
 class XiangShanSBAChecks(unittest.TestCase):
@@ -28,6 +30,34 @@ class XiangShanSBAChecks(unittest.TestCase):
         matches = list(COMMIT.finditer(complete + partial))
         self.assertEqual(len(matches), 1)
         self.assertEqual(int(matches[0].group(4), 16), 0x80000008)
+
+    def test_pressure_reference_preserves_all_loop_iterations_and_instruction_sizes(self):
+        start = 0x80000008
+        symbols = {'trace_begin': hex(start), 'trace_done': hex(start + 26),
+                   'trace_loop': hex(start + 14), 'trace_target': hex(start + 18)}
+        a0, pcs = reference(symbols, 'pressure')
+        self.assertEqual((a0, len(pcs)), (80, 324))
+        self.assertEqual(pcs[:8], [start + x for x in (0, 2, 6, 10, 14, 18, 20, 22)])
+        self.assertEqual(pcs[-4:], pcs[4:8])
+        self.assertTrue(all(pc > 0x80000000 for pc in pcs))
+        symbols['trace_done'] = hex(start + 28)
+        with self.assertRaisesRegex(ValueError, 'layout changed'):
+            reference(symbols, 'pressure')
+
+    def test_build_failure_preserves_failed_capture_status_before_target_collection(self):
+        parent = Path(__file__).resolve().parents[2] / 'delp/tmp'
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as tmp:
+            output = Path(tmp) / 'run'
+            args = SimpleNamespace(output=output, emu=Path('/unused/emu'), pressure=False,
+                                   cross_prefix='opentrace-missing-cross-tool-', openocd='openocd')
+            with self.assertRaises(FileNotFoundError), patch('decoder.tests.run_xiangshan_sba.collect') as collect:
+                run(args)
+            collect.assert_not_called()
+            report = json.loads((output / 'diff/comparison.json').read_text())
+            self.assertEqual((report['status'], report['stage']), ('failed', 'capture'))
+            self.assertTrue((output / 'workload/logs/build.log').exists())
+            self.assertFalse((output / 'dut/trace.bin').exists())
 
     def test_rpc_handles_fragmented_and_coalesced_responses(self):
         connection = Mock()
