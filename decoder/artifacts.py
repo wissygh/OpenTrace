@@ -7,12 +7,13 @@ import os
 from .capture_layout import CaptureLayout
 from .execution import unpack
 from .image import signed
+from .report import STREAMS, TEXT_REPORT_FILES, render_record, packet_type, report_end
 
 
 PC_FIELDS = {'pc', 'decoded_pc', 'rob_pc', 'expected_pc', 'actual_pc', 'epc', 'reference_pc', 'reported_pc',
              'decoded_pcs', 'rob_pcs', 'expected_pcs', 'trace_begin', 'trace_done'}
-DECODE_REPORT_FILES = ('framing.jsonl', 'packets.jsonl', 'events.jsonl', 'instructions.jsonl',
-                       'instructions.tsv', 'decode-result.json')
+JSONL_REPORT_FILES = tuple(name + '.jsonl' for name in STREAMS)
+DECODE_REPORT_FILES = (*JSONL_REPORT_FILES, 'instructions.tsv', *TEXT_REPORT_FILES, 'decode-result.json')
 
 
 def readable(value, key=None):
@@ -44,8 +45,10 @@ class DecodeArtifacts:
         if not overwrite and any((self.directory / name).exists() for name in names):
             raise ValueError('decoder artifact files already exist; use a new output directory')
         self.files = {name: (self.directory / name).open('w') for name in names[:-1]}
+        self.record_counts = {name: 0 for name in JSONL_REPORT_FILES}
         self.files['instructions.tsv'].write('index\tpacket_index\tsource_id\thart_id\tpc\tinstruction\tsize\n')
         self.frames = {}
+        self.framing_packet_count = 0
         self.packet_index = 0
         self.instruction_index = 0
         self.nulls = 0
@@ -55,6 +58,11 @@ class DecodeArtifacts:
         output = self.files[name]
         output.write(json.dumps(readable(row), ensure_ascii=False, sort_keys=True) + '\n')
         output.flush()
+        stream = name.removesuffix('.jsonl')
+        pretty = self.files[stream + '.txt']
+        pretty.write(render_record(stream, readable(row), self.record_counts[name]))
+        pretty.flush()
+        self.record_counts[name] += 1
 
     def snapshot(self, capture, config):
         """Copy capture/config/images, retaining a self-contained decode config."""
@@ -96,7 +104,11 @@ class DecodeArtifacts:
         if packet is None:
             self.nulls += 1
         else:
-            row.update(source_id=packet.source_id, timestamp=packet.timestamp)
+            fmt = packet.payload[0] & 3
+            label = f'Format3{(packet.payload[0] >> 2) & 3}' if fmt == 3 else f'Format{fmt}'
+            row.update(source_id=packet.source_id, timestamp=packet.timestamp,
+                       packet_index=self.framing_packet_count, payload_type=label)
+            self.framing_packet_count += 1
             self.frames[id(packet)] = row
         self._line('framing.jsonl', row)
 
@@ -109,6 +121,7 @@ class DecodeArtifacts:
                    reference_pc=decoder.address, pc=decoder.pc, wire_fields=[])
         try:
             row['fields'] = unpack(packet.payload, decoder.profile, decoder.options, row['wire_fields'])
+            row['packet_type'], row['packet_meaning'] = packet_type(row['fields'])
             address = row['fields'].get('address')
             if address is not None:
                 aligned = signed(address, decoder.profile.address_width - decoder.profile.address_lsb) << decoder.profile.address_lsb
@@ -142,6 +155,8 @@ class DecodeArtifacts:
                 self.instruction_index += 1
 
     def finish(self, error=None):
+        for name in TEXT_REPORT_FILES:
+            self.files[name].write(report_end(error))
         for output in self.files.values():
             output.close()
         write_json(self.directory / 'decode-result.json', {'status': 'failed' if error else 'passed',
