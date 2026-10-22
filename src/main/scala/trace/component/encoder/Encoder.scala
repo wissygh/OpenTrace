@@ -8,21 +8,31 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Parameters
 import scala.util.matching.Regex.Match
 import trace.Control2BusRegBundle
+import trace.TraceIngressConfig
 import trace.TraceParameters
 import trace.control._
 import trace.interface._
 import utility.CircularQueuePtr
 import utility.HasCircularQueuePtrHelper
 
-class Encoder(baseAddr: Int, val enableHPM: Boolean = false)(implicit p: Parameters) extends ComponentBase(baseAddr) {
+class Encoder(
+    baseAddr:      Int,
+    val enableHPM: Boolean = false,
+    val ingress:   TraceIngressConfig = TraceIngressConfig()
+)(implicit p: Parameters) extends ComponentBase(baseAddr) {
 
-  override def supportHPM  = enableHPM
+  override def supportHPM                   = enableHPM
+  override def block_buffer_depth_p         = ingress.bufferEntries
+  override def core_stall_response_cycles_p = ingress.stallResponseCycles
+  ingress.reservedEntries(BlockNum)
   override lazy val module = new EncoderImp(this)(baseAddr)
 }
 
 class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extends ComponentBaseImp(wrapper)(baseAddr)
     with EncoderControl {
-  override def supportHPM = wrapper.enableHPM
+  override def supportHPM                   = wrapper.enableHPM
+  override def block_buffer_depth_p         = wrapper.ingress.bufferEntries
+  override def core_stall_response_cycles_p = wrapper.ingress.stallResponseCycles
   val io = IO(new Bundle {
     val fromCore = Input(new FromCore)
     val toCore   = Output(new ToCore)
@@ -42,7 +52,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     deqDataBytes = encoderAtbDataBeats
   )
 
-  val blockBuffer = Module(new BlockBuffer(core_stall_response_cycles_p))
+  val blockBuffer = Module(new BlockBuffer(core_stall_response_cycles_p, block_buffer_depth_p))
   val packetGen   = Module(new PacketGen)
   val fifo        = Module(new Fifo(fifoParam))
   val timestamp   = Module(new EncoderTimestampCounter)

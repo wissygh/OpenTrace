@@ -49,23 +49,28 @@ class Trace(
     val useAtbSink: Boolean = false,
     val smemWindow: Option[SMEMWindow] = None,
     val enableHPM:  Boolean = false,
-    val usePibSink: Boolean = false
+    val usePibSink: Boolean = false,
+    val ingress:    TraceIngressConfig = TraceIngressConfig()
 )(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
   require(!usePibSink || (!useAtbSink && smemWindow.isEmpty), "PIB is an exclusive output sink")
   require(!useAtbSink || smemWindow.isEmpty, "select only one output sink")
   require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
-  override def hart_num   = numHarts
-  override def supportHPM = enableHPM
+  override def hart_num                     = numHarts
+  override def supportHPM                   = enableHPM
+  override def block_buffer_depth_p         = ingress.bufferEntries
+  override def core_stall_response_cycles_p = ingress.stallResponseCycles
+  ingress.reservedEntries(BlockNum)
   validateImplementationParameters()
 
-  val encoderVec = (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i, enableHPM)))
-  val funnel     = LazyModule(new Funnel(funnelBaseAddr, numHarts))
-  val pib        = LazyModule(new PIB(pibBaseAddr, usePibSink))
-  val atb        = LazyModule(new ATBBridge(atbbridgeBaseAddr))
-  val ram        = Option.when(smemWindow.isEmpty)(LazyModule(new SRAM(ramSinkAddr)))
-  val smem       = smemWindow.map(window => LazyModule(new SMEM(ramSinkAddr, window)))
+  val encoderVec =
+    (0 until hart_num).map(i => LazyModule(new Encoder(encoderBaseAddr + ctrlMemStep * i, enableHPM, ingress)))
+  val funnel = LazyModule(new Funnel(funnelBaseAddr, numHarts))
+  val pib    = LazyModule(new PIB(pibBaseAddr, usePibSink))
+  val atb    = LazyModule(new ATBBridge(atbbridgeBaseAddr))
+  val ram    = Option.when(smemWindow.isEmpty)(LazyModule(new SRAM(ramSinkAddr)))
+  val smem   = smemWindow.map(window => LazyModule(new SMEM(ramSinkAddr, window)))
   val memory:     ComponentBase      = smem.getOrElse(ram.get)
   val components: Seq[ComponentBase] = encoderVec.toSeq ++ Seq(funnel, pib, atb, memory)
 

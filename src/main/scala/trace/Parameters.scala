@@ -6,6 +6,19 @@ import freechips.rocketchip.diplomacy.AddressSet
 import freechips.rocketchip.util._
 import trace.component.FifoParam
 
+/** Platform contract: after stall, a core may still send this many complete
+  * peak-width retirement cycles. The extra cycle covers threshold detection.
+  */
+case class TraceIngressConfig(bufferEntries: Int = 16, stallResponseCycles: Int = 1) {
+  require(bufferEntries > 0 && stallResponseCycles >= 0)
+  def reservedEntries(groupsPerCycle: Int): Int = {
+    require(groupsPerCycle > 0)
+    val reserve = BigInt(groupsPerCycle) * (BigInt(stallResponseCycles) + 1)
+    require(reserve <= bufferEntries, "ingress buffer cannot cover the configured core stall response")
+    reserve.toInt
+  }
+}
+
 trait TraceParameters {
 
   /** Fail before RTL generation if a configuration exceeds the implemented
@@ -29,7 +42,7 @@ trait TraceParameters {
     require(funnelAtbDataWidth == 32, "implemented SRAM and control data words are 32 bits")
     require(buffer_num > 1 && buffer_ptr_width == log2Up(buffer_num))
     require(core_stall_response_cycles_p >= 0 && BlockNum > 0 &&
-      block_buffer_depth_p >= BlockNum * (core_stall_response_cycles_p + 1))
+      BigInt(block_buffer_depth_p) >= BigInt(BlockNum) * (BigInt(core_stall_response_cycles_p) + 1))
     require(filter_trap_depth_bits_p > 0 && filter_trap_depth_bits_p <= 16)
     require(f0s_width_p == 1 && cache_size_p >= 1 && cache_size_p <= 10)
     require(bpred_size_p >= 1 && bpred_size_p <= 10)

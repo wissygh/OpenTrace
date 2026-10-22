@@ -3,6 +3,7 @@ package trace.component
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
+import trace.TraceIngressConfig
 import trace.TraceParameters
 import trace.control._
 import trace.interface._
@@ -11,10 +12,12 @@ import utility.HasCircularQueuePtrHelper
 import utils.Compress
 import utils.Lzc
 
-class BlockBuffer(stallResponseCycles: Int = 1) extends Module with TraceParameters with HasCircularQueuePtrHelper {
+class BlockBuffer(stallResponseCycles: Int = 1, entries: Int = 16)
+    extends Module with TraceParameters with HasCircularQueuePtrHelper {
+  override def block_buffer_depth_p = entries
+  require(entries > 0)
   require(stallResponseCycles >= 0)
-  private val stallReserve = BlockNum * (stallResponseCycles + 1)
-  require(stallReserve <= block_buffer_depth_p, "BlockBuffer cannot cover configured core stall latency")
+  private val stallReserve = TraceIngressConfig(entries, stallResponseCycles).reservedEntries(BlockNum)
 
   val io = IO(new Bundle {
     val fromCore       = Input(new FromCore)
