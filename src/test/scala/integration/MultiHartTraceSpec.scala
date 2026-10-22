@@ -108,7 +108,7 @@ class MultiHartTraceSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
   behavior of "multi-hart trace"
   it should "store two real encoder streams with their in-band source IDs" in {
     println("[RTL->decoder][1/8] 创建双 hart RTL 集成测试：FromCore -> BlockBuffer -> PacketGen -> Fifo -> PacketArbiter -> SRAMSinkCore")
-    test(new MultiHartTraceHarness) { d =>
+    test(new MultiHartTraceHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       println("[RTL->decoder][2/8] 配置 trace：启用 SRAM sink、打开两个 encoder 的指令跟踪，并设置 srcID=0/1")
       d.io.sinkEnable.poke(true.B)
       d.io.control.poke((6 | (2 << 20)).U)
