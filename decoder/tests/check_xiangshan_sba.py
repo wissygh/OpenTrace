@@ -2,11 +2,11 @@
 import json
 from pathlib import Path
 import re
-import shutil
 import sys
 from decoder.__main__ import load_config, number
 from decoder.artifacts import DECODE_REPORT_FILES, DecodeArtifacts, write_json, write_jsonl
 from decoder.encapsulation import DecodeError
+from decoder.capture_layout import CaptureLayout
 
 
 COMMIT = re.compile(r'\[opentrace-commit\]\s+hart=\s*(\d+)\s+cycle=\s*(\d+)\s+'
@@ -31,13 +31,15 @@ def match_samples(decoded, samples):
 
 def check(directory):
     directory = Path(directory)
+    layout = CaptureLayout(directory).create()
     # Regenerate only derived reports; never touch the SRAM bytes, images or
     # RTL logs. A failing recheck must not leave an old successful report.
-    for name in ('events.jsonl', 'commit-pc.jsonl', 'commit-pc-workload.jsonl', 'commit-pc.tsv',
-                 'expected-pcs.json', 'pc-matches.tsv', 'sram-raw.hex', 'sram-words.jsonl'):
-        (directory / name).unlink(missing_ok=True)
-    for name in DECODE_REPORT_FILES:
-        (directory / 'decode' / name).unlink(missing_ok=True)
+    for name in ('expected-pcs.json', 'pc-matches.tsv'):
+        (layout.diff / name).unlink(missing_ok=True)
+    for name in ('commit-pc.jsonl', 'commit-pc-workload.jsonl', 'commit-pc.tsv'):
+        (layout.ref / name).unlink(missing_ok=True)
+    for name in (*DECODE_REPORT_FILES, 'sram-raw.hex', 'sram-words.jsonl'):
+        (layout.dut / name).unlink(missing_ok=True)
     result = {'status': 'failed', 'stage': 'inputs', 'error': None}
     try:
         return check_stages(directory, result)
@@ -45,25 +47,26 @@ def check(directory):
         result['error'] = str(exc)
         raise
     finally:
-        write_json(directory / 'comparison.json', result)
+        write_json(layout.diff / 'comparison.json', result)
 
 
 def check_stages(directory, result):
-    metadata = json.loads((directory / 'metadata.json').read_text())
-    symbols = json.loads((directory / 'symbols.json').read_text())
+    layout = CaptureLayout(directory)
+    metadata = json.loads(layout.input('dut', 'metadata.json').read_text())
+    symbols = json.loads(layout.input('workload', 'symbols.json').read_text())
     start, done = number(symbols['trace_begin']), number(symbols['trace_done'])
-    capture = (directory / 'trace.bin').read_bytes()
-    with (directory / 'sram-raw.hex').open('w') as output:
+    capture = layout.input('dut', 'trace.bin').read_bytes()
+    with (layout.dut / 'sram-raw.hex').open('w') as output:
         for offset in range(0, len(capture), 16):
             output.write(f'{offset:#010x}  {capture[offset:offset + 16].hex(" ")}\n')
-    write_jsonl(directory / 'sram-words.jsonl',
+    write_jsonl(layout.dut / 'sram-words.jsonl',
                 ({'offset': offset, 'word_hex': '0x' + capture[offset:offset + 4][::-1].hex(),
                   'bytes_hex': capture[offset:offset + 4].hex(' ')} for offset in range(0, len(capture), 4)))
     # Export the independent reference before decoding, so malformed packets do
     # not hide the actual commits that led to the failing capture.
     commits = []
     previous = {}
-    for match in COMMIT.finditer((directory / 'rob.log').read_text(errors='replace')):
+    for match in COMMIT.finditer(layout.input('ref', 'rob.log').read_text(errors='replace')):
         hart, cycle, slot = map(int, match.group(1, 2, 3))
         key = cycle, slot
         if hart in previous and key <= previous[hart]:
@@ -72,17 +75,17 @@ def check_stages(directory, result):
         pc = int(match.group(4), 16)
         commits.append({'index': len(commits), 'hart_id': hart, 'cycle': cycle, 'slot': slot, 'pc': pc,
                         'in_workload': hart == 0 and start <= pc < done})
-    write_jsonl(directory / 'commit-pc.jsonl', commits)
+    write_jsonl(layout.ref / 'commit-pc.jsonl', commits)
     selected = [row for row in commits if row['in_workload']]
-    write_jsonl(directory / 'commit-pc-workload.jsonl', selected)
-    with (directory / 'commit-pc.tsv').open('w') as output:
+    write_jsonl(layout.ref / 'commit-pc-workload.jsonl', selected)
+    with (layout.ref / 'commit-pc.tsv').open('w') as output:
         output.write('index\thart_id\tcycle\tslot\tpc\tin_workload\n')
         for row in commits:
             output.write(f"{row['index']}\t{row['hart_id']}\t{row['cycle']}\t{row['slot']}\t{row['pc']:#x}\t{row['in_workload']}\n")
     result.update(rob_samples=len(selected), rob_pcs=[row['pc'] for row in selected])
     expected = [start, start + 2] + [start + x for _ in range(4) for x in (4, 6, 8)]
     expected += [start + x for x in (12, 16, 20, 28, 30, 24, 26)]
-    write_json(directory / 'expected-pcs.json', {'expected_pcs': expected,
+    write_json(layout.diff / 'expected-pcs.json', {'expected_pcs': expected,
                'basis': 'Fixed assembly workload with four loop iterations; separate from the independent ROB reference.'})
 
     result['stage'] = 'capture-metadata'
@@ -99,12 +102,12 @@ def check_stages(directory, result):
         raise DecodeError('SRAM Wrap/alignment/length/read-pointer mismatch')
     print(f'[XS-SBA][decoder] 读取{wp}bytes与真实ELF；组件Empty、无loss/Wrap、RP推进已检查', flush=True)
     result['stage'] = 'decode'
-    observer = DecodeArtifacts(directory / 'decode', overwrite=True)
+    observer = DecodeArtifacts(directory, overwrite=True)
     events = []
     failure = None
     try:
-        observer.snapshot(directory / 'trace.bin', directory / 'trace.json')
-        decoder = load_config(directory / 'trace.json', observer=observer)
+        observer.snapshot(layout.input('dut', 'trace.bin'), layout.input('dut', 'trace.json'))
+        decoder = load_config(layout.dut / 'trace.json', observer=observer)
         for offset in range(0, len(capture), 3):
             events.extend(decoder.feed(capture[offset:offset + 3]))
         decoder.finish()
@@ -113,7 +116,6 @@ def check_stages(directory, result):
         raise
     finally:
         observer.finish(failure)
-        shutil.copyfile(directory / 'decode/events.jsonl', directory / 'events.jsonl')
     instructions = [event for event in events if event['kind'] == 'instruction']
     if any(event['source_id'] != 0 or event['hart_id'] != 0 for event in instructions):
         raise DecodeError('unexpected source/hart in single-hart capture')
@@ -133,7 +135,7 @@ def check_stages(directory, result):
     samples = [row['pc'] for row in selected]
     matches = []
     position = 0
-    with (directory / 'pc-matches.tsv').open('w') as output:
+    with (layout.diff / 'pc-matches.tsv').open('w') as output:
         output.write('sample_index\tcycle\tslot\trob_pc\tdecoder_index\tdecoded_pc\tstatus\n')
         for index, row in enumerate(selected):
             while position < len(pcs) and pcs[position] != row['pc']:

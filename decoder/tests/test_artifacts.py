@@ -37,19 +37,19 @@ class DecodeArtifactTests(unittest.TestCase):
             for byte in capture:
                 d.feed(bytes([byte]))
             d.finish(); observer.finish()
-            framing = records(output / 'framing.jsonl')
-            packets = records(output / 'packets.jsonl')
+            framing = records(output / 'dut/framing.jsonl')
+            packets = records(output / 'dut/packets.jsonl')
             self.assertEqual([row['offset'] for row in framing[:3]], [0, 1, 2])
             self.assertEqual(packets[0]['offset'], 2)
             self.assertEqual(packets[0]['reported_pc'], '0x1000')
             fields = {field['name']: field for field in packets[0]['wire_fields']}
             self.assertEqual((fields['address']['bit_offset'], fields['address']['width']), (7, 31))
             self.assertEqual(fields['branch']['value'], 1)
-            self.assertEqual([row['pc'] for row in records(output / 'instructions.jsonl')], ['0x1000', '0x1004'])
-            self.assertEqual((output / 'capture.bin').read_bytes(), capture)
-            replay = load_config(output / 'capture-config.json')
+            self.assertEqual([row['pc'] for row in records(output / 'dut/instructions.jsonl')], ['0x1000', '0x1004'])
+            self.assertEqual((output / 'dut/trace.bin').read_bytes(), capture)
+            replay = load_config(output / 'dut/trace.json')
             self.assertEqual(len([e for e in replay.feed(capture) if e['kind'] == 'instruction']), 2)
-            self.assertEqual(json.loads((output / 'decode-result.json').read_text())['status'], 'passed')
+            self.assertEqual(json.loads((output / 'dut/decode-result.json').read_text())['status'], 'passed')
 
     def test_two_source_options_are_observed_before_each_packet_is_executed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,7 +61,7 @@ class DecodeArtifactTests(unittest.TestCase):
             data = (encaps(0, support(options=16)) + encaps(1, support()) +
                     encaps(0, sync(0x1000)) + encaps(1, sync(0x1000)))
             d.feed(data); d.finish(); observer.finish()
-            rows = records(base / 'out/packets.jsonl')
+            rows = records(base / 'out/dut/packets.jsonl')
             self.assertEqual([r['options_before'] for r in rows], [0, 0, 16, 0])
             self.assertEqual([r['source_id'] for r in rows], [0, 1, 0, 1])
 
@@ -88,7 +88,7 @@ class DecodeArtifactTests(unittest.TestCase):
             d.feed(b'garbage' + bytes(20))
             d.feed(bytes(13) + encaps(0, sync(0x1000)))
             d.finish(); observer.finish()
-            self.assertEqual(records(base / 'out/packets.jsonl')[0]['offset'], 40)
+            self.assertEqual(records(base / 'out/dut/packets.jsonl')[0]['offset'], 40)
 
     def test_cli_retains_artifacts_and_failure_report_for_truncation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -100,8 +100,8 @@ class DecodeArtifactTests(unittest.TestCase):
             process = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(process.returncode, 1)
             self.assertEqual(json.loads(process.stdout)['pc'], '0x1000')
-            self.assertEqual(records(base / 'out/instructions.jsonl')[0]['pc'], '0x1000')
-            result = json.loads((base / 'out/decode-result.json').read_text())
+            self.assertEqual(records(base / 'out/dut/instructions.jsonl')[0]['pc'], '0x1000')
+            result = json.loads((base / 'out/dut/decode-result.json').read_text())
             self.assertEqual(result['status'], 'failed')
             self.assertIn('truncated', result['error'])
 
@@ -129,10 +129,10 @@ class SBACaptureArtifacts(unittest.TestCase):
             self.fixture(base)
             result = check(base)
             self.assertEqual((result['status'], result['decoded_instructions'], result['rob_samples']), ('passed', 21, 15))
-            self.assertEqual(records(base / 'decode/instructions.jsonl')[0]['pc'], '0x80000008')
-            self.assertEqual(records(base / 'commit-pc.jsonl')[0]['pc'], '0x80000008')
-            self.assertEqual(len((base / 'pc-matches.tsv').read_text().splitlines()), 16)
-            self.assertEqual(json.loads((base / 'comparison.json').read_text())['decoded_pcs'][0], '0x80000008')
+            self.assertEqual(records(base / 'dut/instructions.jsonl')[0]['pc'], '0x80000008')
+            self.assertEqual(records(base / 'ref/commit-pc.jsonl')[0]['pc'], '0x80000008')
+            self.assertEqual(len((base / 'diff/pc-matches.tsv').read_text().splitlines()), 16)
+            self.assertEqual(json.loads((base / 'diff/comparison.json').read_text())['decoded_pcs'][0], '0x80000008')
 
     def test_mismatch_and_truncation_leave_explicit_failed_comparison(self):
         for fault in ('rob', 'capture'):
@@ -146,13 +146,13 @@ class SBACaptureArtifacts(unittest.TestCase):
                     (base / 'trace.bin').write_bytes((base / 'trace.bin').read_bytes()[:-1])
                 with self.assertRaises(DecodeError):
                     check(base)
-                result = json.loads((base / 'comparison.json').read_text())
+                result = json.loads((base / 'diff/comparison.json').read_text())
                 self.assertEqual(result['status'], 'failed')
                 self.assertTrue(result['error'])
-                self.assertTrue((base / 'commit-pc.jsonl').exists())
+                self.assertTrue((base / 'ref/commit-pc.jsonl').exists())
                 if fault == 'rob':
                     self.assertEqual(result['first_mismatch']['sample_index'], 1)
-                    self.assertTrue((base / 'decode/packets.jsonl').exists())
+                    self.assertTrue((base / 'dut/packets.jsonl').exists())
 
     def test_failed_recheck_cannot_reuse_stale_success_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -165,10 +165,10 @@ class SBACaptureArtifacts(unittest.TestCase):
             (base / 'metadata.json').write_text(json.dumps(metadata))
             with self.assertRaises(DecodeError):
                 check(base)
-            self.assertFalse((base / 'pc-matches.tsv').exists())
-            self.assertFalse((base / 'decode/decode-result.json').exists())
+            self.assertFalse((base / 'diff/pc-matches.tsv').exists())
+            self.assertFalse((base / 'dut/decode-result.json').exists())
             self.assertEqual((base / 'trace.bin').read_bytes(), original)
-            self.assertEqual(json.loads((base / 'comparison.json').read_text())['stage'], 'capture-metadata')
+            self.assertEqual(json.loads((base / 'diff/comparison.json').read_text())['stage'], 'capture-metadata')
 
 
 if __name__ == '__main__':

@@ -8,8 +8,11 @@ import socket
 import shutil
 import subprocess
 import time
+from contextlib import redirect_stdout
+import sys
 from .check_xiangshan_sba import check
 from decoder.artifacts import write_json
+from decoder.capture_layout import CaptureLayout
 
 
 class RPC:
@@ -45,6 +48,7 @@ class RPC:
 
 def collect(rpc, directory, symbols):
     directory = Path(directory)
+    layout = CaptureLayout(directory).create()
 
     def read(address):
         return int(rpc.run(f'read_memory 0x{address:x} 32 1').strip(), 0)
@@ -89,23 +93,23 @@ def collect(rpc, directory, symbols):
     for name, address in (('wp', 0x20040020), ('dropped', 0x20000f10),
                           ('loss_markers', 0x20000f18), ('stall_cycles', 0x20000f20)):
         metadata[name] = read(address)
-    write_json(directory / 'metadata.json', metadata)
+    write_json(layout.dut / 'metadata.json', metadata)
     wp = metadata['wp']
     if metadata['dropped'] or metadata['loss_markers'] or not 0 < wp < 0x400 or wp & 3:
         raise RuntimeError(f'loss/Wrap or invalid SRAM pointer: {metadata}')
     print(f'[XS-SBA][4/5] 无loss/Wrap，SBA重复读RAMData，共{wp}bytes', flush=True)
     write(0x20040028, 0)
-    with (directory / 'trace.bin').open('wb') as capture:
+    with (layout.dut / 'trace.bin').open('wb') as capture:
         for offset in range(0, wp, 4):
             word = read(0x20040040)
             capture.write(word.to_bytes(4, 'little'))
             print(f'[SBA-WORD] {offset:04x} {word:08x}', flush=True)
     metadata['rp'] = read(0x20040028)
-    write_json(directory / 'metadata.json', metadata)
+    write_json(layout.dut / 'metadata.json', metadata)
     if metadata['rp'] != wp:
         raise RuntimeError('RAMData reads did not advance RP exactly once per word')
-    (directory / 'trace.json').write_text(json.dumps(
-        {'source_bits': 8, 'sources': {'0': {'hart_id': 0, 'elf': 'workload.elf'}}}, indent=2) + '\n')
+    (layout.dut / 'trace.json').write_text(json.dumps(
+        {'source_bits': 8, 'sources': {'0': {'hart_id': 0, 'elf': '../workload/workload.elf'}}}, indent=2) + '\n')
     print('[XS-SBA][5/5] 真实SBA捕获已保存，交decoder和独立ROB日志', flush=True)
 
 
@@ -135,42 +139,68 @@ def stop(process):
             process.wait()
 
 
+class Tee:
+    def __init__(self, console, log):
+        self.console, self.log = console, log
+
+    def write(self, value):
+        self.console.write(value)
+        self.log.write(value)
+
+    def flush(self):
+        self.console.flush()
+        self.log.flush()
+
+
 def run(args):
-    root = Path(__file__).resolve().parents[2]
-    resources = root / 'src/test/resources/xiangshan'
     directory = args.output.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     if any(directory.iterdir()):
         raise RuntimeError('output directory must be empty; existing run evidence will not be overwritten')
-    binary = directory / 'workload.bin'
-    elf = directory / 'workload.elf'
-    source_copy = directory / 'workload'
+    layout = CaptureLayout(directory).create()
+    logs = layout.dut / 'logs'; logs.mkdir()
+    with (logs / 'runner.log').open('w') as output, redirect_stdout(Tee(sys.stdout, output)):
+        return run_stages(args, layout)
+
+
+def run_stages(args, layout):
+    root = Path(__file__).resolve().parents[2]
+    resources = root / 'src/test/resources/xiangshan'
+    directory = layout.root
+    logs = layout.dut / 'logs'
+    binary = layout.workload / 'workload.bin'
+    elf = layout.workload / 'workload.elf'
+    source_copy = layout.workload / 'source'
     shutil.copytree(resources, source_copy)
-    subprocess.run([args.cross_prefix + 'gcc', '-march=rv64imc_zicsr_zifencei', '-mabi=lp64',
-                    '-mcmodel=medany', '-nostdlib', '-static', '-Wl,--no-relax',
-                    '-Wl,-T,' + str(source_copy / 'workload.ld'),
-                    str(source_copy / 'sba-workload.S'), '-o', str(elf)], check=True)
-    subprocess.run([args.cross_prefix + 'objcopy', '-O', 'binary', str(elf), str(binary)], check=True)
+    build_logs = layout.workload / 'logs'; build_logs.mkdir()
+    with (build_logs / 'build.log').open('w') as build_log:
+        subprocess.run([args.cross_prefix + 'gcc', '-march=rv64imc_zicsr_zifencei', '-mabi=lp64',
+                        '-mcmodel=medany', '-nostdlib', '-static', '-Wl,--no-relax',
+                        '-Wl,-T,' + str(source_copy / 'workload.ld'),
+                        str(source_copy / 'sba-workload.S'), '-o', str(elf)],
+                       stdout=build_log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run([args.cross_prefix + 'objcopy', '-O', 'binary', str(elf), str(binary)],
+                       stdout=build_log, stderr=subprocess.STDOUT, check=True)
     nm = subprocess.check_output([args.cross_prefix + 'nm', str(elf)], text=True)
-    (directory / 'workload.symbols.txt').write_text(nm)
-    with (directory / 'workload.disasm').open('w') as disasm:
+    (layout.workload / 'workload.symbols.txt').write_text(nm)
+    with (layout.workload / 'workload.disasm').open('w') as disasm:
         subprocess.run([args.cross_prefix + 'objdump', '-d', '-S', str(elf)], stdout=disasm, check=True)
     symbols = {name: int(address, 16) for address, _, name in (line.split() for line in nm.splitlines())
                if name in ('trace_begin', 'trace_done')}
     if set(symbols) != {'trace_begin', 'trace_done'}:
         raise RuntimeError('workload ELF is missing its entry/exit symbols')
-    write_json(directory / 'symbols.json', symbols)
+    write_json(layout.workload / 'symbols.json', symbols)
     rbb_port, tcl_port = free_port(), free_port()
     while tcl_port == rbb_port:
         tcl_port = free_port()
     env = dict(os.environ, OT_RBB_PORT=str(rbb_port), OT_TCL_PORT=str(tcl_port))
     emu_command = [str(args.emu.resolve()), '--no-diff', '--enable-jtag', f'--remote-jtag-port={rbb_port}',
-                   '--ram-size=64MB', '--max-cycles=20000000', '--dramsim3-outdir=.', '-i', str(binary)]
-    (directory / 'run.json').write_text(json.dumps({'emu': emu_command, 'rbb_port': rbb_port,
+                   '--ram-size=64MB', '--max-cycles=20000000', '--dramsim3-outdir=' + str(logs), '-i', str(binary)]
+    (layout.dut / 'run.json').write_text(json.dumps({'emu': emu_command, 'rbb_port': rbb_port,
                                                    'tcl_port': tcl_port}, indent=2) + '\n')
     emu = openocd = rpc = None
-    with (directory / 'uart.log').open('w') as uart, (directory / 'rob.log').open('w') as rob, \
-            (directory / 'openocd.log').open('w') as debugger:
+    with (logs / 'uart.log').open('w') as uart, (layout.ref / 'rob.log').open('w') as rob, \
+            (logs / 'openocd.log').open('w') as debugger:
         try:
             emu = subprocess.Popen(emu_command, cwd=directory, stdout=uart, stderr=rob)
             deadline = time.monotonic() + 300
@@ -186,7 +216,7 @@ def run(args):
                 if emu.poll() is not None or openocd.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError('OpenOCD did not become ready; inspect openocd.log')
                 try:
-                    rpc = RPC(tcl_port, transcript=directory / 'rpc.jsonl')
+                    rpc = RPC(tcl_port, transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
             collect(rpc, directory, symbols)
@@ -197,7 +227,9 @@ def run(args):
             # owned processes; this does not require a guest trap instruction.
             stop(openocd)
             stop(emu)
-    return check(directory)
+    diff_logs = layout.diff / 'logs'; diff_logs.mkdir()
+    with (diff_logs / 'check.log').open('w') as output, redirect_stdout(Tee(sys.stdout, output)):
+        return check(directory)
 
 
 def main():
