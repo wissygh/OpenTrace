@@ -122,4 +122,38 @@ class SRAMSinkCoreSpec extends AnyFlatSpec with ChiselScalatestTester with Match
       word(d, 0) shouldBe BigInt("100f0e0d", 16)
     }
   }
+
+  it should "block new packets while disabled drain only an admitted tail and resume the held next packet once" in {
+    test(new SRAMSinkCore(8)) { d =>
+      initialize(d, false)
+      d.io.enable.poke(false.B)
+      d.io.in.valid.poke(true.B); d.io.in.bits.data.poke("h04030201".U)
+      d.io.in.bits.bytes.poke(3.U); d.io.in.bits.last.poke(true.B); d.io.in.bits.packetBytes.poke(4.U)
+      for (_ <- 0 until 8) {
+        d.io.in.ready.expect(false.B); d.io.empty.expect(true.B); d.io.wp.expect(0.U)
+        d.clock.step()
+      }
+      println("[SRAM-disable][1/3] disabled空闲即使valid持续为1也不接新packet、不写SRAM、不推进WP")
+      d.io.enable.poke(true.B); d.io.in.ready.expect(true.B); d.clock.step()
+      d.io.in.bits.data.poke("h08070605".U); d.io.in.bits.last.poke(false.B); d.io.in.bits.packetBytes.poke(6.U)
+      d.io.in.ready.expect(true.B); d.clock.step()
+      d.io.enable.poke(false.B)
+      d.io.in.bits.data.poke("hffff0a09".U); d.io.in.bits.bytes.poke(1.U); d.io.in.bits.last.poke(true.B)
+      d.io.in.ready.expect(true.B); d.io.empty.expect(false.B); d.clock.step()
+      // Offer the following packet immediately and hold it through disabled.
+      d.io.in.bits.data.poke("h0e0d0c0b".U); d.io.in.bits.bytes.poke(3.U); d.io.in.bits.packetBytes.poke(4.U)
+      for (_ <- 0 until 8) { d.io.in.ready.expect(false.B); d.clock.step() }
+      d.io.empty.expect(true.B); d.io.wp.expect(3.U)
+      word(d, 0) shouldBe BigInt("04030201", 16)
+      word(d, 1) shouldBe BigInt("08070605", 16)
+      word(d, 2) shouldBe BigInt("00000a09", 16)
+      println("[SRAM-disable][2/3] 中途Disable只收旧包尾，屏蔽无效lane并补null；紧随的新包持续被反压")
+      d.io.enable.poke(true.B); d.io.in.ready.expect(true.B); d.clock.step()
+      d.io.in.valid.poke(false.B); d.io.enable.poke(false.B); d.clock.step(5)
+      d.io.wp.expect(4.U); d.io.empty.expect(true.B)
+      word(d, 3) shouldBe BigInt("0e0d0c0b", 16)
+      d.clock.step(5); d.io.wp.expect(4.U)
+      println("[SRAM-disable][3/3] 重新Enable后恰好接收一次被保持的新包，旧null与新packet边界正确")
+    }
+  }
 }
