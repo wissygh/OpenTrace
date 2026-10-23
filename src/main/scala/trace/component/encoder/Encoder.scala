@@ -52,18 +52,20 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
     deqDataBytes = encoderAtbDataBeats
   )
 
-  val blockBuffer = Module(new BlockBuffer(core_stall_response_cycles_p, block_buffer_depth_p))
-  val packetGen   = Module(new PacketGen)
-  val fifo        = Module(new Fifo(fifoParam))
-  val timestamp   = Module(new EncoderTimestampCounter)
+  val blockBuffer =
+    Module(new BlockBuffer(core_stall_response_cycles_p, block_buffer_depth_p, captureStopEvents = true))
+  val packetGen = Module(new PacketGen)
+  val fifo      = Module(new Fifo(fifoParam))
+  val timestamp = Module(new EncoderTimestampCounter)
 
   // connection
   val ingressEnabled = teControl.regOut.Enable.asBool &&
     (teControl.regOut.InstTracing.asBool || teControl.regOut.InstTrigEnable.asBool)
+  val hartStopped = io.fromCore.hartIsReset || io.fromCore.priv === Priv.D
   blockBuffer.io.fromCore      := io.fromCore
   blockBuffer.io.fromCore.time := timestamp.io.traceTime
   blockBuffer.io.fromCore.blocks.zip(io.fromCore.blocks).foreach { case (buffered, incoming) =>
-    buffered.valid := incoming.valid && ingressEnabled
+    buffered.valid := incoming.valid && ingressEnabled && !hartStopped
   }
   blockBuffer.io.fromCore.trigger.traceOn := io.fromCore.trigger.traceOn &&
     teControl.regOut.Enable.asBool && teControl.regOut.InstTrigEnable.asBool
@@ -72,10 +74,12 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   val blockBufferIsFull  = blockBuffer.io.bufferIsFull
   val deqFromBlockBuffer = blockBuffer.io.deqEntry
 
-  packetGen.io.block      := deqFromBlockBuffer
-  packetGen.io.syncReq    := io.control.syncReq
-  packetGen.io.flushReq   := io.control.flushReq
-  packetGen.io.stopReq    := io.fromCore.hartIsReset || io.fromCore.priv === Priv.D
+  packetGen.io.block    := deqFromBlockBuffer
+  packetGen.io.syncReq  := io.control.syncReq
+  packetGen.io.flushReq := io.control.flushReq
+  // Halt/reset must not overtake older retirement queued in BlockBuffer.
+  // Its ordered zero-retirement marker ends the segment at the proper point.
+  packetGen.io.stopReq    := false.B
   blockBuffer.io.deqReady := packetGen.io.blockReady
 
   /**

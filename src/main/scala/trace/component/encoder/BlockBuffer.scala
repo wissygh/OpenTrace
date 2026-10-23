@@ -12,7 +12,7 @@ import utility.HasCircularQueuePtrHelper
 import utils.Compress
 import utils.Lzc
 
-class BlockBuffer(stallResponseCycles: Int = 1, entries: Int = 16)
+class BlockBuffer(stallResponseCycles: Int = 1, entries: Int = 16, captureStopEvents: Boolean = false)
     extends Module with TraceParameters with HasCircularQueuePtrHelper {
   override def block_buffer_depth_p = entries
   require(entries > 0)
@@ -98,11 +98,17 @@ class BlockBuffer(stallResponseCycles: Int = 1, entries: Int = 16)
   enqPtr := enqPtrNext
   deqPtr := deqPtrNext
 
-  val fifoIsEmpty  = isEmpty(enqPtr, deqPtr)
-  val metadataOnly = !needPcVec.asUInt.orR && (io.fromCore.trigger.traceOn || io.fromCore.trigger.traceOff)
-  val enqCount     = Mux(metadataOnly, 1.U, PopCount(needPcVec.asUInt))
-  val freeEntries  = hasFreeEntries(enqPtr, deqPtr)
-  val dequeue      = io.deqReady && !fifoIsEmpty
+  val fifoIsEmpty = isEmpty(enqPtr, deqPtr)
+  // A zero-retirement stop marker follows all previously accepted entries.
+  // Encoder suppresses Debug/reset instruction groups so the edge cannot be
+  // swallowed by a concurrent unqualified group.
+  val stopped  = io.fromCore.hartIsReset || io.fromCore.priv === Priv.D
+  val stopEdge = if (captureStopEvents) stopped && !RegNext(stopped, false.B) else false.B
+  val metadataOnly = !needPcVec.asUInt.orR &&
+    (io.fromCore.trigger.traceOn || io.fromCore.trigger.traceOff || stopEdge)
+  val enqCount    = Mux(metadataOnly, 1.U, PopCount(needPcVec.asUInt))
+  val freeEntries = hasFreeEntries(enqPtr, deqPtr)
+  val dequeue     = io.deqReady && !fifoIsEmpty
   // A register FIFO may replace the entry read on this edge even when full.
   val available = freeEntries +& dequeue.asUInt
   val canEnq    = enqCount <= available
