@@ -46,7 +46,7 @@ def observe_returns(decoder):
 
 def check_optional_packets(packets, features):
     """Check the on-wire feature declaration, and count actual Format0 uses."""
-    expected = ((features & 0x30) >> 1) | ((features & 8) >> 2)
+    expected = ((features & 0x30) >> 1) | ((features & 8) >> 2) | ((features & 2) << 1)
     coverage = Counter()
     supports = 0
     for packet in packets:
@@ -54,7 +54,7 @@ def check_optional_packets(packets, features):
         fmt = fields['format']
         if fmt == 3 and fields['subformat'] == 3:
             supports += 1
-            if fields['options'] & 26 != expected:
+            if fields['options'] & 30 != expected:
                 raise ValueError('support options disagree with the requested/read-back encoder features')
         if fmt == 0:
             subformat = fields['subformat']
@@ -169,7 +169,7 @@ def check(directory):
         if mode not in FEATURE_MODES:
             raise ValueError('unknown optional CoreMark mode')
         features = metadata.get('features_requested', 0)
-        if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0xf9 != features:
+        if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0xfb != features:
             raise ValueError('optional encoder CSR readback disagrees with the selected mode')
         result.update(mode=mode, encoder_features=features)
         original_inputs = root / 'workload/inputs.json'

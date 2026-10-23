@@ -68,9 +68,10 @@ class CoreMarkStorageChecks(unittest.TestCase):
         self.assertTrue(decoder.start_of_trace)
 
     def test_csr_features_match_support_and_actual_format0_usage(self):
-        for features in (0, 8, 16, 24, 32, 40, 48, 56):
+        for features in (0, 2, 8, 10, 16, 18, 24, 26, 32, 34, 40, 42, 48, 50, 56, 58):
             with self.subTest(features=features):
-                fields = [{'format': 3, 'subformat': 3, 'options': ((features & 0x30) >> 1) | ((features & 8) >> 2)}]
+                options = ((features & 0x30) >> 1) | ((features & 8) >> 2) | ((features & 2) << 1)
+                fields = [{'format': 3, 'subformat': 3, 'options': options}]
                 if features & 16:
                     fields += [{'format': 0, 'subformat': 0, 'branch_count': 31, 'prediction_failed': True},
                                {'format': 0, 'subformat': 0, 'branch_count': 80,
@@ -80,7 +81,7 @@ class CoreMarkStorageChecks(unittest.TestCase):
                 if features & 32:
                     fields += [{'format': 0, 'subformat': 1, 'index': 7}]
                 coverage = check_optional_packets([{'fields': f} for f in fields], features)
-                self.assertEqual(coverage['declared_options'], ((features & 0x30) >> 1) | ((features & 8) >> 2))
+                self.assertEqual(coverage['declared_options'], options)
                 self.assertEqual(coverage['return_depth_reports'], int(bool(features & 8)))
                 self.assertEqual(coverage['cache_index_packets'], int(bool(features & 32)))
                 self.assertEqual(coverage['correctly_predicted_branches'], 111 if features & 16 else 0)
@@ -89,7 +90,9 @@ class CoreMarkStorageChecks(unittest.TestCase):
                 self.assertEqual(coverage['prediction_no_address_packets'], 1 if features & 16 else 0)
         for fields, enabled in [([{'format': 3, 'subformat': 3, 'options': 0}], 48),
                 ([{'format': 0, 'subformat': 1, 'index': 0}], 0),
-                ([{'format': 0, 'subformat': 0, 'branch_count': 31}], 0), ([], 16)]:
+                ([{'format': 0, 'subformat': 0, 'branch_count': 31}], 0), ([], 16),
+                ([{'format': 3, 'subformat': 3, 'options': 4}], 0),
+                ([{'format': 3, 'subformat': 3, 'options': 0}], 2)]:
             with self.assertRaises(ValueError):
                 check_optional_packets([{'fields': f} for f in fields], enabled)
 
