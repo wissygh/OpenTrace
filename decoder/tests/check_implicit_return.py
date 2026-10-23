@@ -39,9 +39,9 @@ def check(root):
             if m['features_readback'] & 0xc0:
                 raise ValueError('E-Trace ImRetMode must be hardcoded to zero')
             requested = m['features_requested']
-            if m['features_readback'] & 0x39 != requested:
+            if m['features_readback'] & 0x3b != requested:
                 raise ValueError('encoder feature readback differs from the requested mode')
-            expected_options = ((requested & 1) << 5) | ((requested & 8) >> 2) | ((requested & 0x30) >> 1)
+            expected_options = ((requested & 1) << 5) | ((requested & 2) << 1) | ((requested & 8) >> 2) | ((requested & 0x30) >> 1)
             if any(e['options'] != expected_options for e in events if e['kind'] == 'support'):
                 raise ValueError('support options disagree with the actual encoder features')
             if m['dropped'] or m['loss_markers'] or m['wp'] != m['rp'] or m['wp'] != len(data):

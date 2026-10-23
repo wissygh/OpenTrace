@@ -51,6 +51,12 @@ test-implicit-return:
 	mill -i OpenTrace.test.testOnly trace.component.TraceReturnStackSpec trace.component.ImplicitReturnCodecSpec trace.component.PacketImplicitReturnSpec trace.component.ImplicitReturnSramSpec
 	python3 -m decoder.tests.check_implicit_return build/validation/implicit-return
 
+.PHONY: test-implicit-exception
+test-implicit-exception:
+	@echo "[implicit-exception] NoTrapAddr CSR→handler地址省略/EPC保留/tval打包→真实SRAM→逐条decoder"
+	mill -i OpenTrace.test.testOnly trace.component.PacketImplicitExceptionSpec trace.component.ImplicitExceptionSramSpec trace.component.EncoderCapabilitiesSpec
+	python3 -m decoder.tests.check_implicit_exception build/validation/implicit-exception
+
 .PHONY: test-hart-stop
 test-hart-stop:
 	@echo "[hart-stop] 真实积压退休→Debug/reset有序停止→resume同步，检查全部退休与trace-end"

@@ -56,7 +56,8 @@ private[component] class PacketStreamDriver(d: PacketGenHarness) extends Matcher
     drive(PacketInput(0)); d.io.block.valid.poke(false.B); d.io.packet.ready.poke(true.B)
     d.reset.poke(true.B); d.clock.step(2); d.reset.poke(false.B); idle()
     frames.toSeq shouldBe Seq(ETraceReference.support(3, fullAddress = (options & 1) != 0,
-      jumpCache = (options & 32) != 0, branchPrediction = (options & 16) != 0, implicitReturn = (options & 8) != 0))
+      jumpCache = (options & 32) != 0, branchPrediction = (options & 16) != 0, implicitReturn = (options & 8) != 0,
+      implicitException = (options & 2) != 0))
   }
   def send(entries: Seq[PacketInput]): Unit = entries.foreach { e =>
     drive(e)

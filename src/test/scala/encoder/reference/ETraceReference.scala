@@ -28,20 +28,22 @@ object ETraceReference {
       (privilege, 3), (time, 64), (context, 32), (pc >> 1, AlignedWidth))))
 
   def support(source: Int, fullAddress: Boolean = false, status: Int = 0, tracing: Boolean = true,
-      jumpCache: Boolean = false, branchPrediction: Boolean = false, implicitReturn: Boolean = false): Seq[Int] =
+      jumpCache: Boolean = false, branchPrediction: Boolean = false, implicitReturn: Boolean = false,
+      implicitException: Boolean = false): Seq[Int] =
     frame(source, payload(Seq((BigInt(3), 2), (BigInt(3), 2), (if (tracing) BigInt(1) else BigInt(0), 1),
       (BigInt(0), 1), (BigInt(status), 2),
       (BigInt((if (fullAddress) 32 else 0) | (if (jumpCache) 16 else 0) | (if (branchPrediction) 8 else 0) |
-        (if (implicitReturn) 2 else 0)), 6),
+        (if (implicitReturn) 2 else 0) | (if (implicitException) 4 else 0)), 6),
       (BigInt(0), 1), (BigInt(0), 1), (BigInt(0), 2))))
 
   def trap(source: Int, pc: BigInt, cause: Int, tval: BigInt = 0, interrupt: Boolean = false,
       handler: Boolean = true, privilege: Int = 3, context: BigInt = 0,
-      time: BigInt = 0, taken: Boolean = false): Seq[Int] = {
+      time: BigInt = 0, taken: Boolean = false, implicitException: Boolean = false): Seq[Int] = {
     val fields = Seq[(BigInt, Int)]((3, 2), (1, 2), (if (taken) 0 else 1, 1), (privilege, 3),
       (time, 64), (context, 32), (cause, 8), (if (interrupt) 1 else 0, 1),
-      (if (handler) 1 else 0, 1), (pc >> 1, AlignedWidth))
-    frame(source, payload(fields ++ (if (interrupt) Seq.empty else Seq((tval, AddressWidth)))))
+      (if (handler) 1 else 0, 1))
+    val address = if (implicitException && handler) Seq.empty else Seq((pc >> 1, AlignedWidth))
+    frame(source, payload(fields ++ address ++ (if (interrupt) Seq.empty else Seq((tval, AddressWidth)))))
   }
 
   def context(source: Int, value: BigInt, time: BigInt = 0, privilege: Int = 3): Seq[Int] =
