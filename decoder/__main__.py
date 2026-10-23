@@ -8,6 +8,7 @@ from .execution import ExecutionDecoder, Profile
 from .image import ProgramImage
 from .multihart import MultiHartDecoder
 from .artifacts import DecodeArtifacts, readable
+from .discovery import read_snapshot
 
 
 def number(value):
@@ -19,7 +20,20 @@ def load_config(path, acquire=False, observer=None):
     config = json.loads(path.read_text())
     decoders = {}
     harts = set()
-    source_bits = config.get('source_bits', 8)
+    default_discovery = config.get('discovery')
+    discoveries = {source: read_snapshot(path.parent / description.get('discovery', default_discovery))
+                   for source, description in config['sources'].items()
+                   if description.get('discovery', default_discovery) is not None}
+    def geometry(name, default):
+        values = {d[name] for d in discoveries.values()}
+        if len(values) > 1:
+            raise DecodeError('sources disagree on discovered encapsulation ' + name)
+        actual = next(iter(values)) if values else config.get(name, default)
+        if name in config and config[name] != actual:
+            raise DecodeError('configured ' + name + ' disagrees with discovery')
+        return actual
+    source_bits = geometry('source_bits', 8)
+    timestamp_bytes = geometry('header_timestamp_bytes', 0)
 
     def image(description):
         if 'elf' in description:
@@ -30,6 +44,7 @@ def load_config(path, acquire=False, observer=None):
         raise DecodeError('each source/context needs elf, or raw plus base')
 
     for source, description in config['sources'].items():
+        discovered = discoveries.get(source)
         source = number(source)
         hart = number(description['hart_id'])
         if source in decoders or hart in harts or source < 0 or source >= (1 << source_bits if source_bits else 1):
@@ -37,10 +52,15 @@ def load_config(path, acquire=False, observer=None):
         harts.add(hart)
         profile = dict(config.get('profile', {}))
         profile.update(description.get('profile', {}))
+        if discovered:
+            for key, value in discovered['profile'].items():
+                if key in profile and profile[key] != value:
+                    raise DecodeError('configured ' + key + ' disagrees with discovery')
+                profile[key] = value
         contexts = {number(k): image(v) for k, v in description.get('contexts', {}).items()}
         vectors = {number(k): number(v) for k, v in description.get('trap_vectors', {}).items()}
         decoders[source] = ExecutionDecoder(image(description), Profile(**profile), source, hart, contexts, vectors)
-    parser = PacketParser(source_bits, config.get('header_timestamp_bytes', 0), observer=observer)
+    parser = PacketParser(source_bits, timestamp_bytes, observer=observer)
     return MultiHartDecoder(decoders, SyncAcquirer(parser) if acquire else parser, observer)
 
 

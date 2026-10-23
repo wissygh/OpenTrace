@@ -91,8 +91,10 @@ def measure(directory):
         if comparison['status'] != 'passed' or decoded['status'] != 'passed':
             raise ValueError(comparison.get('error') or decoded.get('error') or 'capture validation did not pass')
         config = _json(config_path)
-        frames = _Frames(config.get('source_bits', 8) // 8, config.get('header_timestamp_bytes', 0))
-        parser = PacketParser(config.get('source_bits', 8), config.get('header_timestamp_bytes', 0), observer=frames)
+        decoder = load_config(config_path)
+        framing = decoder.parser
+        frames = _Frames(framing.source_bytes, framing.timestamp_bytes)
+        parser = PacketParser(framing.source_bytes * 8, framing.timestamp_bytes, observer=frames)
         for offset in range(0, len(data), 4096):
             parser.feed(data[offset:offset + 4096])
         parser.finish()
@@ -102,7 +104,6 @@ def measure(directory):
         result['packet_formats'] = dict(sorted(frames.formats.items()))
 
         # Reconstruct all instructions from the actual bytes and program images.
-        decoder = load_config(config_path)
         events = []
         for offset in range(0, len(data), 4096):
             events.extend(decoder.feed(data[offset:offset + 4096]))
@@ -140,6 +141,10 @@ def measure(directory):
                 images(context)
         for description in config['sources'].values():
             images(description)
+        for description in (config, *config['sources'].values()):
+            if 'discovery' in description:
+                path = (config_path.parent / description['discovery']).resolve()
+                result['input_sha256'][str(path)] = _digest(path)
         losses = sum(e['kind'] == 'support' and e['qual_status'] == 2 for e in events)
         lossy = bool(losses or metadata.get('dropped') or metadata.get('loss_markers'))
         rate = len(data) * 8 / count

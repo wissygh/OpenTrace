@@ -74,6 +74,21 @@ class DecodeArtifacts:
         snapshots.mkdir(exist_ok=True)
         copied = {}
 
+        def discovery(description):
+            if 'discovery' not in description:
+                return
+            original = (config.parent / description['discovery']).resolve()
+            if original not in copied:
+                if original.parent == self.directory.resolve():
+                    target = original
+                else:
+                    target = self.directory / f'discovery-{len(copied):02d}.bin'
+                    shutil.copyfile(original, target)
+                copied[original] = target.name
+            description['discovery'] = copied[original]
+
+        discovery(data)
+
         def image(description):
             for field in ('raw', 'elf'):
                 if field not in description:
@@ -91,6 +106,7 @@ class DecodeArtifacts:
                 image(context)
 
         for source in data['sources'].values():
+            discovery(source)
             image(source)
         write_json(self.directory / 'trace.json', data)
         write_json(self.layout.workload / 'inputs.json', {'capture': str(capture), 'config': str(config),

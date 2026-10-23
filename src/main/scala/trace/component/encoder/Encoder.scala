@@ -292,4 +292,7 @@ class EncoderImp(wrapper: Encoder)(baseAddr: Int)(implicit p: Parameters) extend
   statistics.io.downstreamWait                  := io.out.valid && !io.out.ready
   statistics.io.packetAccepted                  := fifo.io.packetEnq.fire
   when(statistics.io.selected)(bus.c2b.dataRead := statistics.io.bus.c2b.dataRead)
+  val discovery = Module(new EncoderDiscovery(baseAddr, EncoderDiscoveryValues.from(this)))
+  discovery.io.bus.b2c                         := bus.b2c
+  when(discovery.io.selected)(bus.c2b.dataRead := discovery.io.bus.c2b.dataRead)
 }
