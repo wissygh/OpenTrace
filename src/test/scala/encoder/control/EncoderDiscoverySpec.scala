@@ -83,12 +83,12 @@ class EncoderDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with M
       d.reset.poke(true.B); d.clock.step(3); d.reset.poke(false.B)
       for (i <- words.indices) read(0xe00 + i * 4) shouldBe words(i)
       val out = Paths.get(sys.env("MILL_WORKSPACE_ROOT")).resolve("build/validation/encoder-discovery")
-      Files.createDirectories(out)
-      Files.write(out.resolve("discovery.bin"), words.flatMap(w => (0 until 4).map(i => ((w >> (8 * i)) & 255).toByte)).toArray)
-      Files.write(out.resolve("trace.bin"), captured.toArray)
-      Files.write(out.resolve("code.bin"), Array[Byte](0x13, 0, 0, 0, 0x13, 0, 0, 0))
-      Files.writeString(out.resolve("trace.json"),
-        """{"discovery":"discovery.bin","sources":{"0":{"hart_id":0,"raw":"code.bin","base":"0x80001000"}}}""")
+      for (directory <- Seq("workload", "dut", "ref", "diff")) Files.createDirectories(out.resolve(directory))
+      Files.write(out.resolve("dut/discovery.bin"), words.flatMap(w => (0 until 4).map(i => ((w >> (8 * i)) & 255).toByte)).toArray)
+      Files.write(out.resolve("dut/trace.bin"), captured.toArray)
+      Files.write(out.resolve("workload/code.bin"), Array[Byte](0x13, 0, 0, 0, 0x13, 0, 0, 0))
+      Files.writeString(out.resolve("dut/trace.json"),
+        """{"discovery":"discovery.bin","sources":{"0":{"hart_id":0,"raw":"../workload/code.bin","base":"0x80001000"}}}""")
       println(s"[Table42][2/3] 真实CSR快照和完整2条退休流已导出：${out.toAbsolutePath.normalize()}")
     }
   }
