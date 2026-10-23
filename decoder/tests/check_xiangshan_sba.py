@@ -145,6 +145,8 @@ def check_stages(directory, result):
         epcs = [event['pc'] for event in events if event['kind'] == 'exception_pc']
         if len(traps) < 2 or [(e['ecause'], e['interrupt']) for e in traps[:2]] != [(11, False), (2, False)]:
             raise DecodeError('ordinary ecall/illegal causes differ from the actual workload')
+        if any(e['tval'] != 0 for e in traps[:2]):
+            raise DecodeError('ecall/zero illegal instruction tval changed or retained an omitted-address gap')
         if epcs[:2] != [start + 16, start + 24]:
             raise DecodeError('faulting EPCs were lost or confused with retired handler instructions')
         if number(metadata['trap_vector_readback']) != number(symbols['trace_handler']):

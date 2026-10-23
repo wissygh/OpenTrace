@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 import subprocess
 import tempfile
@@ -7,6 +8,7 @@ import unittest
 from decoder.encapsulation import DecodeError
 from decoder.tests.xiangshan_sink_capture import atb_bytes, pib_bytes
 from decoder.tests.xiangshan_sba_scenarios import reference
+from decoder.tests.check_xiangshan_sba import check as check_sram
 
 
 def pin_line(cycle, clock, data, control=0):
@@ -27,6 +29,65 @@ def serial_log(symbols, divider, idle):
 
 
 class XiangShanSinkExtractionTests(unittest.TestCase):
+    def test_ordinary_exception_checker_rejects_wrong_tval_even_with_identical_retired_pcs(self):
+        # Actual feature-zero capture; the mutation changes tval only, retaining
+        # the handler, all retired PCs and the independent ROB samples.
+        from decoder.encapsulation import PacketParser
+        from decoder.tests.test_decoder import payload
+        raw = bytes.fromhex(
+            '01001f1100730000000000000000000000000400004001001a1300770000000000000000000000000b5a000000010700'
+            'e2ffffffffff0f130077000000000000000000000000025a000000010100f201000a130077000000000000000000000000'
+            '02880000000101005f01000f000000')
+        code = bytes.fromhex(
+            '731040306f00000097020000938242027390523013050000730000001305150000000000130525006f00c001'
+            '73232034f323103493834300739013341305a500730020306f000000')
+        symbols = {'trace_begin': 0x80000008, 'trace_done': 0x80000044, 'trace_handler': 0x8000002c,
+                   'trace_after_ecall': 0x8000001c, 'trace_after_illegal': 0x80000024}
+        _, expected = reference(symbols, 'exception')
+        temporary = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements9/tools'
+        temporary.mkdir(parents=True, exist_ok=True)
+        for corrupt in (False, True):
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory(dir=temporary) as directory:
+                root = Path(directory)
+                capture = raw
+                if corrupt:
+                    parser = PacketParser()
+                    packets = parser.feed(raw); parser.finish()
+                    pieces = []
+                    replaced = False
+                    for packet in packets:
+                        body = packet.payload
+                        if body[0] & 15 == 7 and not replaced:
+                            # Explicit trap: 114 prefix bits, then 49 address
+                            # bits, then the 50-bit tval. Set only tval to one.
+                            value = int.from_bytes(body, 'little', signed=True) & ((1 << 163) - 1)
+                            body = payload([(value, 163), (1, 50)])
+                            replaced = True
+                        pieces.append(bytes([len(body), packet.source_id]) + body)
+                    capture = b''.join(pieces)
+                    capture += bytes((-len(capture)) % 4)
+                (root / 'trace.bin').write_bytes(capture)
+                (root / 'code.bin').write_bytes(code)
+                (root / 'trace.json').write_text(json.dumps({'sources': {'0': {'hart_id': 0,
+                    'raw': 'code.bin', 'base': '0x80000000'}}}))
+                (root / 'symbols.json').write_text(json.dumps(symbols))
+                (root / 'workload').mkdir()
+                (root / 'workload/scenario.json').write_text(json.dumps({'scenario': 'exception'}))
+                (root / 'metadata.json').write_text(json.dumps({'memory_access': 'sysbus',
+                    'pc': symbols['trace_done'], 'a0': 23, 'encoder': 9, 'funnel': 9, 'sram': 9,
+                    'wp': len(capture), 'rp': len(capture), 'dropped': 0, 'loss_markers': 0,
+                    'trap_vector_readback': symbols['trace_handler']}))
+                (root / 'rob.log').write_text(''.join(
+                    f'[opentrace-commit] hart=0 cycle={i} slot=0 pc=0x{pc:x}\n' for i, pc in enumerate(expected)))
+                if corrupt:
+                    with self.assertRaisesRegex(DecodeError, 'tval changed'):
+                        check_sram(root)
+                    result = json.loads((root / 'diff/comparison.json').read_text())
+                    self.assertEqual(result['decoded_instructions'], 19)
+                    self.assertEqual(result['status'], 'failed')
+                else:
+                    self.assertEqual(check_sram(root)['status'], 'passed')
+
     def test_atb_uses_only_recorded_handshakes_and_valid_bytes_with_separate_bridge_id(self):
         text = ('unrelated UART output\n'
                 '[OT-ATB-DATA] cycle= 10 id= 42 bytes= 4 data=0x04030201\n'

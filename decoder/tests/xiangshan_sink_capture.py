@@ -282,6 +282,8 @@ def check(directory):
             epcs = [e['pc'] for e in events if e['kind'] == 'exception_pc']
             if [(e['ecause'], e['interrupt']) for e in traps[:2]] != [(11, False), (2, False)]:
                 raise DecodeError('selected sink lost the ordinary ecall/illegal trap causes')
+            if any(e['tval'] != 0 for e in traps[:2]):
+                raise DecodeError('selected sink changed tval or retained an omitted-address gap')
             if epcs[:2] != [start + 16, start + 24]:
                 raise DecodeError('selected sink lost the ordinary faulting EPCs')
             if number(m['trap_vector_readback']) != number(symbols['trace_handler']):
