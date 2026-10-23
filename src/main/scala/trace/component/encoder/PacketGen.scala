@@ -271,21 +271,22 @@ class PacketGen extends Module with TraceParameters {
       Some(depth),
       reportDepth
     )
-    val cached = activeConfig(4) && previousJump && targetCache.io.hit && !curNotify &&
-      !requestedNotify && !beforeSync && !returnFailed
-    payload := Mux(
-      cached,
-      ETracePacketCodec.cachedTarget(
-        targetCache.io.index,
-        count(4, 0),
-        map(30, 0),
-        f0s_width_p,
-        payload_max_width,
-        Some(depth),
-        reportDepth
-      ),
-      addressPayload
+    val cachePayload = ETracePacketCodec.cachedTarget(
+      targetCache.io.index,
+      count(4, 0),
+      map(30, 0),
+      f0s_width_p,
+      payload_max_width,
+      Some(depth),
+      reportDepth
     )
+    // A cache hit can cost more than a short address delta after sign trimming.
+    // Compare complete candidates, including the map and return-depth fields.
+    // Both formats update the same reference/cache; ties keep the existing index.
+    val cached = activeConfig(4) && previousJump && targetCache.io.hit && !curNotify &&
+      !requestedNotify && !beforeSync && !returnFailed &&
+      ETracePacketCodec.payloadBytes(cachePayload) <= ETracePacketCodec.payloadBytes(addressPayload)
+    payload := Mux(cached, cachePayload, addressPayload)
     when(predictionRun) {
       payload := ETracePacketCodec.predictedAddress(
         encodedPredictionCount,
