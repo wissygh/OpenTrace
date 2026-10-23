@@ -93,7 +93,7 @@ class EncoderCapabilitiesSpec extends AnyFlatSpec with ChiselScalatestTester wit
       }
       d.io.block.valid.poke(false.B); d.io.stop.poke(true.B); tick(); d.io.stop.poke(false.B); tick(10)
       frames.toSeq shouldBe Seq(ETraceReference.support(3), ETraceReference.support(3, fullAddress = true, jumpCache = true, branchPrediction = true, implicitReturn = true),
-        ETraceReference.synchronization(3, 0x1000), ETraceReference.address(3, 0x1004, 0x1000, fullAddress = true, irDepth = Some(0)),
+        ETraceReference.synchronization(3, 0x1000), ETraceReference.address(3, 0x1004, 0x1000, fullAddress = true),
         ETraceReference.support(3, fullAddress = true, status = 1, jumpCache = true, branchPrediction = true, implicitReturn = true))
       println("[capabilities] 3/3 CSR→PacketGen对拍通过：support声明fullAddr/cache，真实地址编码一致")
       write(1, 0); d.io.values(1).expect(identity.U)
