@@ -30,6 +30,8 @@ private[component] object ImplicitReturnScenarios {
       (1 to 20).map(i => (i * 0x100 + 4) -> 0x8067).toMap ++ Map(0x1500 -> 0x8067, 4 -> 0x13, 8 -> 0x13)
     Seq(
       scenario("nested", nested, nestedCode),
+      scenario("return-then-call-stop", Seq(input(0, 9), input(0x100, 13), input(4, 9), input(0x200), input(0x204)),
+        Map(0 -> 0x100000ef, 0x100 -> 0x8067, 4 -> 0x1fc000ef, 0x200 -> 0x13, 0x204 -> 0x13)),
       scenario("modified", Seq(input(0, 9), input(0x100, 9), input(0x200, 13), input(0x300), input(0x304)),
         Map(0 -> 0x100000ef, 0x100 -> 0x100000ef, 0x200 -> 0x8067, 0x300 -> 0x13, 0x304 -> 0x13)),
       scenario("empty-tail", Seq(input(0, 11), input(0x100, 13), input(0x200), input(0x204)),

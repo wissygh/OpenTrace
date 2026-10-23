@@ -67,6 +67,18 @@ class PacketImplicitReturnSpec extends AnyFlatSpec with ChiselScalatestTester wi
     }
   }
 
+  it should "not mistake a fresh call boundary for an earlier return failure at the same depth" in {
+    test(new PacketGenHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+      val stream = new PacketStreamDriver(d)
+      stream.initialize(options = 8)
+      val scenario = ImplicitReturnScenarios.all.find(_.name == "return-then-call-stop").get
+      stream.send(scenario.entries); stream.stop()
+      stream.frames.toSeq shouldBe Seq(start, ETraceReference.synchronization(3, pc(0)),
+        ETraceReference.address(3, pc(0x204), pc(0)), end)
+      println("[implicit-return][depth-alias] return→新call→停止：不发多余irreport，完整保留中间call和目标退休")
+    }
+  }
+
   it should "preserve calls under long output stalls and reset the stack at synchronization and loss frontiers" in {
     test(new PacketGenHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       val stream = new PacketStreamDriver(d)
@@ -84,9 +96,9 @@ class PacketImplicitReturnSpec extends AnyFlatSpec with ChiselScalatestTester wi
       stream.initialize(options = 8)
       stream.send(direct.take(3)); stream.requestSync(); stream.send(direct.drop(3)); stream.stop()
       stream.frames.toSeq shouldBe Seq(start, ETraceReference.synchronization(3, pc(0)),
-        ETraceReference.address(3, pc(0x200), pc(0), irDepth = Some(2)),
+        ETraceReference.address(3, pc(0x200), pc(0)),
         ETraceReference.synchronization(3, pc(0x104)), ETraceReference.address(3, pc(4), pc(0x104)),
-        ETraceReference.address(3, pc(8), pc(4), irDepth = Some(0)), end)
+        ETraceReference.address(3, pc(8), pc(4)), end)
       export("syncreq", stream, direct, code.updated(0, 0x100000ef).updated(0x100, 0x100000ef))
 
       stream.initialize(options = 8)
@@ -94,10 +106,10 @@ class PacketImplicitReturnSpec extends AnyFlatSpec with ChiselScalatestTester wi
         PacketInput(pc(0x200), 13), PacketInput(pc(0x300)), PacketInput(pc(0x304))))
       stream.stop()
       stream.frames.toSeq shouldBe Seq(start, ETraceReference.synchronization(3, pc(0)),
-        ETraceReference.address(3, pc(0x100), pc(0), irDepth = Some(1)),
+        ETraceReference.address(3, pc(0x100), pc(0)),
         ETraceReference.support(3, status = 2, implicitReturn = true), ETraceReference.synchronization(3, pc(0x200)),
         ETraceReference.address(3, pc(0x300), pc(0x200)),
-        ETraceReference.address(3, pc(0x304), pc(0x300), irDepth = Some(0)), end)
+        ETraceReference.address(3, pc(0x304), pc(0x300)), end)
       export("loss", stream, Seq.empty, Map(0 -> 0x100000ef, 0x100 -> 0x13, 0x200 -> 0x8067, 0x300 -> 0x13, 0x304 -> 0x13),
         Seq(0, 0x100, 0x200, 0x300, 0x304).map(pc))
       println("[implicit-return][epoch] 37拍反压保持、SYNCREQ深度前沿/清栈、loss后空栈显式返回全部通过")

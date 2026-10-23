@@ -85,6 +85,11 @@ class ImplicitReturnTests(unittest.TestCase):
         self.assertEqual(pcs, [BASE + i for i in (0, 0x100, 0x200, 0x104, 4, 8)])
         self.assertEqual(d.return_stack, [])
 
+    def test_return_followed_by_a_new_call_ends_without_aliasing_the_earlier_return_depth(self):
+        code=image({0:0x100000ef,0x100:0x8067,4:0x1fc000ef,0x200:0x13,0x204:0x13})
+        _,pcs=self.decode(code,[addr(0x204)])
+        self.assertEqual(pcs,[BASE+i for i in (0,0x100,4,0x200,0x204)])
+
     def test_consecutive_depth_anchors_resolve_returns_without_repeating_retirement(self):
         code = image({0: 0x100000ef, 0x100: 0x100000ef, 0x200: 0x8067, 0x104: 0x8067, 4: 0x13, 8: 0x13})
         _, pcs = self.decode(code, [addr(0x200, depth=2), addr(-0xfc, depth=1),
