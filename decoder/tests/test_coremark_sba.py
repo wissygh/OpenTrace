@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, check, check_benchmark_output, check_storage, fst_include
+from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, check, check_benchmark_output, check_storage, fst_include, check_optional_packets
 
 
 class SRAMFSTMonitorTests(unittest.TestCase):
@@ -53,6 +53,26 @@ class SRAMFSTMonitorTests(unittest.TestCase):
 
 
 class CoreMarkStorageChecks(unittest.TestCase):
+    def test_csr_features_match_support_and_actual_format0_usage(self):
+        for features in (0, 16, 32, 48):
+            with self.subTest(features=features):
+                fields = [{'format': 3, 'subformat': 3, 'options': features >> 1}]
+                if features & 16:
+                    fields += [{'format': 0, 'subformat': 0, 'branch_count': 31},
+                               {'format': 0, 'subformat': 0, 'branch_count': 80,
+                                'address': 8, 'prediction_failed': True}]
+                if features & 32:
+                    fields += [{'format': 0, 'subformat': 1, 'index': 7}]
+                coverage = check_optional_packets([{'fields': f} for f in fields], features)
+                self.assertEqual(coverage['declared_options'], features >> 1)
+                self.assertEqual(coverage['cache_index_packets'], int(bool(features & 32)))
+                self.assertEqual(coverage['correctly_predicted_branches'], 111 if features & 16 else 0)
+        for fields, enabled in [([{'format': 3, 'subformat': 3, 'options': 0}], 48),
+                ([{'format': 0, 'subformat': 1, 'index': 0}], 0),
+                ([{'format': 0, 'subformat': 0, 'branch_count': 31}], 0), ([], 16)]:
+            with self.assertRaises(ValueError):
+                check_optional_packets([{'fields': f} for f in fields], enabled)
+
     def test_exit_pc_accepts_the_shared_hex_json_representation(self):
         for pc in ('0x80001ca0', 0x80001ca0):
             with self.subTest(pc=pc), tempfile.TemporaryDirectory() as tmp:

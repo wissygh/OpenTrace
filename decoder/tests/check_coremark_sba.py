@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 
 from decoder.__main__ import load_config, number
 from decoder.artifacts import DecodeArtifacts, write_json, write_jsonl
@@ -19,6 +20,39 @@ from decoder.tests.run_xiangshan_sba import Tee
 
 RESOURCES = Path(__file__).with_name('resources')
 PROJECT = Path(__file__).resolve().parents[2]
+FEATURE_MODES = {'baseline': 0, 'cache': 32, 'prediction': 16, 'combined': 48}
+
+
+def check_optional_packets(packets, features):
+    """Check the on-wire feature declaration, and count actual Format0 uses."""
+    expected = (features & 0x30) >> 1
+    coverage = Counter()
+    supports = 0
+    for packet in packets:
+        fields = packet['fields']
+        fmt = fields['format']
+        if fmt == 3 and fields['subformat'] == 3:
+            supports += 1
+            if fields['options'] & 24 != expected:
+                raise ValueError('support options disagree with the requested/read-back encoder features')
+        if fmt == 0:
+            subformat = fields['subformat']
+            if subformat == 1:
+                if not features & 32:
+                    raise ValueError('cache index emitted while jump cache is disabled')
+                coverage['cache_index_packets'] += 1
+            else:
+                if not features & 16:
+                    raise ValueError('prediction count emitted while branch prediction is disabled')
+                coverage['prediction_count_packets'] += 1
+                coverage['correctly_predicted_branches'] += fields['branch_count']
+                coverage['prediction_failed_address_packets'] += bool(fields.get('prediction_failed'))
+                coverage['prediction_no_address_packets'] += 'address' not in fields
+    if not supports:
+        raise ValueError('missing feature support declaration')
+    return {'support_packets': supports, 'declared_options': expected,
+            **{k: coverage[k] for k in ('cache_index_packets', 'prediction_count_packets',
+                'correctly_predicted_branches', 'prediction_failed_address_packets', 'prediction_no_address_packets')}}
 
 
 def check_benchmark_output(text):
@@ -104,6 +138,13 @@ def check(directory):
         result['benchmark_crc'] = check_benchmark_output((dut / 'logs/uart.log').read_text())
         if any(metadata[name] & 11 != 9 for name in ('encoder', 'funnel', 'sram')):
             raise ValueError('trace components were not disabled and empty')
+        mode = metadata.get('mode', 'baseline')
+        if mode not in FEATURE_MODES:
+            raise ValueError('unknown optional CoreMark mode')
+        features = metadata.get('features_requested', 0)
+        if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0x30 != features:
+            raise ValueError('optional encoder CSR readback disagrees with the selected mode')
+        result.update(mode=mode, encoder_features=features)
         original_inputs = root / 'workload/inputs.json'
         benchmark = root / 'workload/benchmark.json'
         if not benchmark.exists():
@@ -141,6 +182,10 @@ def check(directory):
             raise ValueError('CoreMark trace execution segment did not terminate')
         if any(e['kind'] == 'support' and e['qual_status'] == 2 for e in events):
             raise ValueError('CoreMark capture contains trace loss')
+        # DecodeArtifacts flushes packet records before execution, so a bad
+        # optional packet remains inspectable even when reconstruction fails.
+        packets = [json.loads(line) for line in (dut / 'packets.jsonl').read_text().splitlines()]
+        result['optional_coverage'] = check_optional_packets(packets, features)
         instructions = [e for e in events if e['kind'] == 'instruction']
         pcs = [e['pc'] for e in instructions]
         result.update(decoded_instructions=len(pcs), decoded_pcs=pcs)
