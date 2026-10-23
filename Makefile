@@ -44,6 +44,12 @@ test-implicit-return:
 	mill -i OpenTrace.test.testOnly trace.component.TraceReturnStackSpec trace.component.ImplicitReturnCodecSpec trace.component.PacketImplicitReturnSpec trace.component.ImplicitReturnSramSpec
 	python3 -m decoder.tests.check_implicit_return build/validation/implicit-return
 
+.PHONY: test-hart-stop
+test-hart-stop:
+	@echo "[hart-stop] 真实积压退休→Debug/reset有序停止→resume同步，检查全部退休与trace-end"
+	mill -i OpenTrace.test.testOnly trace.component.HartStopSramSpec
+	python3 -m decoder.tests.check_hart_stop build/validation/hart-stop
+
 XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
 XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
 XIANGSHAN_SBA_PRESSURE_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-pressure-run

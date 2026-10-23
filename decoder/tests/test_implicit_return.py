@@ -10,7 +10,7 @@ import unittest
 from decoder import DecodeError, ExecutionDecoder, Packet, ProgramImage, MultiHartDecoder
 from decoder.execution import unpack
 from decoder.tests.test_decoder import PROFILE, payload, support, sync, encaps
-from decoder.tests.check_implicit_return import check
+from decoder.tests.check_implicit_return import main as check_all
 
 P = replace(PROFILE, address_width=50, return_stack_size=4)
 BASE = 0x80001000
@@ -62,12 +62,14 @@ class ImplicitReturnTests(unittest.TestCase):
                 if fault=='loss':metadata['dropped']=1
                 if fault=='pointer':metadata['rp']-=4
                 (root/'dut/metadata.json').write_text(json.dumps(metadata))
+                (root/'summary.json').write_text(json.dumps({'status':'passed'}))
                 with redirect_stdout(io.StringIO()):
                     if fault:
-                        with self.assertRaises(ValueError):check(root)
-                    else:self.assertEqual(check(root)['status'],'passed')
+                        with self.assertRaises(ValueError):check_all([str(root)])
+                    else:check_all([str(root)])
                 result=json.loads((root/'diff/comparison.json').read_text())
                 self.assertEqual(result['status'],'failed' if fault else 'passed')
+                self.assertEqual(json.loads((root/'summary.json').read_text())['status'],'failed' if fault else 'passed')
 
     def decode(self, img, packets, profile=P, options=2):
         d = ExecutionDecoder(img, profile)

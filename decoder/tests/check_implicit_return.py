@@ -63,6 +63,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     captures = sorted({p.parent.parent for p in args.directory.rglob('dut/trace.json')})
     if not captures: raise RuntimeError('no actual RTL captures found')
+    write_json(args.directory / 'summary.json', {'status': 'failed', 'error': 'validation incomplete'})
     results = []
     for root in captures:
         (root / 'diff/logs').mkdir(exist_ok=True, parents=True)
