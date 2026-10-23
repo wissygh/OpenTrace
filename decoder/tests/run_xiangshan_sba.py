@@ -126,10 +126,13 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
             raise RuntimeError('core exceeded the actual trace stall budget before sink release')
         if halt_during_pressure:
             print('[XS-SBA][stop-frontier] 真实stall积压期间外部halt；放开SRAM后先排完旧退休，再resume', flush=True)
-            rpc.run('halt 120000')
-            halt_pc = register('pc')
+            # Submit halt without waiting: a trace-stalled hart may need the
+            # sink to drain before it can service the debug request.
+            rpc.run('halt 0')
         write(0x20040000, 0x103)
         if halt_during_pressure:
+            rpc.run('wait_halt 120000')
+            halt_pc = register('pc')
             for _ in range(30):
                 if read(0x20000000) & 8:
                     break

@@ -43,11 +43,12 @@ class XiangShanSBAChecks(unittest.TestCase):
             metadata=json.loads((Path(tmp)/'dut/metadata.json').read_text())
             self.assertTrue(metadata['halt_during_pressure'])
             self.assertEqual(metadata['pressure_halt_pc'],'0x80000016')
-        halt=commands.index('halt 120000')
+        halt=commands.index('halt 0')
         release=commands.index('write_memory 0x20040000 32 {0x103} phys')
         drained=commands.index('read_memory 0x20000000 32 1 phys',release)
         resume=commands.index('resume')
         self.assertLess(halt,release);self.assertLess(release,drained);self.assertLess(drained,resume)
+        self.assertLess(release,commands.index('wait_halt 120000'))
         self.assertEqual(commands[0],'riscv set_mem_access sysbus')
 
     def test_real_discovery_read_keeps_raw_words_and_rejects_wrong_headers(self):
