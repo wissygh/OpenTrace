@@ -276,8 +276,8 @@ class ExecutionDecoder:
                     self.inferred_address = False
                 # A depth report identifies an occurrence across inferred
                 # returns even when no explicit discontinuity ends the search.
-                if not (packet.get('irreport') and self.pc == address and
-                        packet['irdepth'] == len(self.return_stack) and not self._unprocessed()):
+                depth_matches = not packet.get('irreport') or packet['irdepth'] == len(self.return_stack)
+                if not (self.options & 2 and self.pc == address and depth_matches and not self._unprocessed()):
                     continue
                 self.inferred_address = False
                 target_image = None

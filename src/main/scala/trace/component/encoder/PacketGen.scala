@@ -119,6 +119,8 @@ class PacketGen extends Module with TraceParameters {
     returnStack.io.top === address
   val returnFailed       = implicitReturns && previousReturn && returnStack.io.depth =/= 0.U && !returnHit
   val currentReturnDepth = returnStack.io.depth - returnHit.asUInt
+  val returnsSinceCall   = RegInit(false.B)
+  val branchSinceReturn  = RegInit(false.B)
   val previousJump = previousQualified && !tail && !trapPhase &&
     (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn) && !returnHit
   val endCurrent = cur.valid && qualified && !internalStep &&
@@ -173,6 +175,23 @@ class PacketGen extends Module with TraceParameters {
   returnStack.io.push := step && qualified && implicitReturns &&
     (kind === Itype.UninferableCall || kind === Itype.InferableCall)
   returnStack.io.link := address + (1.U << (cur.ilastsize +& 1.U))
+  // Section 7.6.3: a depth report is not a generic boundary flag. Reporting it
+  // after a fresh call can alias an older return's depth and falsely mark that
+  // return as mispredicted. Track the history that actually needs disambiguation.
+  val returnDepthNeeded =
+    Mux(previousReturn, returnHit && currentReturnDepth =/= 0.U, returnsSinceCall && !branchSinceReturn && !branch)
+  when(step && qualified && implicitReturns) {
+    when(kind === Itype.FunctionReturn) {
+      returnsSinceCall  := true.B
+      branchSinceReturn := false.B
+    }
+    when(branch)(branchSinceReturn             := true.B)
+    when(returnStack.io.push)(returnsSinceCall := false.B)
+  }
+  when(generated.fire && (syncPacket || supportPacket)) {
+    returnsSinceCall  := false.B
+    branchSinceReturn := false.B
+  }
   val targetCache = Module(new TraceJumpTargetCache)
   targetCache.io.address := address
   targetCache.io.update  := generated.fire && carriesAddress && previousJump && activeConfig(4) && !syncPacket
@@ -239,8 +258,8 @@ class PacketGen extends Module with TraceParameters {
   def addressPacket(requestedNotify: Bool, beforeSync: Bool): Unit = {
     val delta = Wire(UInt(iaddress_width_p.W))
     delta := Mux(activeConfig(5), address, address - reference)
-    val reportDepth = implicitReturns && (returnFailed || requestedNotify || nextTrap || nextBoundary ||
-      syncRequired || !nextQualified || endCurrent)
+    val reportDepth = implicitReturns && (returnFailed || (returnDepthNeeded &&
+      (requestedNotify || nextTrap || nextBoundary || syncRequired || !nextQualified || endCurrent)))
     val depth = Mux(returnFailed, returnStack.io.depth, currentReturnDepth)
     val addressPayload = ETracePacketCodec.address(
       count(4, 0),
