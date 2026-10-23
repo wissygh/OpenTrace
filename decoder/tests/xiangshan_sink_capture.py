@@ -277,6 +277,15 @@ def check(directory):
             raise DecodeError(f'selected sink retirement differs at index {first}, lengths {len(pcs)}/{len(expected)}')
         if not decoder.decoders[0].start_of_trace or any(e['kind'] == 'support' and e['qual_status'] == 2 for e in events):
             raise DecodeError('selected sink trace lost data or did not end')
+        if m['scenario'] == 'exception':
+            traps = [e for e in events if e['kind'] == 'trap']
+            epcs = [e['pc'] for e in events if e['kind'] == 'exception_pc']
+            if [(e['ecause'], e['interrupt']) for e in traps[:2]] != [(11, False), (2, False)]:
+                raise DecodeError('selected sink lost the ordinary ecall/illegal trap causes')
+            if epcs[:2] != [start + 16, start + 24]:
+                raise DecodeError('selected sink lost the ordinary faulting EPCs')
+            if number(m['trap_vector_readback']) != number(symbols['trace_handler']):
+                raise DecodeError('selected sink actual mtvec differs from the handler configuration')
         indices = match_samples(pcs, [row['pc'] for row in samples])
         result.update(status='passed', stage='complete', sink=m['sink'], stored_capture_bytes=len(data),
                       decoded_instructions=len(pcs), decoded_pcs=pcs, rob_samples=len(samples), rob_decoder_indices=indices)

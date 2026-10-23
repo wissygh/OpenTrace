@@ -140,6 +140,17 @@ def check_stages(directory, result):
         raise DecodeError(f'workload retirement mismatch at instruction {index}')
     if not decoder.decoders[0].start_of_trace:
         raise DecodeError('capture did not terminate its execution segment')
+    if scenario == 'exception':
+        traps = [event for event in events if event['kind'] == 'trap']
+        epcs = [event['pc'] for event in events if event['kind'] == 'exception_pc']
+        if len(traps) < 2 or [(e['ecause'], e['interrupt']) for e in traps[:2]] != [(11, False), (2, False)]:
+            raise DecodeError('ordinary ecall/illegal causes differ from the actual workload')
+        if epcs[:2] != [start + 16, start + 24]:
+            raise DecodeError('faulting EPCs were lost or confused with retired handler instructions')
+        if number(metadata['trap_vector_readback']) != number(symbols['trace_handler']):
+            raise DecodeError('actual mtvec differs from the decoded handler configuration')
+        result['ordinary_traps'] = {'causes': [11, 2], 'exception_pcs': epcs[:2],
+                                    'mtvec': hex(number(metadata['trap_vector_readback']))}
     result['stage'] = 'rob-comparison'
     samples = [row['pc'] for row in selected]
     matches = []
