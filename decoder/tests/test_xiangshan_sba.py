@@ -2,15 +2,33 @@ import unittest
 import json
 from pathlib import Path
 import tempfile
+import struct
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from decoder.encapsulation import DecodeError
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
-from decoder.tests.run_xiangshan_sba import RPC, listening, run
+from decoder.tests.run_xiangshan_sba import RPC, listening, run, capture_discovery
 from decoder.tests.xiangshan_sba_scenarios import reference
 
 
 class XiangShanSBAChecks(unittest.TestCase):
+    def test_real_discovery_read_keeps_raw_words_and_rejects_wrong_headers(self):
+        parent = Path(__file__).resolve().parents[2] / 'delp/tmp'
+        parent.mkdir(parents=True, exist_ok=True)
+        words = [0x4352544f, 1, 20, 15, 0x10008, 0, 8, 8, 0, 31, 63, 7, 1, 0, 49, 0, 0, 2, 4, 0]
+        with tempfile.TemporaryDirectory(dir=parent) as tmp:
+            rpc=Mock()
+            rpc.run.return_value=' '.join(hex(w) for w in words)
+            result=capture_discovery(rpc,tmp)
+            rpc.run.assert_called_once_with('read_memory 0x20000e00 32 20 phys')
+            self.assertEqual(result['profile']['return_stack_size'],4)
+            self.assertEqual((Path(tmp)/'discovery.bin').read_bytes(),struct.pack('<20I',*words))
+            rpc.run.return_value=' '.join(hex(w) for w in words[:-1])
+            with self.assertRaisesRegex(RuntimeError,'twenty'):capture_discovery(rpc,tmp)
+            words[0]=0
+            rpc.run.return_value=' '.join(hex(w) for w in words)
+            with self.assertRaisesRegex(DecodeError,'header'):capture_discovery(rpc,tmp)
+
     def test_compressed_samples_keep_repeated_loop_iterations(self):
         decoded = [8, 10, 12, 14, 16, 12, 14, 16]
         self.assertEqual(match_samples(decoded, [8, 12, 16, 12, 16]), [0, 2, 4, 5, 7])

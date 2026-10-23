@@ -20,12 +20,33 @@ from decoder.tests.run_xiangshan_sba import Tee
 
 RESOURCES = Path(__file__).with_name('resources')
 PROJECT = Path(__file__).resolve().parents[2]
-FEATURE_MODES = {'baseline': 0, 'cache': 32, 'prediction': 16, 'combined': 48}
+FEATURE_MODES = {'baseline': 0, 'cache': 32, 'prediction': 16, 'combined': 48,
+                 'implicit': 8, 'implicit-prediction': 24, 'implicit-combined': 56}
+
+
+def observe_returns(decoder):
+    """Count actual reconstruction decisions without changing decoder behavior."""
+    counts = {'implicit_returns': 0, 'explicit_returns': 0, 'maximum_stack_depth': 0}
+    original = decoder._next
+
+    def next_pc(*args, **kwargs):
+        instruction = decoder._instr(decoder.pc)
+        is_return = (instruction.kind == 'indirect' and instruction.rs1 in (1, 5) and
+                     instruction.rd not in (1, 5))
+        counts['maximum_stack_depth'] = max(counts['maximum_stack_depth'], len(decoder.return_stack))
+        result = original(*args, **kwargs)
+        if is_return:
+            counts['implicit_returns' if decoder.last_inferred_return else 'explicit_returns'] += 1
+        counts['maximum_stack_depth'] = max(counts['maximum_stack_depth'], len(decoder.return_stack))
+        return result
+
+    decoder._next = next_pc
+    return counts
 
 
 def check_optional_packets(packets, features):
     """Check the on-wire feature declaration, and count actual Format0 uses."""
-    expected = (features & 0x30) >> 1
+    expected = ((features & 0x30) >> 1) | ((features & 8) >> 2)
     coverage = Counter()
     supports = 0
     for packet in packets:
@@ -33,7 +54,7 @@ def check_optional_packets(packets, features):
         fmt = fields['format']
         if fmt == 3 and fields['subformat'] == 3:
             supports += 1
-            if fields['options'] & 24 != expected:
+            if fields['options'] & 26 != expected:
                 raise ValueError('support options disagree with the requested/read-back encoder features')
         if fmt == 0:
             subformat = fields['subformat']
@@ -49,12 +70,16 @@ def check_optional_packets(packets, features):
                 coverage['prediction_failed_packets'] += bool(fields.get('prediction_failed'))
                 coverage['prediction_failed_address_packets'] += bool(fields.get('prediction_failed')) and 'address' in fields
                 coverage['prediction_no_address_packets'] += 'address' not in fields
+        if fields.get('irreport'):
+            if not features & 8:
+                raise ValueError('return depth emitted while implicit return is disabled')
+            coverage['return_depth_reports'] += 1
     if not supports:
         raise ValueError('missing feature support declaration')
     return {'support_packets': supports, 'declared_options': expected,
             **{k: coverage[k] for k in ('cache_index_packets', 'prediction_count_packets',
                 'correctly_predicted_branches', 'prediction_failed_packets',
-                'prediction_failed_address_packets', 'prediction_no_address_packets')}}
+                'prediction_failed_address_packets', 'prediction_no_address_packets', 'return_depth_reports')}}
 
 
 def check_benchmark_output(text):
@@ -144,7 +169,7 @@ def check(directory):
         if mode not in FEATURE_MODES:
             raise ValueError('unknown optional CoreMark mode')
         features = metadata.get('features_requested', 0)
-        if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0x30 != features:
+        if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0xf9 != features:
             raise ValueError('optional encoder CSR readback disagrees with the selected mode')
         result.update(mode=mode, encoder_features=features)
         original_inputs = root / 'workload/inputs.json'
@@ -176,6 +201,7 @@ def check(directory):
         observer = DecodeArtifacts(root, overwrite=True)
         observer.snapshot(dut / 'trace.bin', dut / 'trace.json')
         decoder = load_config(dut / 'trace.json', observer=observer)
+        return_counts = observe_returns(decoder.decoders[0])
         events = []
         for offset in range(0, len(data), 4096):
             events.extend(decoder.feed(data[offset:offset + 4096]))
@@ -188,6 +214,9 @@ def check(directory):
         # optional packet remains inspectable even when reconstruction fails.
         packets = [json.loads(line) for line in (dut / 'packets.jsonl').read_text().splitlines()]
         result['optional_coverage'] = check_optional_packets(packets, features)
+        result['return_coverage'] = return_counts
+        if features & 8 and not return_counts['implicit_returns']:
+            raise ValueError('implicit mode did not reconstruct any actual inferred returns')
         instructions = [e for e in events if e['kind'] == 'instruction']
         pcs = [e['pc'] for e in instructions]
         result.update(decoded_instructions=len(pcs), decoded_pcs=pcs)

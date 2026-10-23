@@ -8,11 +8,13 @@ import socket
 import shutil
 import subprocess
 import time
+import struct
 from contextlib import redirect_stdout
 import sys
 from .check_xiangshan_sba import check
 from decoder.artifacts import write_json
 from decoder.capture_layout import CaptureLayout
+from decoder.discovery import read_snapshot
 from .xiangshan_sba_scenarios import reference
 
 
@@ -47,7 +49,30 @@ class RPC:
         self.socket.close()
 
 
-def collect(rpc, directory, symbols, scenario='basic'):
+def capture_discovery(rpc, directory):
+    """Read real Table42 vendor CSR words; preserve exact little-endian bytes."""
+    words = [int(value, 0) for value in rpc.run('read_memory 0x20000e00 32 20 phys').split()]
+    if len(words) != 20:
+        raise RuntimeError('SBA discovery must return twenty 32-bit words')
+    path = Path(directory) / 'discovery.bin'
+    path.write_bytes(struct.pack('<20I', *words))
+    discovered = read_snapshot(path)
+    write_json(path.with_suffix('.json'), discovered)
+    print('[XS-SBA][discovery] 实际20word读取通过，return_stack_size=' +
+          str(discovered['attributes']['return_stack_size']), flush=True)
+    return discovered
+
+
+def pin_threads(pid, cpu_start):
+    if cpu_start is None:
+        return
+    time.sleep(0.5)
+    tids = sorted(int(p.name) for p in Path(f'/proc/{pid}/task').iterdir())
+    for i, tid in enumerate(tids):
+        os.sched_setaffinity(tid, {cpu_start + i % 8})
+
+
+def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=False):
     directory = Path(directory)
     layout = CaptureLayout(directory).create()
     expected_a0, _ = reference(symbols, scenario)
@@ -74,6 +99,14 @@ def collect(rpc, directory, symbols, scenario='basic'):
             raise RuntimeError(f'component Active did not release: {address:#x}')
     write(0x20040020, 0)
     write(0x20000f04, 1)
+    actual_features = None
+    if discovery:
+        capture_discovery(rpc, layout.dut)
+    if features or discovery:
+        write(0x20000008, features)
+        actual_features = read(0x20000008)
+        if actual_features & 0xf9 != features:
+            raise RuntimeError('encoder rejected the requested instruction features')
     write(0x20040000, 0x101 if scenario == 'pressure' else 0x103)  # delayed sink enable for pressure
     write(0x20010000, 3)
     write(0x20000000, 0x2007)  # InstStallEna, InstTracing, Enable, Active
@@ -94,6 +127,8 @@ def collect(rpc, directory, symbols, scenario='basic'):
     rpc.run('wait_halt 120000')
     metadata = {'memory_access': 'sysbus', 'pc': register('pc'), 'a0': register('a0'),
                 'scenario': scenario, 'pressure_stalls_before_release': pressure_stalls}
+    if actual_features is not None:
+        metadata.update(features_requested=features, features_readback=actual_features)
     if metadata['pc'] != symbols['trace_done'] or metadata['a0'] != expected_a0:
         raise RuntimeError(f'workload did not finish correctly: {metadata}')
     print('[XS-SBA][3/5] SBA按encoder→Funnel→SRAM停止；轮询Disable/Empty', flush=True)
@@ -123,8 +158,10 @@ def collect(rpc, directory, symbols, scenario='basic'):
     write_json(layout.dut / 'metadata.json', metadata)
     if metadata['rp'] != wp:
         raise RuntimeError('RAMData reads did not advance RP exactly once per word')
-    (layout.dut / 'trace.json').write_text(json.dumps(
-        {'source_bits': 8, 'sources': {'0': {'hart_id': 0, 'elf': '../workload/workload.elf'}}}, indent=2) + '\n')
+    config = {'source_bits': 8, 'sources': {'0': {'hart_id': 0, 'elf': '../workload/workload.elf'}}}
+    if discovery:
+        config['discovery'] = 'discovery.bin'
+    (layout.dut / 'trace.json').write_text(json.dumps(config, indent=2) + '\n')
     print('[XS-SBA][5/5] 真实SBA捕获已保存，交decoder和独立ROB日志', flush=True)
 
 
@@ -229,7 +266,8 @@ def run_stages(args, layout):
             (logs / 'openocd.log').open('w') as debugger:
         try:
             emu = subprocess.Popen(emu_command, cwd=directory, stdout=uart, stderr=rob)
-            deadline = time.monotonic() + 300
+            pin_threads(emu.pid, getattr(args, 'cpu_start', None))
+            deadline = time.monotonic() + getattr(args, 'startup_timeout', 300)
             # Do not connect a TCP probe to remote_bitbang: it accepts only one client.
             while not listening(rbb_port):
                 if emu.poll() is not None or time.monotonic() >= deadline:
@@ -242,10 +280,10 @@ def run_stages(args, layout):
                 if emu.poll() is not None or openocd.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError('OpenOCD did not become ready; inspect openocd.log')
                 try:
-                    rpc = RPC(tcl_port, transcript=logs / 'rpc.jsonl')
+                    rpc = RPC(tcl_port, timeout=getattr(args, 'rpc_timeout', 300), transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
-            collect(rpc, directory, symbols, scenario)
+            collect(rpc, directory, symbols, scenario, getattr(args, 'features', 0), getattr(args, 'discovery', False))
         finally:
             if rpc is not None:
                 rpc.close()
@@ -265,6 +303,11 @@ def main():
     parser.add_argument('--openocd', default='openocd')
     parser.add_argument('--pressure', action='store_true', help='hold SRAM disabled until real core trace stall, then release')
     parser.add_argument('--cross-prefix', default='riscv64-unknown-elf-')
+    parser.add_argument('--features', type=lambda value: int(value, 0), default=0)
+    parser.add_argument('--discovery', action='store_true', help='read Table42 from real encoder vendor CSR')
+    parser.add_argument('--startup-timeout', type=int, default=300)
+    parser.add_argument('--rpc-timeout', type=int, default=300)
+    parser.add_argument('--cpu-start', type=int, help='pin the eight emulator threads to consecutive host CPUs')
     args = parser.parse_args()
     try:
         run(args)

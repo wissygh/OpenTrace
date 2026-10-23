@@ -6,7 +6,10 @@ import subprocess
 import tempfile
 import unittest
 
-from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, check, check_benchmark_output, check_storage, fst_include, check_optional_packets
+from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, check, check_benchmark_output, check_storage, fst_include, check_optional_packets, observe_returns
+from decoder.tests.test_implicit_return import P, BASE, addr, image
+from decoder.tests.test_decoder import sync, support
+from decoder import Packet, ExecutionDecoder
 
 
 class SRAMFSTMonitorTests(unittest.TestCase):
@@ -53,18 +56,32 @@ class SRAMFSTMonitorTests(unittest.TestCase):
 
 
 class CoreMarkStorageChecks(unittest.TestCase):
+    def test_return_coverage_counts_actual_predictions_and_preserves_execution(self):
+        code=image({0:0x100000ef,0x100:0x8067,4:0x13,8:0x13})
+        decoder=ExecutionDecoder(code,P)
+        counts=observe_returns(decoder)
+        events=[]
+        for body in (support(options=2),sync(BASE,profile=P),addr(8,depth=0),support(1,options=2)):
+            events+=decoder.consume(Packet(0,body))
+        self.assertEqual([e['pc'] for e in events if e['kind']=='instruction'],[BASE,BASE+0x100,BASE+4,BASE+8])
+        self.assertEqual(counts,{'implicit_returns':1,'explicit_returns':0,'maximum_stack_depth':1})
+        self.assertTrue(decoder.start_of_trace)
+
     def test_csr_features_match_support_and_actual_format0_usage(self):
-        for features in (0, 16, 32, 48):
+        for features in (0, 8, 16, 24, 32, 40, 48, 56):
             with self.subTest(features=features):
-                fields = [{'format': 3, 'subformat': 3, 'options': features >> 1}]
+                fields = [{'format': 3, 'subformat': 3, 'options': ((features & 0x30) >> 1) | ((features & 8) >> 2)}]
                 if features & 16:
                     fields += [{'format': 0, 'subformat': 0, 'branch_count': 31, 'prediction_failed': True},
                                {'format': 0, 'subformat': 0, 'branch_count': 80,
                                 'address': 8, 'prediction_failed': True}]
+                if features & 8:
+                    fields += [{'format': 2, 'irreport': True, 'irdepth': 3}]
                 if features & 32:
                     fields += [{'format': 0, 'subformat': 1, 'index': 7}]
                 coverage = check_optional_packets([{'fields': f} for f in fields], features)
-                self.assertEqual(coverage['declared_options'], features >> 1)
+                self.assertEqual(coverage['declared_options'], ((features & 0x30) >> 1) | ((features & 8) >> 2))
+                self.assertEqual(coverage['return_depth_reports'], int(bool(features & 8)))
                 self.assertEqual(coverage['cache_index_packets'], int(bool(features & 32)))
                 self.assertEqual(coverage['correctly_predicted_branches'], 111 if features & 16 else 0)
                 self.assertEqual(coverage['prediction_failed_packets'], 2 if features & 16 else 0)
