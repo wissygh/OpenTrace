@@ -66,6 +66,19 @@ test-hart-stop:
 XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
 XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
 XIANGSHAN_SBA_PRESSURE_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-pressure-run
+XIANGSHAN_SINK ?= atb
+XIANGSHAN_SINK_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-$(XIANGSHAN_SINK)-run
+XIANGSHAN_SINK_ARGS ?=
+XIANGSHAN_EXCEPTION_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-exception-run
+
+.PHONY: test-xiangshan-sink test-xiangshan-exception
+test-xiangshan-sink:
+	@echo "[XS-sink] 外部JTAG/SBA→实际$(XIANGSHAN_SINK)输出→解封装/完整执行流→独立ROB"
+	python3 -m decoder.tests.run_xiangshan_sba --emu "$(XIANGSHAN_EMU)" --output "$(XIANGSHAN_SINK_OUTPUT)" --sink "$(XIANGSHAN_SINK)" --discovery $(XIANGSHAN_SINK_ARGS)
+
+test-xiangshan-exception:
+	@echo "[XS-exception] 外部SBA启用NoTrapAddr；普通ecall/illegal/handler/mret完整路径与真实mtvec核验"
+	python3 -m decoder.tests.run_xiangshan_sba --emu "$(XIANGSHAN_EMU)" --output "$(XIANGSHAN_EXCEPTION_OUTPUT)" --trap --features 2 --discovery
 
 test-xiangshan-sba:
 	@echo "[XS-SBA] 启用已有emu的JTAG；外部SBA配置/停止/读SRAM，再与ROB采样对拍"
