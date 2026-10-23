@@ -52,7 +52,7 @@ class EncoderDiscoveryTests(unittest.TestCase):
         self.assertEqual(tuple(d['attributes']), ATTRIBUTES)
         self.assertEqual(d['profile'], {'address_width': 50, 'address_lsb': 1,
             'privilege_width': 3, 'context_width': 32, 'time_width': 64, 'ecause_width': 8,
-            'f0s_width': 1, 'cache_size': 8, 'bpred_size': 8, 'encoder_mode_width': 1})
+            'f0s_width': 1, 'cache_size': 8, 'bpred_size': 8, 'encoder_mode_width': 1, 'return_stack_size': 0})
         snapshot(p, {'context_width': 0, 'time_width': 0, 'nocontext': 0, 'notime': 0,
                      'iaddress_lsb': 1, 'cache_size': 0, 'bpred_size': 0, 'f0s_width': 0})
         d = read_snapshot(p)
@@ -77,7 +77,7 @@ class EncoderDiscoveryTests(unittest.TestCase):
         for attributes in ({'arch': 1}, {'nocontext': 2}, {'notime': 2}, {'iaddress_width': 64},
                            {'iaddress_lsb': 31}, {'privilege_width': 3}, {'f0s_width': 3},
                            {'cache_size': 17}, {'bpred_size': 17}, {'sijump': 1},
-                           {'return_stack_size': 1}, {'call_counter_size': 1}):
+                           {'return_stack_size': 17}, {'call_counter_size': 1}):
             with self.subTest(attributes=attributes):
                 snapshot(p, attributes)
                 with self.assertRaises(DecodeError): read_snapshot(p)

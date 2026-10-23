@@ -11,7 +11,7 @@ def main(directory):
     print('[Table42->decoder][1/2] 读取真实Encoder的80byte CSR快照和对应trace/镜像', file=sys.stderr)
     dut = root / 'dut'
     discovered = read_snapshot(dut / 'discovery.bin')
-    assert list(discovered['attributes'].values()) == [0, 8, 8, 0, 31, 63, 7, 1, 0, 49, 0, 0, 2, 0, 0]
+    assert list(discovered['attributes'].values()) == [0, 8, 8, 0, 31, 63, 7, 1, 0, 49, 0, 0, 2, 4, 0]
     decoder = load_config(dut / 'trace.json')
     events = []
     for byte in (dut / 'trace.bin').read_bytes(): events.extend(decoder.feed(bytes([byte])))

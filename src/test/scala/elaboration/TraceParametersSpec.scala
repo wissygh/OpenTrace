@@ -46,7 +46,10 @@ class TraceParametersSpec extends AnyFlatSpec with Matchers {
       () => new TraceParameters { override def buffer_num = 1 },
       () => new TraceParameters { override def buffer_ptr_width = 7 },
       () => new TraceParameters { override def core_stall_response_cycles_p = 5 },
-      () => new TraceParameters { override def filter_trap_depth_bits_p = 0 })
+      () => new TraceParameters { override def filter_trap_depth_bits_p = 0 },
+      () => new TraceParameters { override def return_stack_size_p = 0 },
+      () => new TraceParameters { override def return_stack_size_p = 9 },
+      () => new TraceParameters { override def call_counter_size_p = 1 })
     invalid.zipWithIndex.foreach { case (build, i) =>
       withClue(s"invalid profile #$i: ") { intercept[IllegalArgumentException](build().validateImplementationParameters()) }
     }

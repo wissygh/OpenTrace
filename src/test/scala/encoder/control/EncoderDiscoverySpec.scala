@@ -62,7 +62,7 @@ class EncoderDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with M
       }
       // Expected words are specified independently of EncoderDiscoveryValues.from.
       val expected = Seq(BigInt("4352544f", 16), BigInt(1), BigInt(20), BigInt(15), BigInt(0x10008)) ++
-        Seq(0, 8, 8, 0, 31, 63, 7, 1, 0, 49, 0, 0, 2, 0, 0).map(BigInt(_))
+        Seq(0, 8, 8, 0, 31, 63, 7, 1, 0, 49, 0, 0, 2, 4, 0).map(BigInt(_))
       val words = expected.indices.map(i => read(0xe00 + i * 4))
       words shouldBe expected
       for (i <- words.indices; value <- Seq(BigInt(0), BigInt("ffffffff", 16))) {
@@ -106,7 +106,7 @@ class EncoderDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with M
       override def f0s_width_p = 0
     }
     val values = EncoderDiscoveryValues.from(parameters)
-    values.attributes shouldBe Seq(0, 0, 0, 0, 31, 63, 3, 0, 1, 31, 1, 1, 1, 0, 0)
+    values.attributes shouldBe Seq(0, 0, 0, 0, 31, 63, 3, 0, 1, 31, 1, 1, 1, 4, 0)
     test(new EncoderDiscovery(0x20030000, values)) { d =>
       d.io.bus.b2c.readEn.poke(true.B); d.io.bus.b2c.writeEn.poke(false.B)
       d.io.bus.b2c.dataWrite.poke(0.U)

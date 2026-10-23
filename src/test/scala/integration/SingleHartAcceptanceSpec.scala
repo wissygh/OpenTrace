@@ -16,7 +16,7 @@ import InstructionReference._
 /** Single-clock functional acceptance; independent-domain/reset behavior remains
   * covered by the actual four-clock TraceSystemSpec, rather than assumed here.
   */
-private class SingleHartAcceptanceHarness(ingress: TraceIngressConfig = TraceIngressConfig()) extends Module {
+private[component] class SingleHartAcceptanceHarness(ingress: TraceIngressConfig = TraceIngressConfig()) extends Module {
   implicit val p: Parameters = Parameters.empty
   val io = IO(new Bundle {
     val bus = new Control2BusRegBundle

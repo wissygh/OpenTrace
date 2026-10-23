@@ -89,7 +89,7 @@ class ControlRegisterMapSpec extends AnyFlatSpec with ChiselScalatestTester with
         Register(bank, address, initial, (_, value) => fixed | (value & mask))
       val registers = Seq(
         Register(0, 0, 0x21007d, (_, v) => BigInt(0x10079) | (v & 0xf02802) | (if (v.testBit(1)) v & 4 else BigInt(0))),
-        ro(0, 4, 0x101), rw(0, 8, 0x31, BigInt(8) << 28, BigInt(8) << 28), rw(0, 12, 1),
+        ro(0, 4, 0x101), rw(0, 8, 0x39, BigInt(8) << 28, BigInt(8) << 28), rw(0, 12, 1),
         ro(0, 0x10, 0), ro(0, 0x1c, 0),
         rw(0, 0x40, 0x830a, 0x3f000231L, 0x3f000031L),
         rw(0, 0x400, 0x1111f),

@@ -8,7 +8,7 @@ import trace.interface._
 
 private[component] case class PacketInput(pc: BigInt, kind: Int = 0, retired: Int = 2,
     privilege: Int = 3, context: BigInt = 0, ctype: Int = 0, time: BigInt = 0,
-    cause: Int = 0, tval: BigInt = 0, notification: Boolean = false, lost: Boolean = false)
+    cause: Int = 0, tval: BigInt = 0, notification: Boolean = false, lost: Boolean = false, halfword: Boolean = false)
 
 /** Protocol driver shared by optional-format tests; expected packets live in
   * an independent normative model, never in this handshake driver.
@@ -30,7 +30,7 @@ private[component] class PacketStreamDriver(d: PacketGenHarness) extends Matcher
   private def ready(): Unit = d.io.packet.ready.poke((cycles % 11 > 2).B)
   private def drive(e: PacketInput): Unit = {
     d.io.block.valid.poke(true.B); d.io.block.iaddr.poke(e.pc.U); d.io.block.itype.poke(e.kind.U)
-    d.io.block.iretire.poke(e.retired.U); d.io.block.ilastsize.poke(Ilastsize.Word)
+    d.io.block.iretire.poke(e.retired.U); d.io.block.ilastsize.poke((if (e.halfword) Ilastsize.HalfWord else Ilastsize.Word))
     d.io.block.priv.poke(e.privilege.U); d.io.block.time.poke(e.time.U)
     d.io.block.context.poke(e.context.U); d.io.block.ctype.poke(e.ctype.U)
     d.io.block.cause.poke(e.cause.U); d.io.block.tval.poke(e.tval.U)
@@ -40,6 +40,11 @@ private[component] class PacketStreamDriver(d: PacketGenHarness) extends Matcher
   def idle(n: Int = 12): Unit = {
     d.io.block.valid.poke(false.B)
     for (_ <- 0 until n) { ready(); tick() }
+  }
+  def stall(n: Int): Unit = {
+    d.io.block.valid.poke(false.B); d.io.packet.ready.poke(false.B); d.io.fifoIsFull.poke(true.B)
+    for (_ <- 0 until n) tick()
+    d.io.fifoIsFull.poke(false.B)
   }
   def initialize(options: Int = 32): Unit = {
     frames.clear(); held = None; cycles = 0
@@ -51,7 +56,7 @@ private[component] class PacketStreamDriver(d: PacketGenHarness) extends Matcher
     drive(PacketInput(0)); d.io.block.valid.poke(false.B); d.io.packet.ready.poke(true.B)
     d.reset.poke(true.B); d.clock.step(2); d.reset.poke(false.B); idle()
     frames.toSeq shouldBe Seq(ETraceReference.support(3, fullAddress = (options & 1) != 0,
-      jumpCache = (options & 32) != 0, branchPrediction = (options & 16) != 0))
+      jumpCache = (options & 32) != 0, branchPrediction = (options & 16) != 0, implicitReturn = (options & 8) != 0))
   }
   def send(entries: Seq[PacketInput]): Unit = entries.foreach { e =>
     drive(e)

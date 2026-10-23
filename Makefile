@@ -38,6 +38,12 @@ test-discovery:
 	mill -i OpenTrace.test.testOnly trace.component.EncoderDiscoverySpec
 	python3 -m decoder.tests.check_discovery_capture build/validation/encoder-discovery
 
+.PHONY: test-implicit-return
+test-implicit-return:
+	@echo "[implicit-return] 返回栈/packet/实际Encoder→Funnel→SRAM；逐条核对递归/失配/压缩/组合"
+	mill -i OpenTrace.test.testOnly trace.component.TraceReturnStackSpec trace.component.ImplicitReturnCodecSpec trace.component.PacketImplicitReturnSpec trace.component.ImplicitReturnSramSpec
+	python3 -m decoder.tests.check_implicit_return build/validation/implicit-return
+
 XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
 XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
 XIANGSHAN_SBA_PRESSURE_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-pressure-run

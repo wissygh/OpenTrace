@@ -76,7 +76,7 @@ class EncoderCapabilitiesSpec extends AnyFlatSpec with ChiselScalatestTester wit
       println("[capabilities] 1/3 真实 CSR 复位与读回：E-Trace 0/0、8-bit 固定 srcID、无 data trace")
       write(0, 7)
       write(1, BigInt("ffffffff", 16))
-      d.io.values(1).expect((identity | 49).U)
+      d.io.values(1).expect((identity | 57).U)
       for (index <- Seq(2, 3, 4)) write(index, BigInt("ffffffff", 16))
       d.io.values(2).expect(0.U); d.io.values(3).expect(0.U); d.io.values(4).expect(implementation.U)
       val control = d.io.values(0).peek().litValue
@@ -92,9 +92,9 @@ class EncoderCapabilitiesSpec extends AnyFlatSpec with ChiselScalatestTester wit
         assert(accepted)
       }
       d.io.block.valid.poke(false.B); d.io.stop.poke(true.B); tick(); d.io.stop.poke(false.B); tick(10)
-      frames.toSeq shouldBe Seq(ETraceReference.support(3), ETraceReference.support(3, fullAddress = true, jumpCache = true, branchPrediction = true),
-        ETraceReference.synchronization(3, 0x1000), ETraceReference.address(3, 0x1004, 0x1000, fullAddress = true),
-        ETraceReference.support(3, fullAddress = true, status = 1, jumpCache = true, branchPrediction = true))
+      frames.toSeq shouldBe Seq(ETraceReference.support(3), ETraceReference.support(3, fullAddress = true, jumpCache = true, branchPrediction = true, implicitReturn = true),
+        ETraceReference.synchronization(3, 0x1000), ETraceReference.address(3, 0x1004, 0x1000, fullAddress = true, irDepth = Some(0)),
+        ETraceReference.support(3, fullAddress = true, status = 1, jumpCache = true, branchPrediction = true, implicitReturn = true))
       println("[capabilities] 3/3 CSR→PacketGen对拍通过：support声明fullAddr/cache，真实地址编码一致")
       write(1, 0); d.io.values(1).expect(identity.U)
     }
