@@ -103,13 +103,15 @@ class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with
       val prefix = Seq(Entry(0x1000)) ++ (0 until 31).map(i => Entry(0x1004 + i * 8, 5)) ++
         Seq(Entry(0x10fc, notifyRequested = true)) ++ (0 until 31).map(i => Entry(0x1100 + i * 4, 4)) ++
         Seq(Entry(0x117c, 5), Entry(0x1184, notifyRequested = true), Entry(0x1188))
+      // Keep the mapped hit useful after cost selection. Short deltas that
+      // should stay explicit are independently covered by PacketJumpCacheCostSpec.
       val cache = Seq(Entry(0x3000, context = 1, ctype = 3), Entry(0x3004, 8, context = 1),
-        Entry(0x4000, 4, context = 1), Entry(0x4004, 8, context = 1), Entry(0x4100, context = 1),
-        Entry(0x4104, 8, context = 1), Entry(0x4000, 4, context = 1), Entry(0x4004, 8, context = 1),
-        Entry(0x4100, context = 2, ctype = 1, time = 0x1234), Entry(0x4104, 8, context = 2),
-        Entry(0x4000, 4, context = 3, ctype = 2), Entry(0x4004, 8, context = 3), Entry(0x4100, context = 3))
-      val traps = Seq(Entry(0x4104, 2, context = 3, cause = 7), Entry(0x5000, context = 3),
-        Entry(0x5004, 3, context = 3), Entry(0x4104, 8, context = 3), Entry(0x6000, 1, context = 3, cause = 11),
+        Entry(0x4000, 4, context = 1), Entry(0x4004, 8, context = 1), Entry(0x4f00, context = 1),
+        Entry(0x4f04, 8, context = 1), Entry(0x4000, 4, context = 1), Entry(0x4004, 8, context = 1),
+        Entry(0x4f00, context = 2, ctype = 1, time = 0x1234), Entry(0x4f04, 8, context = 2),
+        Entry(0x4000, 4, context = 3, ctype = 2), Entry(0x4004, 8, context = 3), Entry(0x4f00, context = 3))
+      val traps = Seq(Entry(0x4f04, 2, context = 3, cause = 7), Entry(0x5000, context = 3),
+        Entry(0x5004, 3, context = 3), Entry(0x4f04, 8, context = 3), Entry(0x6000, 1, context = 3, cause = 11),
         Entry(0x7000, context = 3), Entry(0x7004, 4, context = 3), Entry(0x7008, context = 3, notifyRequested = true),
         Entry(0x700c, context = 3))
       val prediction = Seq(Entry(0x8000, context = 4, ctype = 3)) ++
@@ -145,12 +147,12 @@ class PacketMixedFormatsSpec extends AnyFlatSpec with ChiselScalatestTester with
         ETraceReference.branchOnly(3, Seq.fill(31)(true)), ETraceReference.address(3, pc(0x10fc), pc(0x1000), notifyRequested = true),
         ETraceReference.prediction(3, 31), ETraceReference.address(3, pc(0x1184), pc(0x10fc), notifyRequested = true),
         ETraceReference.address(3, pc(0x1188), pc(0x1184)), support(1), ETraceReference.synchronization(3, pc(0x3000), context = 1),
-        ETraceReference.address(3, pc(0x4000), pc(0x3000), Seq(false)), ETraceReference.address(3, pc(0x4100), pc(0x4000)),
+        ETraceReference.address(3, pc(0x4000), pc(0x3000), Seq(false)), ETraceReference.address(3, pc(0x4f00), pc(0x4000)),
         ETraceReference.cachedTarget(3, pc(0x4000), Seq(false)), ETraceReference.context(3, 2, time = 0x1234),
-        ETraceReference.cachedTarget(3, pc(0x4100)), ETraceReference.address(3, pc(0x4104), pc(0x4100)),
-        ETraceReference.synchronization(3, pc(0x4000), context = 3), ETraceReference.address(3, pc(0x4100), pc(0x4000), beforeSync = true),
+        ETraceReference.cachedTarget(3, pc(0x4f00)), ETraceReference.address(3, pc(0x4f04), pc(0x4f00)),
+        ETraceReference.synchronization(3, pc(0x4000), context = 3), ETraceReference.address(3, pc(0x4f00), pc(0x4000), beforeSync = true),
         ETraceReference.trap(3, pc(0x5000), 7, interrupt = true, context = 3),
-        ETraceReference.address(3, pc(0x4104), pc(0x5000), beforeSync = true),
+        ETraceReference.address(3, pc(0x4f04), pc(0x5000), beforeSync = true),
         ETraceReference.trap(3, pc(0x6000), 11, handler = false, context = 3),
         ETraceReference.synchronization(3, pc(0x7000), context = 3),
         ETraceReference.address(3, pc(0x7008), pc(0x7000), Seq(false), notifyRequested = true),

@@ -149,7 +149,7 @@ def check_stages(directory, result):
             raise DecodeError('faulting EPCs were lost or confused with retired handler instructions')
         if number(metadata['trap_vector_readback']) != number(symbols['trace_handler']):
             raise DecodeError('actual mtvec differs from the decoded handler configuration')
-        result['ordinary_traps'] = {'causes': [11, 2], 'exception_pcs': epcs[:2],
+        result['ordinary_traps'] = {'causes': [11, 2], 'exception_pcs': [hex(pc) for pc in epcs[:2]],
                                     'mtvec': hex(number(metadata['trap_vector_readback']))}
     result['stage'] = 'rob-comparison'
     samples = [row['pc'] for row in selected]
