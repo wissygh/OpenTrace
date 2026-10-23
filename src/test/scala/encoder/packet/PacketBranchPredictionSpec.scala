@@ -109,6 +109,7 @@ class PacketBranchPredictionSpec extends AnyFlatSpec with ChiselScalatestTester 
       ETraceReference.prediction(3, 31) shouldBe Seq(1, 3, 0)
       val out = Paths.get(sys.env("MILL_WORKSPACE_ROOT")).resolve("build/validation")
       Files.createDirectories(out)
+      println(s"[optional-capture] output=${out.toAbsolutePath.normalize()}")
       Files.write(out.resolve("packetgen-branch-pred.bin"), stream.frames.flatten.map(_.toByte).toArray)
       val code = Array.fill[Byte](0x114)(0)
       for (entry <- entries) {

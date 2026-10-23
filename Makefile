@@ -32,6 +32,12 @@ reformat:
 
 .PHONY: test-trace test-decoder test-atb test-encoder test-control test-integration test-smem check-rtl check-smem-rtl check-hpm-rtl check-pib-rtl check-limits-rtl test-pib test-system test-funnel test-single-hart test-xiangshan-sba test-packet-types test-acceptance test-xiangshan-sba-pressure test-xiangshan-ingress check-ingress-rtl check-rtl-lint
 
+.PHONY: test-discovery
+test-discovery:
+	@echo "[Table42] 实际Encoder只读发现CSR→80byte快照→decoder参数和完整退休流"
+	mill -i OpenTrace.test.testOnly trace.component.EncoderDiscoverySpec
+	python3 -m decoder.tests.check_discovery_capture build/validation/encoder-discovery
+
 XIANGSHAN_EMU ?= $(CURDIR)/delp/XiangShan-trace/build/emu
 XIANGSHAN_SBA_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-run
 XIANGSHAN_SBA_PRESSURE_OUTPUT ?= $(CURDIR)/delp/tmp/xiangshan-sba-pressure-run

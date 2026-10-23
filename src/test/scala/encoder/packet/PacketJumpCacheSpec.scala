@@ -97,6 +97,7 @@ class PacketJumpCacheSpec extends AnyFlatSpec with ChiselScalatestTester with Ma
         ETraceReference.cachedTarget(3, 0x2100), ETraceReference.address(3, 0x2104, 0x2100), end)
       val workspace = Paths.get(sys.env("MILL_WORKSPACE_ROOT"))
       val out = workspace.resolve("build/validation"); Files.createDirectories(out)
+      println(s"[optional-capture] output=${out.toAbsolutePath.normalize()}")
       Files.write(out.resolve("packetgen-jump-cache.bin"), stream.frames.flatten.map(_.toByte).toArray)
       val code = Array.fill[Byte](0x1108)(0)
       def put(pc: Int, word: Int): Unit = for (i <- 0 until 4) code(pc - 0x1000 + i) = ((word >> (8 * i)) & 255).toByte
