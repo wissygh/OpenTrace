@@ -74,7 +74,7 @@ class EncoderDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with M
       d.io.bus.b2c.address.poke(0xe00.U); d.io.bus.c2b.dataRead.expect(0.U)
       println("[Table42][1/3] 实际Encoder：20words/15属性、减1编码、只读和未对齐/相邻空洞全部通过")
       write(0, 7 | (15 << 20)); tick(20)
-      for (pc <- Seq(0x1000, 0x1004)) {
+      for (pc <- Seq(BigInt("80001000", 16), BigInt("80001004", 16))) {
         c.blocks(0).valid.poke(true.B); c.blocks(0).bits.iaddr.poke(pc.U)
         tick(); c.blocks(0).valid.poke(false.B); tick(12)
       }
@@ -88,7 +88,7 @@ class EncoderDiscoverySpec extends AnyFlatSpec with ChiselScalatestTester with M
       Files.write(out.resolve("trace.bin"), captured.toArray)
       Files.write(out.resolve("code.bin"), Array[Byte](0x13, 0, 0, 0, 0x13, 0, 0, 0))
       Files.writeString(out.resolve("trace.json"),
-        """{"discovery":"discovery.bin","sources":{"0":{"hart_id":0,"raw":"code.bin","base":"0x1000"}}}""")
+        """{"discovery":"discovery.bin","sources":{"0":{"hart_id":0,"raw":"code.bin","base":"0x80001000"}}}""")
       println(s"[Table42][2/3] 真实CSR快照和完整2条退休流已导出：${out.toAbsolutePath.normalize()}")
     }
   }

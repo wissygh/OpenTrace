@@ -15,7 +15,7 @@ def main(directory):
     for byte in (root / 'trace.bin').read_bytes(): events.extend(decoder.feed(bytes([byte])))
     decoder.finish()
     pcs = [e['pc'] for e in events if e['kind'] == 'instruction']
-    assert pcs == [0x1000, 0x1004], pcs
+    assert pcs == [0x80001000, 0x80001004], pcs
     assert [(e['qual_status'], e['ienable']) for e in events if e['kind'] == 'support'] == [(0, 1), (1, 0)]
     assert decoder.decoders[0].start_of_trace
     print('[Table42->decoder][2/2] 由发现参数恢复全部2条退休指令，起止状态正确', file=sys.stderr)
