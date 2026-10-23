@@ -38,6 +38,13 @@ test-discovery:
 	mill -i OpenTrace.test.testOnly trace.component.EncoderDiscoverySpec
 	python3 -m decoder.tests.check_discovery_capture build/validation/encoder-discovery
 
+.PHONY: test-jump-cache
+test-jump-cache:
+	@echo "[jump-cache] 符号压缩后按实际packet长度择优；collision/epoch/prediction/反压及decoder"
+	mill -i OpenTrace.test.testOnly trace.component.PacketJumpCacheSpec trace.component.PacketJumpCacheCostSpec trace.component.PacketBranchPredictionSpec
+	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-jump-cache
+	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-branch-pred
+
 .PHONY: test-implicit-return
 test-implicit-return:
 	@echo "[implicit-return] 返回栈/packet/实际Encoder→Funnel→SRAM；逐条核对递归/失配/压缩/组合"
