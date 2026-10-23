@@ -58,7 +58,7 @@ class CoreMarkStorageChecks(unittest.TestCase):
             with self.subTest(features=features):
                 fields = [{'format': 3, 'subformat': 3, 'options': features >> 1}]
                 if features & 16:
-                    fields += [{'format': 0, 'subformat': 0, 'branch_count': 31},
+                    fields += [{'format': 0, 'subformat': 0, 'branch_count': 31, 'prediction_failed': True},
                                {'format': 0, 'subformat': 0, 'branch_count': 80,
                                 'address': 8, 'prediction_failed': True}]
                 if features & 32:
@@ -67,6 +67,9 @@ class CoreMarkStorageChecks(unittest.TestCase):
                 self.assertEqual(coverage['declared_options'], features >> 1)
                 self.assertEqual(coverage['cache_index_packets'], int(bool(features & 32)))
                 self.assertEqual(coverage['correctly_predicted_branches'], 111 if features & 16 else 0)
+                self.assertEqual(coverage['prediction_failed_packets'], 2 if features & 16 else 0)
+                self.assertEqual(coverage['prediction_failed_address_packets'], 1 if features & 16 else 0)
+                self.assertEqual(coverage['prediction_no_address_packets'], 1 if features & 16 else 0)
         for fields, enabled in [([{'format': 3, 'subformat': 3, 'options': 0}], 48),
                 ([{'format': 0, 'subformat': 1, 'index': 0}], 0),
                 ([{'format': 0, 'subformat': 0, 'branch_count': 31}], 0), ([], 16)]:

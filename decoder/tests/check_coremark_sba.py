@@ -46,13 +46,15 @@ def check_optional_packets(packets, features):
                     raise ValueError('prediction count emitted while branch prediction is disabled')
                 coverage['prediction_count_packets'] += 1
                 coverage['correctly_predicted_branches'] += fields['branch_count']
-                coverage['prediction_failed_address_packets'] += bool(fields.get('prediction_failed'))
+                coverage['prediction_failed_packets'] += bool(fields.get('prediction_failed'))
+                coverage['prediction_failed_address_packets'] += bool(fields.get('prediction_failed')) and 'address' in fields
                 coverage['prediction_no_address_packets'] += 'address' not in fields
     if not supports:
         raise ValueError('missing feature support declaration')
     return {'support_packets': supports, 'declared_options': expected,
             **{k: coverage[k] for k in ('cache_index_packets', 'prediction_count_packets',
-                'correctly_predicted_branches', 'prediction_failed_address_packets', 'prediction_no_address_packets')}}
+                'correctly_predicted_branches', 'prediction_failed_packets',
+                'prediction_failed_address_packets', 'prediction_no_address_packets')}}
 
 
 def check_benchmark_output(text):
