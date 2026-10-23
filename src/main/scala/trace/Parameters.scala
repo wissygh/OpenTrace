@@ -204,7 +204,7 @@ trait TraceParameters {
   def supportFullAddr   = true
   def supportJumpCache  = true
   def supportBranchPred = true
-  def supportImExp      = false
+  def supportImExp      = true
   def supportImRet      = true
   def supportSijump     = false
 

@@ -221,7 +221,7 @@ class TeImplBundle extends CSRBundle {
 
 class TeInstFeaturesBundle extends CSRBundle with TraceParameters {
   val NoAddrDiff        = (if (supportFullAddr) RW(0) else RO(0)).withReset(0.U)
-  val NoTrapAddr        = RO(1).withReset(0.U)
+  val NoTrapAddr        = (if (supportImExp) RW(1) else RO(1)).withReset(0.U)
   val EnSiJump          = RO(2).withReset(0.U)
   val EnImRet           = (if (supportImRet) RW(3) else RO(3)).withReset(0.U)
   val EnBranchPred      = (if (supportBranchPred) RW(4) else RO(4)).withReset(0.U)

@@ -250,7 +250,21 @@ class PacketGen extends Module with TraceParameters {
     packet.address   := pc >> iaddress_lsb_p
     packet.tval      := Mux(interrupt, Fill(iaddress_width_p, pc.head(1)), value)
     reportedAddress  := pc
-    emitPayload(packet.asUInt)
+    // Section 7.3: implicit exception omits only a handler address (thaddr=1).
+    // EPC packets retain their address. Pack tval immediately after thaddr when
+    // omitting the handler; zero-filling the fixed Bundle would leave a hole.
+    val prefixWidth = packet.getWidth - iaddress_width_p - (iaddress_width_p - iaddress_lsb_p)
+    val prefix      = packet.asUInt(prefixWidth - 1, 0)
+    val implicitPayload = Mux(
+      interrupt,
+      ETracePacketCodec.extend(prefix, payload_max_width),
+      ETracePacketCodec.extend(Cat(value, prefix), payload_max_width)
+    )
+    emitPayload(Mux(
+      activeConfig(2) && handler,
+      implicitPayload,
+      ETracePacketCodec.extend(packet.asUInt, payload_max_width)
+    ))
     syncPacket       := true.B
     consumesBranches := true.B
     carriesAddress   := true.B

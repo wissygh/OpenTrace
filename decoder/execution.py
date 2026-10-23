@@ -165,6 +165,20 @@ class ExecutionDecoder:
         image = self.contexts.get(self.context, self.image)
         return image.instruction(pc)
 
+    def _implicit_handler(self, packet):
+        vector = self.trap_vectors.get(packet['privilege'])
+        if vector is None:
+            raise DecodeError('implicit exception mode requires the appropriate trap vector')
+        if isinstance(vector, bool) or not isinstance(vector, int) or not 0 <= vector <= self.mask:
+            raise DecodeError('trap vector must be an unsigned address within XLEN')
+        mode = vector & 3
+        if mode not in (0, 1):
+            raise DecodeError('unsupported trap-vector mode')
+        handler = (vector & ~3) + (4 * packet['ecause'] if mode == 1 and packet['interrupt'] else 0)
+        if handler > self.mask:
+            raise DecodeError('vectored trap handler exceeds XLEN')
+        return handler
+
     def _emit(self, kind, **fields):
         event = dict(source_id=self.source_id, hart_id=self.hart_id, kind=kind,
                      privilege=self.privilege, context=self.context, time=self.time)
@@ -385,13 +399,7 @@ class ExecutionDecoder:
                     self.skip_sync_prediction = False
                     return self.events
             if address is None:
-                vector = self.trap_vectors.get(packet['privilege'])
-                if vector is None:
-                    raise DecodeError('implicit exception mode requires the appropriate trap vector')
-                mode = vector & 3
-                if mode not in (0, 1):
-                    raise DecodeError('unsupported trap-vector mode')
-                full_address = (vector & ~3) + (4 * packet['ecause'] if mode == 1 and packet['interrupt'] else 0)
+                full_address = self._implicit_handler(packet)
             else:
                 full_address = self._absolute(address)
             self.inferred_address = False
