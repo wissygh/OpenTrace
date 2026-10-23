@@ -72,7 +72,7 @@ def pin_threads(pid, cpu_start):
         os.sched_setaffinity(tid, {cpu_start + i % 8})
 
 
-def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=False):
+def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=False, halt_during_pressure=False):
     directory = Path(directory)
     layout = CaptureLayout(directory).create()
     expected_a0, _ = reference(symbols, scenario)
@@ -113,6 +113,7 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
     print('[XS-SBA][2/5] 外部resume纯workload→完成地址硬件断点halt', flush=True)
     rpc.run(f"resume 0x{symbols['trace_begin']:x}")
     pressure_stalls = 0
+    halt_pc = None
     if scenario == 'pressure':
         print('[XS-SBA][pressure] SRAM暂不接纳；外部SBA轮询实际stall计数，再放开sink', flush=True)
         for _ in range(20):
@@ -123,12 +124,25 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
             raise RuntimeError('pressure workload never asserted trace stall')
         if read(0x20000f10) or read(0x20000f18):
             raise RuntimeError('core exceeded the actual trace stall budget before sink release')
+        if halt_during_pressure:
+            print('[XS-SBA][stop-frontier] 真实stall积压期间外部halt；放开SRAM后先排完旧退休，再resume', flush=True)
+            rpc.run('halt 120000')
+            halt_pc = register('pc')
         write(0x20040000, 0x103)
+        if halt_during_pressure:
+            for _ in range(30):
+                if read(0x20000000) & 8:
+                    break
+            else:
+                raise RuntimeError('queued retirement did not drain while the hart was halted')
+            rpc.run('resume')
     rpc.run('wait_halt 120000')
     metadata = {'memory_access': 'sysbus', 'pc': register('pc'), 'a0': register('a0'),
                 'scenario': scenario, 'pressure_stalls_before_release': pressure_stalls}
     if actual_features is not None:
         metadata.update(features_requested=features, features_readback=actual_features)
+    if halt_pc is not None:
+        metadata.update(halt_during_pressure=True, pressure_halt_pc=hex(halt_pc))
     if metadata['pc'] != symbols['trace_done'] or metadata['a0'] != expected_a0:
         raise RuntimeError(f'workload did not finish correctly: {metadata}')
     print('[XS-SBA][3/5] SBA按encoder→Funnel→SRAM停止；轮询Disable/Empty', flush=True)
@@ -283,7 +297,8 @@ def run_stages(args, layout):
                     rpc = RPC(tcl_port, timeout=getattr(args, 'rpc_timeout', 300), transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
-            collect(rpc, directory, symbols, scenario, getattr(args, 'features', 0), getattr(args, 'discovery', False))
+            collect(rpc, directory, symbols, scenario, getattr(args, 'features', 0), getattr(args, 'discovery', False),
+                    getattr(args, 'halt_during_pressure', False))
         finally:
             if rpc is not None:
                 rpc.close()
@@ -308,7 +323,10 @@ def main():
     parser.add_argument('--startup-timeout', type=int, default=300)
     parser.add_argument('--rpc-timeout', type=int, default=300)
     parser.add_argument('--cpu-start', type=int, help='pin the eight emulator threads to consecutive host CPUs')
+    parser.add_argument('--halt-during-pressure', action='store_true', help='halt while stalled, drain old retirement, then resume')
     args = parser.parse_args()
+    if args.halt_during_pressure and not args.pressure:
+        parser.error('--halt-during-pressure requires --pressure')
     try:
         run(args)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:

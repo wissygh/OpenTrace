@@ -7,11 +7,49 @@ from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from decoder.encapsulation import DecodeError
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
-from decoder.tests.run_xiangshan_sba import RPC, listening, run, capture_discovery
+from decoder.tests.run_xiangshan_sba import RPC, listening, run, capture_discovery, collect
 from decoder.tests.xiangshan_sba_scenarios import reference
 
 
 class XiangShanSBAChecks(unittest.TestCase):
+    def test_pressure_halt_drains_old_retirement_before_resume_using_only_physical_sysbus(self):
+        commands=[]
+        halted=False
+        rp=0
+
+        def command(value):
+            nonlocal halted,rp
+            commands.append(value)
+            if value.startswith('halt '):halted=True
+            if value=='reg pc':return 'pc (/64): 0x80000016' if halted else 'pc (/64): 0x80000022'
+            if value=='reg a0':return 'a0 (/64): 0x50'
+            if value=='resume':halted=False
+            if value.startswith('read_memory'):
+                self.assertTrue(value.endswith(' phys'))
+                address=int(value.split()[1],0)
+                if address in (0x20040000,0x20010000,0x20000000):return '0x9'
+                if address==0x20000f20:return '0x100'
+                if address==0x20040020:return '0x4'
+                if address==0x20040028:return hex(rp)
+                if address==0x20040040:rp+=4;return '0x0'
+                return '0x0'
+            return ''
+
+        parent=Path(__file__).resolve().parents[2]/'delp/tmp'
+        with tempfile.TemporaryDirectory(dir=parent) as tmp:
+            rpc=Mock();rpc.run.side_effect=command
+            symbols={'trace_begin':0x80000008,'trace_loop':0x80000016,'trace_target':0x8000001a,'trace_done':0x80000022}
+            collect(rpc,tmp,symbols,'pressure',halt_during_pressure=True)
+            metadata=json.loads((Path(tmp)/'dut/metadata.json').read_text())
+            self.assertTrue(metadata['halt_during_pressure'])
+            self.assertEqual(metadata['pressure_halt_pc'],'0x80000016')
+        halt=commands.index('halt 120000')
+        release=commands.index('write_memory 0x20040000 32 {0x103} phys')
+        drained=commands.index('read_memory 0x20000000 32 1 phys',release)
+        resume=commands.index('resume')
+        self.assertLess(halt,release);self.assertLess(release,drained);self.assertLess(drained,resume)
+        self.assertEqual(commands[0],'riscv set_mem_access sysbus')
+
     def test_real_discovery_read_keeps_raw_words_and_rejects_wrong_headers(self):
         parent = Path(__file__).resolve().parents[2] / 'delp/tmp'
         parent.mkdir(parents=True, exist_ok=True)
