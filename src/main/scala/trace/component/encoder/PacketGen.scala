@@ -111,9 +111,16 @@ class PacketGen extends Module with TraceParameters {
     Itype.isTrap(io.block.itype) && io.block.iretire === 0.U)
   val nextBoundary = !internalStep && (cur.priv =/= io.block.priv ||
     io.block.ctype === Ctype.Precisely || io.block.ctype === Ctype.AsyncDiscontinuity)
-  val previousTrap = previousQualified && !tail && !trapPhase && Itype.isTrap(previous.itype)
+  val previousTrap    = previousQualified && !tail && !trapPhase && Itype.isTrap(previous.itype)
+  val returnStack     = Module(new TraceReturnStack(return_stack_size_p, iaddress_width_p))
+  val implicitReturns = activeConfig(1)
+  val previousReturn  = previousQualified && !tail && !trapPhase && previous.itype === Itype.FunctionReturn
+  val returnHit = implicitReturns && previousReturn && returnStack.io.depth =/= 0.U &&
+    returnStack.io.top === address
+  val returnFailed       = implicitReturns && previousReturn && returnStack.io.depth =/= 0.U && !returnHit
+  val currentReturnDepth = returnStack.io.depth - returnHit.asUInt
   val previousJump = previousQualified && !tail && !trapPhase &&
-    (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn)
+    (Itype.isUninferable(previous.itype) || previous.itype === Itype.ExpIntReturn) && !returnHit
   val endCurrent = cur.valid && qualified && !internalStep &&
     (closing || (io.block.valid && !io.block.traceLost &&
       (!nextQualifiedInput || io.block.ctype === Ctype.AsyncDiscontinuity)))
@@ -135,12 +142,15 @@ class PacketGen extends Module with TraceParameters {
   val forceSync     = RegInit(false.B)
   when(io.syncReq && running)(syncRequested := true.B)
   when(canAdvance)(forceSync                := syncRequested)
-  val resyncCount = RegInit(0.U(20.W))
-  val syncMax     = (1.U(20.W) << (control.InstSyncMax.asUInt +& 4.U))(19, 0)
+  val resyncCount        = RegInit(0.U(20.W))
+  val syncMax            = (1.U(20.W) << (control.InstSyncMax.asUInt +& 4.U))(19, 0)
+  val returnSyncPrepared = RegInit(false.B)
   val syncRequired =
     (!tail && !trapPhase && (!previousQualified || cur.priv =/= previous.priv ||
       cur.ctype === Ctype.Precisely || cur.ctype === Ctype.AsyncDiscontinuity)) ||
-      forceSync || resyncCount >= syncMax
+      forceSync || resyncCount >= syncMax || returnSyncPrepared
+  // Anchor the old epoch with its depth before clearing a recursive call stack.
+  // The next logical instruction can then synchronize without ambiguous loops.
   val trapReported = RegInit(false.B)
   val reference    = RegInit(0.U(iaddress_width_p.W))
   // Outcomes before the current logical instruction, in execution order.
@@ -158,7 +168,12 @@ class PacketGen extends Module with TraceParameters {
   val supportChangesConfig = WireDefault(false.B)
   val supportConfig        = WireDefault(activeConfig)
   val finishesCurrent      = WireDefault(false.B)
-  val targetCache          = Module(new TraceJumpTargetCache)
+  returnStack.io.clear := generated.fire && (syncPacket || supportPacket)
+  returnStack.io.pop   := step && returnHit
+  returnStack.io.push := step && qualified && implicitReturns &&
+    (kind === Itype.UninferableCall || kind === Itype.InferableCall)
+  returnStack.io.link := address + (1.U << (cur.ilastsize +& 1.U))
+  val targetCache = Module(new TraceJumpTargetCache)
   targetCache.io.address := address
   targetCache.io.update  := generated.fire && carriesAddress && previousJump && activeConfig(4) && !syncPacket
   targetCache.io.clear   := generated.fire && (syncPacket || supportPacket)
@@ -224,19 +239,32 @@ class PacketGen extends Module with TraceParameters {
   def addressPacket(requestedNotify: Bool, beforeSync: Bool): Unit = {
     val delta = Wire(UInt(iaddress_width_p.W))
     delta := Mux(activeConfig(5), address, address - reference)
+    val reportDepth = implicitReturns && (returnFailed || requestedNotify || nextTrap || nextBoundary ||
+      syncRequired || !nextQualified || endCurrent)
+    val depth = Mux(returnFailed, returnStack.io.depth, currentReturnDepth)
     val addressPayload = ETracePacketCodec.address(
       count(4, 0),
       map(30, 0),
       delta(iaddress_width_p - 1, iaddress_lsb_p),
       requestedNotify,
       beforeSync,
-      payload_max_width
+      payload_max_width,
+      Some(depth),
+      reportDepth
     )
     val cached = activeConfig(4) && previousJump && targetCache.io.hit && !curNotify &&
-      !requestedNotify && !beforeSync
+      !requestedNotify && !beforeSync && !returnFailed
     payload := Mux(
       cached,
-      ETracePacketCodec.cachedTarget(targetCache.io.index, count(4, 0), map(30, 0), f0s_width_p, payload_max_width),
+      ETracePacketCodec.cachedTarget(
+        targetCache.io.index,
+        count(4, 0),
+        map(30, 0),
+        f0s_width_p,
+        payload_max_width,
+        Some(depth),
+        reportDepth
+      ),
       addressPayload
     )
     when(predictionRun) {
@@ -247,7 +275,9 @@ class PacketGen extends Module with TraceParameters {
         requestedNotify,
         beforeSync,
         f0s_width_p,
-        payload_max_width
+        payload_max_width,
+        Some(depth),
+        reportDepth
       )
     }
     emit             := true.B
@@ -278,7 +308,8 @@ class PacketGen extends Module with TraceParameters {
         trap(cur.cause, Itype.isInt(kind), cur.tval, false.B)
         when(generated.fire)(trapReported := true.B)
       }
-    }.elsewhen(syncRequired && branchCount === 0.U) {
+    }.elsewhen(syncRequired && branchCount === 0.U &&
+      (!implicitReturns || returnStack.io.depth === 0.U || returnSyncPrepared)) {
       synchronization()
     }.elsewhen(!tail && !trapPhase && !contextReported && cur.ctype === Ctype.Imprecisely) {
       // A higher-priority address/notify must not swallow an imprecise event.
@@ -352,6 +383,8 @@ class PacketGen extends Module with TraceParameters {
     }
   }
   when(generated.fire) {
+    when(implicitReturns && carriesAddress && !syncPacket && syncRequired)(returnSyncPrepared := true.B)
+    when(syncPacket || supportPacket)(returnSyncPrepared                                      := false.B)
     when(syncPacket || supportPacket) {
       correctBranches := 0.U
       allPredicted    := true.B

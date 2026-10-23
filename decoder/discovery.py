@@ -31,8 +31,8 @@ def read_snapshot(path):
     attributes = dict(zip(ATTRIBUTES, values))
     if attributes['arch'] != 0:
         raise DecodeError('unsupported E-Trace architecture version')
-    if attributes['call_counter_size'] or attributes['return_stack_size'] or attributes['sijump']:
-        raise DecodeError('discovered implicit return or sequential jump mode is unsupported')
+    if attributes['call_counter_size'] or attributes['sijump']:
+        raise DecodeError('discovered call counter or sequential jump mode is unsupported')
     if any(attributes[k] not in (0, 1) for k in ('nocontext', 'notime')):
         raise DecodeError('discovered nocontext/notime flags must be boolean')
     for key in ('context_width', 'time_width', 'ecause_width', 'iaddress_width', 'privilege_width'):
@@ -49,7 +49,8 @@ def read_snapshot(path):
         'time_width': 0 if attributes['notime'] else attributes['time_width'] + 1,
         'ecause_width': attributes['ecause_width'] + 1,
         'f0s_width': attributes['f0s_width'], 'cache_size': attributes['cache_size'],
-        'bpred_size': attributes['bpred_size'], 'encoder_mode_width': (transport >> 16) & 255}
+        'bpred_size': attributes['bpred_size'], 'encoder_mode_width': (transport >> 16) & 255,
+        'return_stack_size': attributes['return_stack_size']}
     # Import locally to keep the discovery format independent from CLI loading.
     from .execution import Profile
     Profile(**profile)

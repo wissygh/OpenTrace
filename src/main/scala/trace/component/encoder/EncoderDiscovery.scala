@@ -38,7 +38,7 @@ object EncoderDiscoveryValues {
       if (p.nocontext_p) 1 else 0,
       if (p.notime_p) 1 else 0,
       p.privilege_width_p - 1,
-      p.return_stack_size_p,
+      if (p.supportImRet) p.return_stack_size_p else 0,
       if (p.supportSijump) 1 else 0
     ),
     p.src_bits_p,

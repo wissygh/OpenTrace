@@ -21,6 +21,7 @@ class Profile:
     f0s_width: int = 1
     cache_size: int = 8
     bpred_size: int = 8
+    return_stack_size: int = 0
     max_steps: int = 100000
 
     def __post_init__(self):
@@ -29,7 +30,8 @@ class Profile:
         if not (1 <= self.privilege_width <= 3 and 0 <= self.context_width <= 64 and
                 0 <= self.time_width <= 64 and 1 <= self.ecause_width <= 64 and
                 1 <= self.encoder_mode_width <= 8 and 0 <= self.f0s_width <= 2 and
-                0 <= self.cache_size <= 16 and 0 <= self.bpred_size <= 16 and self.max_steps > 0):
+                0 <= self.cache_size <= 16 and 0 <= self.bpred_size <= 16 and
+                0 <= self.return_stack_size <= 16 and self.max_steps > 0):
             raise DecodeError('invalid discovery profile')
 
 
@@ -55,6 +57,15 @@ def unpack(payload, profile, options, fields=None):
     fmt = b.take(2, 'format')
     packet = {'format': fmt}
     aw = profile.address_width - profile.address_lsb
+    def return_fields(previous):
+        if options & 2:
+            report = b.take(1, 'irreport')
+            depth = b.take(profile.return_stack_size + 1, 'irdepth')
+            packet.update(irreport=bool(report ^ previous), irdepth=depth)
+            if report != previous and depth > (1 << profile.return_stack_size):
+                raise DecodeError('implicit return depth exceeds the discovered stack capacity')
+            if report == previous and depth != (((1 << (profile.return_stack_size + 1)) - 1) if previous else 0):
+                raise DecodeError('inactive implicit return depth must repeat its preceding bit')
     if fmt == 0:
         sf = b.take(profile.f0s_width, 'subformat') if profile.f0s_width else (1 if options & 16 else 0)
         packet['subformat'] = sf
@@ -71,8 +82,10 @@ def unpack(payload, profile, options, fields=None):
         elif sf == 1 and options & 16 and profile.cache_size:
             packet.update(index=b.take(profile.cache_size, 'index'), branches=b.take(5, 'branches'), notify=False, updiscon=False)
             branches = packet['branches']
-            packet['branch_map'] = (b.take((1 << branches.bit_length()) - 1, 'branch_map') & ((1 << branches) - 1)
-                                    if branches else 0)
+            map_width = (1 << branches.bit_length()) - 1
+            raw_map = b.take(map_width, 'branch_map') if branches else 0
+            packet['branch_map'] = raw_map & ((1 << branches) - 1)
+            return_fields((raw_map >> (map_width - 1)) & 1 if branches else (branches >> 4))
             return packet
         else:
             raise DecodeError('Format 0 requires an enabled, supported optional format')
@@ -115,6 +128,7 @@ def unpack(payload, profile, options, fields=None):
     updiscon = b.take(1, 'updiscon')
     packet.update(address=address, notify=bool(notify ^ (address >> (aw - 1))),
                   updiscon=bool(updiscon ^ notify))
+    return_fields(updiscon)
     return packet
 
 
@@ -144,6 +158,8 @@ class ExecutionDecoder:
         self.time = None
         self.events = []
         self.target_cache = {}
+        self.return_stack = []
+        self.last_inferred_return = False
 
     def _instr(self, pc):
         image = self.contexts.get(self.context, self.image)
@@ -203,14 +219,21 @@ class ExecutionDecoder:
                 self.prediction_states[index] = (int(next_prediction) << 1) | int(taken)
         return taken
 
-    def _next(self, address):
+    def _next(self, address, packet=None):
         instr = self._instr(self.pc)
         old = self.pc
         stop = False
+        self.last_inferred_return = False
+        is_return = instr.kind == 'indirect' and instr.rs1 in (1, 5) and instr.rd not in (1, 5)
+        failed_return = bool(packet and packet.get('irreport') and
+                             packet['irdepth'] == len(self.return_stack))
         if instr.kind == 'direct':
             self.pc += instr.immediate
         elif instr.kind == 'absolute':
             self.pc = instr.immediate & ~1
+        elif self.options & 2 and is_return and self.return_stack and not failed_return:
+            self.pc = self.return_stack.pop()
+            self.last_inferred_return = True
         elif self.options & 1 and instr.kind == 'indirect' and self.last_pc is not None:
             previous = self._instr(self.last_pc)
             if previous.kind in ('auipc', 'lui') and previous.rd == instr.rs1 and instr.rs1:
@@ -221,13 +244,22 @@ class ExecutionDecoder:
         elif instr.kind in ('indirect', 'xret'):
             if self.stop_at_last_branch:
                 raise DecodeError('uninferable discontinuity in address-free branch map')
-            self.pc, stop = address, True
+            self.pc, stop = (self.address if is_return and failed_return else address), True
         elif instr.kind == 'branch':
             taken = self._take_branch()
             self.pc += instr.immediate if taken else instr.size
         else:
             self.pc += instr.size
         self.pc &= self.mask
+        # Co-routine swaps (different link registers) stay explicit and do not
+        # enter this stack; tail calls have no link-register destination.
+        is_call = instr.kind in ('direct', 'indirect', 'absolute') and instr.rd in (1, 5) and not (
+            instr.kind == 'indirect' and instr.rs1 in (1, 5) and instr.rs1 != instr.rd)
+        if self.options & 2 and is_call:
+            capacity = 1 << self.profile.return_stack_size
+            if len(self.return_stack) == capacity:
+                del self.return_stack[0]
+            self.return_stack.append((old + instr.size) & self.mask)
         if stop and self.options & 16:
             index = (self.pc >> self.profile.address_lsb) & ((1 << self.profile.cache_size) - 1)
             self.target_cache[index] = self.pc
@@ -238,15 +270,22 @@ class ExecutionDecoder:
         previous_address = self.pc
         for _ in range(self.profile.max_steps):
             if self.inferred_address:
-                stop = self._next(previous_address)
+                stop = self._next(previous_address, packet)
                 self._report_pc()
                 if stop:
                     self.inferred_address = False
-                continue
-            stop = self._next(address)
-            target_image = (self.contexts.get(packet['context'], self.image)
-                            if packet['format'] == 3 and self.pc == address else None)
-            self._report_pc(target_image)
+                # A depth report identifies an occurrence across inferred
+                # returns even when no explicit discontinuity ends the search.
+                if not (packet.get('irreport') and self.pc == address and
+                        packet['irdepth'] == len(self.return_stack) and not self._unprocessed()):
+                    continue
+                self.inferred_address = False
+                target_image = None
+            else:
+                stop = self._next(address, packet)
+                target_image = (self.contexts.get(packet['context'], self.image)
+                                if packet['format'] == 3 and self.pc == address else None)
+                self._report_pc(target_image)
             if self.stop_at_last_branch and self.branches == 1 and self._instr(self.pc).kind == 'branch':
                 self.stop_at_last_branch = False
                 return
@@ -257,9 +296,11 @@ class ExecutionDecoder:
             if self.pc != address or self.stop_at_last_branch or self._unprocessed(target_image):
                 continue
             if packet['format'] != 3:
-                if packet['notify'] or packet.get('prediction_max'):
+                depth_matches = not packet.get('irreport') or packet['irdepth'] == len(self.return_stack)
+                if (packet['notify'] or packet.get('prediction_max')) and depth_matches:
                     return
-                if self._instr(self.last_pc).kind not in ('indirect', 'xret') and not packet['updiscon']:
+                inferable = self._instr(self.last_pc).kind not in ('indirect', 'xret') or self.last_inferred_return
+                if inferable and not packet['updiscon'] and depth_matches:
                     self.inferred_address = True
                     return
             elif packet['privilege'] == self.privilege or self._instr(self.last_pc).kind == 'xret':
@@ -276,8 +317,10 @@ class ExecutionDecoder:
         if fmt == 3:
             sf = packet['subformat']
             if sf == 3:
-                if packet['mode'] or packet['options'] & 2:
-                    raise DecodeError('implicit return mode is not implemented')
+                if packet['mode']:
+                    raise DecodeError('unsupported encoder instruction mode')
+                if packet['options'] & 2 and not self.profile.return_stack_size:
+                    raise DecodeError('implicit return mode requires return_stack_size discovery')
                 if packet['options'] & 16 and not self.profile.cache_size:
                     raise DecodeError('jump target cache requires non-zero cache_size discovery')
                 if packet['options'] & 8 and not self.profile.bpred_size:
@@ -304,6 +347,7 @@ class ExecutionDecoder:
                     self._clear_branches()
                     self.inferred_address = False
                 self.target_cache.clear()
+                self.return_stack.clear()
                 self.prediction_states.clear()
                 self.skip_sync_prediction = False
                 self._emit('support', **packet)
@@ -333,6 +377,7 @@ class ExecutionDecoder:
                            tval=packet.get('tval'), handler=bool(packet['thaddr']))
                 if not packet['thaddr']:
                     self.target_cache.clear()
+                    self.return_stack.clear()
                     self.awaiting_handler = True
                     self.inferred_address = False
                     self._clear_branches()
@@ -370,6 +415,7 @@ class ExecutionDecoder:
             self.start_of_trace = False
             self.awaiting_handler = False
             self.target_cache.clear()
+            self.return_stack.clear()
             self.prediction_states.clear()
             self.skip_sync_prediction = target_image.instruction(full_address).kind == 'branch'
             return self.events

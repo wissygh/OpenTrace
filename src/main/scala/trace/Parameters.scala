@@ -46,6 +46,10 @@ trait TraceParameters {
     require(filter_trap_depth_bits_p > 0 && filter_trap_depth_bits_p <= 16)
     require(f0s_width_p == 1 && cache_size_p >= 1 && cache_size_p <= 10)
     require(bpred_size_p >= 1 && bpred_size_p <= 10)
+    require(
+      return_stack_size_p >= 1 && return_stack_size_p <= 8 && call_counter_size_p == 0,
+      "implicit returns use a full-address return stack, not a simple call counter"
+    )
   }
 
   /**
@@ -93,7 +97,7 @@ trait TraceParameters {
   def iaddress_lsb_p       = 1
   def encodermode_width_p  = 1 // Branch trace is the only mode.
 
-  def return_stack_size_p = 0 // Implicit return is not implemented in this profile.
+  def return_stack_size_p = 4 // 16 full return addresses; run-time mode resets disabled.
   def call_counter_size_p = 0
 
   def f0s_width_p  = 1
@@ -201,7 +205,7 @@ trait TraceParameters {
   def supportJumpCache  = true
   def supportBranchPred = true
   def supportImExp      = false
-  def supportImRet      = false
+  def supportImRet      = true
   def supportSijump     = false
 
   /**

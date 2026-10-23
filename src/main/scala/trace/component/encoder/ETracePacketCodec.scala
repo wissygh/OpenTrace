@@ -12,12 +12,29 @@ object ETracePacketCodec {
     if (raw.getWidth == width) raw else Cat(Fill(width - raw.getWidth, raw.head(1)), raw)
   }
 
-  def address(count: UInt, map: UInt, alignedAddress: UInt, notify: Bool, updiscon: Bool, width: Int): UInt = {
+  private def returnFields(raw: UInt, depth: Option[UInt], report: Bool): UInt = depth match {
+    case Some(d) => Cat(Mux(report, d, Fill(d.getWidth, raw.head(1))), raw.head(1).asBool ^ report, raw)
+    case None    => raw
+  }
+
+  def address(
+      count:          UInt,
+      map:            UInt,
+      alignedAddress: UInt,
+      notify:         Bool,
+      updiscon:       Bool,
+      width:          Int,
+      irDepth:        Option[UInt] = None,
+      irReport:       Bool = false.B
+  ): UInt = {
     val n          = alignedAddress.head(1).asBool ^ notify
     val u          = n ^ updiscon
-    val withoutMap = extend(Cat(u, n, alignedAddress, 2.U(2.W)), width)
+    val withoutMap = extend(returnFields(Cat(u, n, alignedAddress, 2.U(2.W)), irDepth, irReport), width)
     val choices = Seq(1, 3, 7, 15, 31).map { size =>
-      (count <= size.U) -> extend(Cat(u, n, alignedAddress, map(size - 1, 0), count, 1.U(2.W)), width)
+      (count <= size.U) -> extend(
+        returnFields(Cat(u, n, alignedAddress, map(size - 1, 0), count, 1.U(2.W)), irDepth, irReport),
+        width
+      )
     }
     Mux(count === 0.U, withoutMap, PriorityMux(choices))
   }
@@ -25,13 +42,21 @@ object ETracePacketCodec {
   def branchOnly(map: UInt, width: Int): UInt =
     extend(Cat(map(30, 0), 0.U(5.W), 1.U(2.W)), width)
 
-  def cachedTarget(index: UInt, count: UInt, map: UInt, subformatWidth: Int, width: Int): UInt = {
+  def cachedTarget(
+      index:          UInt,
+      count:          UInt,
+      map:            UInt,
+      subformatWidth: Int,
+      width:          Int,
+      irDepth:        Option[UInt] = None,
+      irReport:       Bool = false.B
+  ): UInt = {
     require(subformatWidth > 0)
     val suffix = Cat(index, 1.U(subformatWidth.W), 0.U(2.W))
     val choices = Seq(1, 3, 7, 15, 31).map { size =>
-      (count <= size.U) -> extend(Cat(map(size - 1, 0), count, suffix), width)
+      (count <= size.U) -> extend(returnFields(Cat(map(size - 1, 0), count, suffix), irDepth, irReport), width)
     }
-    Mux(count === 0.U, extend(Cat(0.U(5.W), suffix), width), PriorityMux(choices))
+    Mux(count === 0.U, extend(returnFields(Cat(0.U(5.W), suffix), irDepth, irReport), width), PriorityMux(choices))
   }
 
   def predictedBranches(count: UInt, width: Int, subformatWidth: Int): UInt =
@@ -44,11 +69,20 @@ object ETracePacketCodec {
       notify:         Bool,
       updiscon:       Bool,
       subformatWidth: Int,
-      width:          Int
+      width:          Int,
+      irDepth:        Option[UInt] = None,
+      irReport:       Bool = false.B
   ): UInt = {
     val n = alignedAddress.head(1).asBool ^ notify
     val u = n ^ updiscon
-    extend(Cat(u, n, alignedAddress, Mux(failed, 3.U(2.W), 2.U(2.W)), count, 0.U(subformatWidth.W), 0.U(2.W)), width)
+    extend(
+      returnFields(
+        Cat(u, n, alignedAddress, Mux(failed, 3.U(2.W), 2.U(2.W)), count, 0.U(subformatWidth.W), 0.U(2.W)),
+        irDepth,
+        irReport
+      ),
+      width
+    )
   }
 
   /** Preserve a sign bit before rounding to bytes, including all-zero/all-one

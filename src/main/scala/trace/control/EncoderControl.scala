@@ -223,15 +223,17 @@ class TeInstFeaturesBundle extends CSRBundle with TraceParameters {
   val NoAddrDiff        = (if (supportFullAddr) RW(0) else RO(0)).withReset(0.U)
   val NoTrapAddr        = RO(1).withReset(0.U)
   val EnSiJump          = RO(2).withReset(0.U)
-  val EnImRet           = RO(3).withReset(0.U)
+  val EnImRet           = (if (supportImRet) RW(3) else RO(3)).withReset(0.U)
   val EnBranchPred      = (if (supportBranchPred) RW(4) else RO(4)).withReset(0.U)
   val EnJumpTargetCache = (if (supportJumpCache) RW(5) else RO(5)).withReset(0.U)
-  val ImRetMode         = RO(7, 6).withReset(0.U)
-  val EnRepHistoty      = RO(8).withReset(0.U)
-  val EnAllJumps        = RO(9).withReset(0.U)
-  val ExtendAddrMSB     = RO(10).withReset(0.U)
-  val SrcID             = RO(27, 16)
-  val SrcBits           = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
+  // E-Trace 2.0 Table 2 overrides the generic control specification: hardcode 0.
+  // The full-address stack geometry is discovered through Table 42 instead.
+  val ImRetMode     = RO(7, 6).withReset(0.U)
+  val EnRepHistoty  = RO(8).withReset(0.U)
+  val EnAllJumps    = RO(9).withReset(0.U)
+  val ExtendAddrMSB = RO(10).withReset(0.U)
+  val SrcID         = RO(27, 16)
+  val SrcBits       = SrcBitsROField(31, 28).withReset(SrcBitsROField.Default)
 }
 
 object ImpRetModeField extends CSREnum with WARLApply { // https://github.com/riscv-non-isa/riscv-trace-spec/issues/240

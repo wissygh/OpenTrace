@@ -105,6 +105,10 @@ def render_record(stream, row, index):
             lines.append(f'  branch_outcomes: {outcomes}  （执行顺序，T=taken/0，N=not-taken/1）')
         if 'branch_count' in fields:
             lines.append(f'  correctly_predicted_branches: {fields["branch_count"]}')
+        if fields.get('irreport'):
+            lines.append(f'  return_stack: 报告深度 {fields["irdepth"]}（返回失配或边界消歧）')
+        if 'return_stack_depth_before' in row:
+            lines.append(f'  return_stack_depth_before: {row["return_stack_depth_before"]}')
         if 'options' in fields:
             enabled = ', '.join(name for i, name in enumerate(OPTIONS) if integer(fields['options']) & (1 << i))
             lines.append('  enabled_options: ' + (enabled or '无'))

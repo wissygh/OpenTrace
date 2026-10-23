@@ -135,6 +135,8 @@ class DecodeArtifacts:
                    source_id=packet.source_id, hart_id=decoder.hart_id, payload_hex=packet.payload.hex(' '),
                    options_before=decoder.options, profile=asdict(decoder.profile),
                    reference_pc=decoder.address, pc=decoder.pc, wire_fields=[])
+        if decoder.options & 2:
+            row['return_stack_depth_before'] = len(decoder.return_stack)
         try:
             row['fields'] = unpack(packet.payload, decoder.profile, decoder.options, row['wire_fields'])
             row['packet_type'], row['packet_meaning'] = packet_type(row['fields'])
