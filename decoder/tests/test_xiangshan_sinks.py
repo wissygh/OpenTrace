@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock
 
 from decoder.encapsulation import DecodeError
-from decoder.tests.xiangshan_sink_capture import atb_bytes, pib_bytes
+from decoder.tests.xiangshan_sink_capture import atb_bytes, pib_bytes, check_pib_null_alignment
 from decoder.tests.xiangshan_sba_scenarios import reference
 from decoder.tests.check_xiangshan_sba import check as check_sram
 from decoder.tests.run_xiangshan_sba import stop_capture
@@ -35,6 +35,17 @@ def serial_log(symbols, divider, idle):
 
 
 class XiangShanSinkExtractionTests(unittest.TestCase):
+    def test_pib_checks_final_null_without_confusing_payload_bytes_with_headers(self):
+        packet = b'\x03\x00\x00\x80\x00'
+        data = bytes(33) + b'\x80' + packet + b'\x00\x80' + packet + bytes(3)
+        self.assertEqual(check_pib_null_alignment(data), {'status': 'passed', 'normal_packets': 2,
+                         'null_packets': 39, 'null_alignment_packets': 2})
+        self.assertEqual(check_pib_null_alignment(packet + packet)['normal_packets'], 2)
+        for invalid in (b'\x00' + packet, b'\x80\x00' + packet, b'\x20' + packet,
+                        b'\xa0' + packet, data[:-5]):
+            with self.subTest(invalid=invalid), self.assertRaises(DecodeError):
+                check_pib_null_alignment(invalid)
+
     def test_smem_requires_actual_sba_address_bits_and_word_access_before_capture(self):
         parent = Path(__file__).resolve().parents[2] / 'delp/tmp'
         for bits, access32, expected in ((30, True, False), (32, True, True), (48, True, True), (32, False, False)):

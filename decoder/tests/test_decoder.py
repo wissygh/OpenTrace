@@ -59,6 +59,37 @@ def program(base, words, extra=()):
 
 
 class FramingTests(unittest.TestCase):
+    def test_all_null_headers_are_single_bytes_without_source_or_timestamp(self):
+        # Encapsulation 2.2: flow is retained; extend selects idle/alignment,
+        # never a timestamp or a srcID when length is zero.
+        nulls = bytes(range(0, 256, 32))
+        for source_bits in (0, 8, 16):
+            for timestamp_bytes in (0, 2, 8):
+                with self.subTest(source_bits=source_bits, timestamp_bytes=timestamp_bytes):
+                    parser = PacketParser(source_bits, timestamp_bytes, single_source_id=0x12)
+                    header = 1 | (0x80 if timestamp_bytes else 0)
+                    source = (0x12).to_bytes(source_bits // 8, 'little') if source_bits else b''
+                    timestamp = (0x1234).to_bytes(timestamp_bytes, 'little') if timestamp_bytes else b''
+                    data = nulls + bytes([header]) + source + timestamp + b'\x73' + nulls
+                    packets = []
+                    for byte in data:
+                        packets.extend(parser.feed(bytes([byte])))
+                    parser.finish()
+                    self.assertEqual(packets, [Packet(0x12, b'\x73', timestamp=0x1234 if timestamp_bytes else None)])
+                    self.assertEqual(parser.null_packets, 16)
+                    self.assertEqual(parser.offset, len(data))
+
+    def test_null_like_payload_is_not_consumed_as_padding_or_a_packet_boundary(self):
+        payload = bytes(range(0, 256, 32)) * 3 + bytes(7)
+        data = bytes([31, 7]) + payload + b'\x00\x80'
+        for split in range(len(data) + 1):
+            with self.subTest(split=split):
+                parser = PacketParser()
+                packets = parser.feed(data[:split]) + parser.feed(data[split:])
+                parser.finish()
+                self.assertEqual(packets, [Packet(7, payload)])
+                self.assertEqual(parser.null_packets, 2)
+
     def test_specification_atb_example_and_chunked_null_packets(self):
         # Chapter 13.1.4, two ATB transfers with srcID carried out-of-band.
         p = PacketParser(source_bits=0, single_source_id=1)

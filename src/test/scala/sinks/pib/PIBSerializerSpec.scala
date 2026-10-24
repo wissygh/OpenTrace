@@ -5,6 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import scala.collection.mutable.ArrayBuffer
+import java.nio.file.{Files, Paths}
 
 class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
   behavior of "PIB packet serializer"
@@ -59,7 +60,8 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
         val expected = (0 until 10).map { gap =>
           for (_ <- 0 until gap) tick()
           until(d.io.in.ready.peek().litToBoolean)
-          val bytes = if ((gap & 1) == 0) Seq(3, 0, 0xa5, 0, 0x5a) else Seq(1, 0, 0x1f)
+          val bytes = if (gap == 9) Seq(31, 0) ++ (0 until 31)
+            else if ((gap & 1) == 0) Seq(3, 0, 0xa5, 0, 0x5a) else Seq(1, 0, 0x1f)
           send(d, bytes, () => tick())
           until(d.io.empty.peek().litToBoolean)
           bytes
@@ -67,6 +69,12 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
         for (_ <- 0 until 32) tick()
         val bits = symbols.flatMap(v => (0 until width).map(i => (v >> i) & 1))
         val bytes = bits.grouped(8).filter(_.size == 8).map(b => b.zipWithIndex.map { case (v, i) => v << i }.sum).toSeq
+        val output = Paths.get(sys.env("MILL_WORKSPACE_ROOT"), "build/validation/requirements11-null")
+        for (dir <- Seq("workload", "dut", "ref", "diff")) Files.createDirectories(output.resolve(dir))
+        val name = s"parallel-$width-center-$center"
+        Files.write(output.resolve(s"dut/$name.bin"), bytes.map(_.toByte).toArray)
+        val expectedHex = expected.map(_.map(b => f"$b%02x").mkString).map(s => s"\"$s\"").mkString(",")
+        Files.writeString(output.resolve(s"ref/$name.json"), s"""{"packets":[$expectedHex]}""")
         val packets = ArrayBuffer.empty[Seq[Int]]
         var offset = 0
         while (offset < bytes.size) {
@@ -74,11 +82,17 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
           if (length == 0) offset += 1
           else {
             assert(offset + length + 2 <= bytes.size, "shifted/truncated byte stream")
+            // Every collection/finishing gap emits null.idle. Encapsulation
+            // section 2.3 requires its final null to be null.alignment.
+            assert(offset > 0 && bytes(offset - 1) == 0x80,
+              s"normal packet at byte $offset is not immediately preceded by null.alignment")
             packets += bytes.slice(offset, offset + length + 2)
             offset += length + 2
           }
         }
         packets.toSeq shouldBe expected
+        Files.writeString(output.resolve(s"diff/$name.json"),
+          s"""{"status":"passed","width":$width,"center":$center,"normal_packets":${packets.size},"maximum_payload_bytes":31}""")
         println(s"[PIB-byte-alignment] width=$width center=$center：全时钟流含所有idle/启动/10种间隔，10包逐byte一致")
       }
     }
@@ -108,8 +122,8 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
         symbols.foreach(_ shouldBe 0)
         d.io.enable.poke(true.B); send(d, packet, () => tick())
         for (_ <- 0 until 160) tick()
-        val actual = symbols.dropWhile(_ == 0)
-        val expected = parallelSymbols(packet, width)
+        val expected = parallelSymbols(Seq(0x80) ++ packet, width)
+        val actual = Seq.fill(expected.takeWhile(_ == 0).size)(0) ++ symbols.dropWhile(_ == 0)
         actual.take(expected.size).toSeq shouldBe expected
         actual.drop(expected.size).foreach(_ shouldBe 0)
         d.io.empty.expect(true.B)
@@ -135,7 +149,7 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
       d.io.in.bits.bytes.poke(2.U); d.io.in.bits.last.poke(true.B); d.io.in.ready.expect(true.B)
       tick(); d.io.in.valid.poke(false.B)
       for (_ <- 0 until 40) tick()
-      symbols.dropWhile(_ == 0).take(7).toSeq shouldBe bytes
+      symbols.dropWhile(_ == 0).take(8).toSeq shouldBe Seq(0x80) ++ bytes
       d.io.empty.expect(true.B); d.io.in.ready.expect(false.B)
       println("[PIB-parallel] Disable完成已接纳的整个packet，未在partial collection或最后symbol提前Empty")
     }
@@ -162,8 +176,9 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
         d.io.enable.poke(true.B)
         send(d, packet, () => tick())
         for (_ <- 0 until 240) tick()
-        val bits = packet.flatMap(byte => (0 until 8).map(bit => (byte >> bit) & 1))
-        val expected = if (mode == 5) packet.flatMap(byte =>
+        val serialized = Seq(0x80) ++ packet
+        val bits = serialized.flatMap(byte => (0 until 8).map(bit => (byte >> bit) & 1))
+        val expected = if (mode == 5) serialized.flatMap(byte =>
           Seq(0) ++ (0 until 8).map(bit => (byte >> bit) & 1) ++ Seq(1))
         else Seq(1, 0) ++ bits.flatMap(bit => Seq(bit, 1 - bit)) ++ Seq(0, 0)
         samples.take(expected.size).toSeq shouldBe expected
@@ -222,7 +237,7 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
       val alignment = symbols.indexOf(0x80)
       alignment should be >= 33
       symbols.take(alignment).foreach(_ shouldBe 0)
-      symbols.drop(alignment + 1).dropWhile(_ == 0).take(3).toSeq shouldBe packet
+      symbols.drop(alignment + 1).dropWhile(_ == 0).take(4).toSeq shouldBe Seq(0x80) ++ packet
       d.io.empty.expect(true.B)
       println("[PIB-alignment] 至少33个null.idle和null.alignment先于完整packet，启动sync请求通过")
     }

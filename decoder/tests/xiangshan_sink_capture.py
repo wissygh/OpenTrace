@@ -6,7 +6,7 @@ import re
 
 from decoder.__main__ import load_config, number
 from decoder.artifacts import DecodeArtifacts, write_json, write_jsonl
-from decoder.encapsulation import DecodeError
+from decoder.encapsulation import DecodeError, PacketParser
 from decoder.capture_layout import CaptureLayout
 from .check_xiangshan_sba import COMMIT, match_samples
 from .run_xiangshan_sba import capture_discovery
@@ -118,6 +118,35 @@ def pib_bytes(text, mode, divider):
     if not data:
         raise DecodeError('no complete PIB serial frames recorded')
     return bytes(data), rows
+
+
+def check_pib_null_alignment(data):
+    """Check encapsulation 2.2/2.3 on the unchanged, byte-restored pin stream."""
+    class AlignmentObserver:
+        def __init__(self):
+            self.nulls = self.markers = self.packets = 0
+            self.gap = self.aligned = False
+
+        def frame(self, offset, raw, packet):
+            if packet is None:
+                if raw[0] & 0x60:
+                    raise DecodeError(f'PIB null flow must be zero at byte {offset}')
+                self.nulls += 1
+                self.aligned = bool(raw[0] & 0x80)
+                self.markers += self.aligned
+                self.gap = True
+            else:
+                if self.gap and not self.aligned:
+                    raise DecodeError(f'PIB normal packet lacks immediately preceding null.alignment at byte {offset}')
+                self.packets += 1
+                self.gap = self.aligned = False
+
+    observer = AlignmentObserver()
+    parser = PacketParser(observer=observer)
+    parser.feed(data)
+    parser.finish()
+    return {'status': 'passed', 'normal_packets': observer.packets,
+            'null_packets': observer.nulls, 'null_alignment_packets': observer.markers}
 
 
 def collect(rpc, directory, symbols, scenario, args):
@@ -267,6 +296,8 @@ def check(directory):
                 data, rows = pib_bytes(text, m['pib_mode'], m['pib_divider'])
             (layout.dut / 'trace.bin').write_bytes(data)
             write_jsonl(layout.dut / 'transport-samples.jsonl', rows)
+            if m['sink'] == 'pib':
+                result['null_alignment'] = check_pib_null_alignment(data)
         data = (layout.dut / 'trace.bin').read_bytes()
         symbols = json.loads((layout.workload / 'symbols.json').read_text())
         start, done = number(symbols['trace_begin']), number(symbols['trace_done'])

@@ -139,11 +139,13 @@ class TraceAlignmentSpec extends AnyFlatSpec with ChiselScalatestTester with Mat
         d.io.in.valid.poke(false.B)
       }
       for (_ <- 0 until 100) tick()
-      val marker = samples.indexOf(0x80)
+      val marker = samples.indices.find(i => samples(i) == 0x80 &&
+        samples.take(i).reverse.takeWhile(_ == 0).size >= 33).getOrElse(-1)
       marker should be > 0
-      samples.take(marker).filter(_ != 0).toSeq shouldBe (0 until 8).flatMap(i => Seq.fill(33)(0x20 + i))
+      samples.take(marker).filter(b => b != 0 && b != 0x80).toSeq shouldBe (0 until 8).flatMap(i => Seq.fill(33)(0x20 + i))
       samples.take(marker).reverse.takeWhile(_ == 0).size should be >= 33
-      samples.drop(marker + 1).filter(_ != 0).toSeq shouldBe Seq.fill(33)(0x28)
+      samples.drop(marker + 1).filter(b => b != 0 && b != 0x80).toSeq shouldBe Seq.fill(33)(0x28)
+      samples.count(_ == 0x80) shouldBe 10 // nine packet prefixes plus the periodic sequence
       requests shouldBe 2 // enable request plus one periodic request
       d.io.empty.expect(true.B)
       println("[alignment-PIB] 8个33-byte包后跨256阈值，完整同步再发第9包，encoder同步事件准确")
