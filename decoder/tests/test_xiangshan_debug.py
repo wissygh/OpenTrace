@@ -18,16 +18,15 @@ class XiangShanDebugBoundaryTests(unittest.TestCase):
                'trace_handler': 0x80000020}
 
     def test_ebreak_policy_survives_openocd_resume_and_checks_target_readback(self):
-        for debug, action in ((False, 'exception'), (True, 'halt')):
+        for debug, action in ((False, 'off'), (True, 'on')):
             with self.subTest(debug=debug):
                 rpc = Mock()
-                rpc.run.side_effect = ['', action + '\n']
+                rpc.run.side_effect = ['', f'riscv_ebreakm enabled: {action}\n']
                 self.assertEqual(configure_ebreak_action(rpc, debug), action)
                 self.assertEqual([call.args[0] for call in rpc.run.call_args_list], [
-                    f'[target current] configure -ebreak m {action}',
-                    'dict get [[target current] cget -ebreak] m'])
+                    f'riscv set_ebreakm {action}', 'riscv set_ebreakm'])
                 rpc.run.reset_mock()
-                rpc.run.side_effect = ['', 'halt' if not debug else 'exception']
+                rpc.run.side_effect = ['', 'riscv_ebreakm enabled: on' if not debug else 'riscv_ebreakm enabled: off']
                 with self.assertRaisesRegex(RuntimeError, 'resume policy differs'):
                     configure_ebreak_action(rpc, debug)
 

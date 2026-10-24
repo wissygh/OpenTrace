@@ -75,13 +75,16 @@ def pin_threads(pid, cpu_start):
 
 def configure_ebreak_action(rpc, enter_debug):
     """Keep the target's resume policy and the explicit DCSR write consistent."""
-    action = 'halt' if enter_debug else 'exception'
+    action = 'on' if enter_debug else 'off'
     # OpenOCD reapplies this policy when resuming. A raw DCSR.EBREAKM write
     # alone is overwritten by riscv-013.c:set_dcsr_ebreak before execution.
-    rpc.run(f'[target current] configure -ebreak m {action}')
-    actual = rpc.run('dict get [[target current] cget -ebreak] m').strip()
-    if actual != action:
-        raise RuntimeError(f'OpenOCD EBREAKM resume policy differs: {actual!r}, expected {action!r}')
+    # This command is also available in the installed OpenOCD 0.12 development
+    # build, which predates the newer target configure -ebreak interface.
+    rpc.run(f'riscv set_ebreakm {action}')
+    response = rpc.run('riscv set_ebreakm')
+    actual = re.search(r'riscv_ebreakm enabled:\s*(on|off)\b', response)
+    if actual is None or actual.group(1) != action:
+        raise RuntimeError(f'OpenOCD EBREAKM resume policy differs: {response!r}, expected {action!r}')
     return action
 
 
