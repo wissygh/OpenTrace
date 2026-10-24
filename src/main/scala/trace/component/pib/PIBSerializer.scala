@@ -73,6 +73,14 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
     }.otherwise(phaseCount := phaseCount + 1.U)
   }
   val parallelWidth = (1.U(5.W) << (io.mode - 8.U))(4, 0)
+  // The clock also runs through idle/collection. Account for those symbols so
+  // narrow parallel modes insert whole null bytes between encoded packets.
+  val bytePhase = RegInit(0.U(3.W))
+  when(changed) {
+    bytePhase := 0.U
+  }.elsewhen(dataTick && parallel) {
+    bytePhase := bytePhase + parallelWidth
+  }
   val totalBits     = length << 3
   val bits          = buffer.asUInt >> bitIndex
   val idleData      = Mux(uart, 1.U(16.W), 0.U(16.W))
@@ -145,13 +153,17 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
   when(dataTick) {
     when(state === sending) {
       when(parallel) {
-        val widthMask = (1.U(17.W) << parallelWidth) - 1.U
-        pins := bits(15, 0) & widthMask(15, 0)
-        // Only a 16-bit packet's odd final byte requires zero padding.
-        when(bitIndex + parallelWidth >= totalBits) {
-          when(bitIndex + parallelWidth > totalBits)(pins := Cat(0.U(8.W), bits(7, 0)))
-          finishPacket()
-        }.otherwise(bitIndex := bitIndex + parallelWidth)
+        when(bitIndex === 0.U && bytePhase =/= 0.U) {
+          pins := 0.U
+        }.otherwise {
+          val widthMask = (1.U(17.W) << parallelWidth) - 1.U
+          pins := bits(15, 0) & widthMask(15, 0)
+          // Only a 16-bit packet's odd final byte requires zero padding.
+          when(bitIndex + parallelWidth >= totalBits) {
+            when(bitIndex + parallelWidth > totalBits)(pins := Cat(0.U(8.W), bits(7, 0)))
+            finishPacket()
+          }.otherwise(bitIndex := bitIndex + parallelWidth)
+        }
       }.elsewhen(uart) {
         when(frame === 0.U) { pins := 0.U; frame := 1.U }
           .elsewhen(frame <= 8.U) {
