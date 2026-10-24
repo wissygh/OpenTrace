@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from decoder.__main__ import load_config
 from decoder.artifacts import DecodeArtifacts, DECODE_REPORT_FILES
 from decoder.encapsulation import DecodeError
 from decoder.report import packet_type, render_directory, render_record
+from decoder.disassembly import disassemble
 from decoder.tests.test_decoder import address, encaps, support, sync
 
 
@@ -61,15 +63,22 @@ class ReadableReports(unittest.TestCase):
             dut = output / 'dut'
             for stem in ('framing', 'packets', 'events', 'instructions'):
                 text = (dut / (stem + '.txt')).read_text()
-                self.assertGreater(len(text.splitlines()), 6)
+                self.assertLess(len(text.splitlines()), 50)
                 self.assertIn('解码状态: 完成', text)
             packet = json.loads((dut / 'packets.jsonl').read_text().splitlines()[0])
             self.assertEqual(packet['packet_type'], 'Format30')
             self.assertIn('0x80001000', (dut / 'packets.txt').read_text())
             self.assertIn('NULL', (dut / 'framing.txt').read_text())
             self.assertIn('packet_index: 0', (dut / 'framing.txt').read_text())
+            instruction_text = (dut / 'instructions.txt').read_text()
+            self.assertIn('0x00000013 nop', instruction_text)
+            self.assertEqual(instruction_text.count('packet='), 2)
+            self.assertNotIn('0x80001000', (dut / 'events.txt').read_text())
+            self.assertEqual(len((dut / 'events.jsonl').read_text().splitlines()), 3)
+            views = {p: p.read_bytes() for p in dut.glob('*.txt')}
             before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in dut.iterdir() if p.suffix != '.txt'}
             render_directory(output)
+            self.assertEqual(views, {p: p.read_bytes() for p in views})
             self.assertEqual(before, {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in before})
             self.assertTrue(set(f'{stem}.txt' for stem in ('framing', 'packets', 'events', 'instructions')) <= set(DECODE_REPORT_FILES))
             with self.assertRaisesRegex(ValueError, 'already exist'):
@@ -90,3 +99,35 @@ class ReadableReports(unittest.TestCase):
             self.assertIn('失败', (dut / 'instructions.txt').read_text())
             render_directory(tmp)
             self.assertIn('失败', (dut / 'events.txt').read_text())
+
+    def test_disassembly_preserves_real_pc_encoding_and_rv32_rv64_compressed_meaning(self):
+        items = [(32, 0x80001000, 0x2085, 2), (64, 0x80001000, 0x2085, 2),
+                 (64, 0x80001002, 0x8082, 2), (64, 0x80001004, 0x0000006f, 4),
+                 (64, 0xffffffff80001000, 0x13, 4)]
+        result = disassemble(items)
+        self.assertEqual(result[items[0]], 'jal 0x80001060')
+        self.assertEqual(result[items[1]], 'addw ra,ra,1')
+        self.assertEqual(result[items[2]], 'ret')
+        self.assertEqual(result[items[3]], 'j 0x80001004')
+        self.assertEqual(result[items[4]], 'nop')
+
+    def test_disassembly_fails_explicitly_without_inventing_instructions(self):
+        item = (64, 0x80001000, 0x8082, 2)
+        with patch('decoder.disassembly.shutil.which', return_value=None):
+            self.assertEqual(disassemble([item])[item], '.hword 0x8082 [缺少RISC-V objdump]')
+        self.assertIn('objdump失败', disassemble([item], objdump='/does/not/exist')[item])
+
+    def test_replay_uses_source_context_xlen_and_keeps_incomplete_capture_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dut = Path(tmp)
+            (dut / 'trace.json').write_text(json.dumps({'sources': {
+                '0': {'xlen': 64, 'contexts': {'5': {'xlen': 32}}}, '1': {'xlen': 64}}}))
+            rows = [{'kind': 'instruction', 'source_id': src, 'context': ctx, 'hart_id': src,
+                     'pc': '0x80001000', 'instruction': 0x2085, 'size': 2}
+                    for src, ctx in [(0, 5), (1, None)]]
+            (dut / 'instructions.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in rows))
+            render_directory(dut)
+            text = (dut / 'instructions.txt').read_text()
+            self.assertIn('jal 0x80001060', text)
+            self.assertIn('addw ra,ra,1', text)
+            self.assertIn('缺少decode-result.json', text)
