@@ -61,6 +61,7 @@ class XiangShanSBAChecks(unittest.TestCase):
             if value=='riscv dmi_write 0x10 0x80000001':halted=True
             if value=='reg pc':return 'pc (/64): 0x80000016' if halted else 'pc (/64): 0x80000022'
             if value=='reg a0':return 'a0 (/64): 0x50'
+            if value=='reg dcsr':return 'dcsr (/32): 0xc0' if halted else 'dcsr (/32): 0x80'
             if value=='resume':halted=False
             if value.startswith('read_memory'):
                 self.assertTrue(value.endswith(' phys'))
@@ -81,6 +82,8 @@ class XiangShanSBAChecks(unittest.TestCase):
             metadata=json.loads((Path(tmp)/'dut/metadata.json').read_text())
             self.assertTrue(metadata['halt_during_pressure'])
             self.assertEqual(metadata['pressure_halt_pc'],'0x80000016')
+            self.assertEqual([entry['cause'] for entry in metadata['debug_events']], [3, 2])
+            self.assertTrue(metadata['require_debug_classification'])
         halt=commands.index('riscv dmi_write 0x10 0x80000001')
         release=commands.index('write_memory 0x20040000 32 {0x103} phys')
         drained=commands.index('read_memory 0x20000000 32 1 phys',release)

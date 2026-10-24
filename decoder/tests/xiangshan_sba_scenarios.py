@@ -22,4 +22,11 @@ def reference(symbols, scenario='basic'):
             raise ValueError('exception assembly layout changed; update the independent reference')
         path = [handler + offset for offset in range(0, 24, 4)]
         return 23, [start + offset for offset in (0, 4, 8, 12)] + path + [after_ecall] + path + [after_illegal, start + 32]
+    if scenario in ('ebreak-debug', 'ebreak-exception'):
+        handler = number(symbols['trace_handler'])
+        if (number(symbols['trace_debug_break']), number(symbols['trace_after_ebreak']), handler, done) != (
+                start + 8, start + 12, start + 24, start + 44):
+            raise ValueError('debug ebreak assembly layout changed; update the independent reference')
+        handler_path = [handler + offset for offset in range(0, 20, 4)] if scenario == 'ebreak-exception' else []
+        return 15, [start, start + 4] + handler_path + [start + offset for offset in (12, 16, 20)]
     raise ValueError(f'unknown SBA scenario: {scenario}')

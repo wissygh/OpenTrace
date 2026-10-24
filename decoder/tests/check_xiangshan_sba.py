@@ -30,6 +30,45 @@ def match_samples(decoded, samples):
     return matched
 
 
+def check_debug_boundaries(events, metadata, symbols, scenario):
+    """Require architectural traps and debugger stops to retain distinct meanings."""
+    entries = metadata.get('debug_events', [])
+    causes = {'external-haltreq': 3, 'hardware-trigger': 2, 'single-step': 4, 'ebreak-debug': 1}
+    expected_entries = ['hardware-trigger']
+    if metadata.get('debug_entry') in ('single-step', 'ebreak-debug'):
+        expected_entries.insert(0, metadata['debug_entry'])
+    if metadata.get('halt_during_pressure'):
+        expected_entries.insert(0, 'external-haltreq')
+    if [entry['kind'] for entry in entries] != expected_entries:
+        raise DecodeError('debug capture does not contain every requested stop in order')
+    if not entries or entries[-1]['kind'] != 'hardware-trigger':
+        raise DecodeError('debug validation lacks its final hardware-trigger stop')
+    for entry in entries:
+        expected = causes.get(entry['kind'])
+        actual = (number(entry['dcsr']) >> 6) & 7
+        if expected is None or actual != expected or entry['cause'] != actual:
+            raise DecodeError('actual DCSR cause does not match the requested debug mechanism')
+    if number(entries[-1]['pc']) != number(symbols['trace_done']):
+        raise DecodeError('final debug stop is outside the workload boundary')
+    traps = [event for event in events if event['kind'] == 'trap']
+    epcs = [event['pc'] for event in events if event['kind'] == 'exception_pc' and event['pc'] is not None]
+    if scenario == 'ebreak-exception':
+        if [event['handler'] for event in traps] not in ([True], [False, True]):
+            raise DecodeError('ordinary ebreak must have exactly one architectural handler entry')
+        if any((event['ecause'], event['interrupt'], event['tval']) != (
+                3, False, metadata['ordinary_ebreak_tval']) for event in traps):
+            raise DecodeError('ordinary ebreak trace differs from actual mcause/mtval')
+        if metadata['ordinary_ebreak_cause'] != 3 or epcs != [number(symbols['trace_debug_break'])]:
+            raise DecodeError('ordinary ebreak EPC/cause differs from the non-retired instruction')
+    elif traps or epcs:
+        raise DecodeError('debug entry was incorrectly encoded as an architectural trap')
+    ended = sum(event['kind'] == 'support' and event['qual_status'] == 1 for event in events)
+    if ended < len(entries):
+        raise DecodeError('debug stops did not produce all ordered trace-end boundaries')
+    return {'status': 'passed', 'debug_entries': entries, 'ended_reported': ended,
+            'architectural_trap_packets': len(traps), 'exception_pcs': [hex(pc) for pc in epcs]}
+
+
 def check(directory):
     directory = Path(directory)
     layout = CaptureLayout(directory).create()
@@ -140,6 +179,9 @@ def check_stages(directory, result):
         raise DecodeError(f'workload retirement mismatch at instruction {index}')
     if not decoder.decoders[0].start_of_trace:
         raise DecodeError('capture did not terminate its execution segment')
+    if metadata.get('require_debug_classification'):
+        result['stage'] = 'debug-boundaries'
+        result['debug_boundaries'] = check_debug_boundaries(events, metadata, symbols, scenario)
     if scenario == 'exception':
         traps = [event for event in events if event['kind'] == 'trap']
         epcs = [event['pc'] for event in events if event['kind'] == 'exception_pc']

@@ -73,7 +73,8 @@ def pin_threads(pid, cpu_start):
         os.sched_setaffinity(tid, {cpu_start + i % 8})
 
 
-def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=False, halt_during_pressure=False):
+def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=False, halt_during_pressure=False,
+            debug_entry=None):
     directory = Path(directory)
     layout = CaptureLayout(directory).create()
     expected_a0, _ = reference(symbols, scenario)
@@ -91,9 +92,31 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
             raise RuntimeError(f'cannot parse {name} register response: {value!r}')
         return int(match.group(1), 16)
 
+    debug_events = []
+
+    def debug_event(kind, cause, pc=None):
+        actual_pc, dcsr = register('pc'), register('dcsr')
+        if (dcsr >> 6) & 7 != cause or (pc is not None and actual_pc != pc):
+            raise RuntimeError(f'{kind} did not produce the expected actual Debug entry: pc={actual_pc:#x}, dcsr={dcsr:#x}')
+        debug_events.append({'kind': kind, 'cause': cause, 'pc': hex(actual_pc), 'dcsr': hex(dcsr)})
+
+    def drain_halted():
+        for _ in range(30):
+            if read(0x20000000) & 8:
+                return
+        raise RuntimeError('queued retirement did not drain while the hart was halted')
+
     print('[XS-SBA][1/5] hart已halt；强制sysbus，设置完成地址的硬件断点', flush=True)
     rpc.run('riscv set_mem_access sysbus')
     rpc.run(f"bp 0x{symbols['trace_done']:x} 2 hw")
+    if scenario in ('ebreak-debug', 'ebreak-exception'):
+        dcsr = register('dcsr')
+        dcsr = dcsr | (1 << 15) if scenario == 'ebreak-debug' else dcsr & ~(1 << 15)
+        rpc.run(f'reg dcsr 0x{dcsr:x}')
+        if bool(register('dcsr') & (1 << 15)) != (scenario == 'ebreak-debug'):
+            raise RuntimeError('DCSR.EBREAKM configuration was rejected')
+        rpc.run('reg mstatus 0x0')
+        rpc.run(f"reg mtvec 0x{symbols['trace_handler']:x}")
     for address in (0x20040000, 0x20010000, 0x20000000):
         write(address, 1)
         if not read(address) & 1:
@@ -112,7 +135,25 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
     write(0x20010000, 3)
     write(0x20000000, 0x2007)  # InstStallEna, InstTracing, Enable, Active
     print('[XS-SBA][2/5] 外部resume纯workload→完成地址硬件断点halt', flush=True)
-    rpc.run(f"resume 0x{symbols['trace_begin']:x}")
+    if debug_entry == 'single-step':
+        rpc.run(f"step 0x{symbols['trace_begin']:x}")
+        rpc.run('wait_halt 120000')
+        debug_event('single-step', 4, symbols['trace_begin'] + 2)
+        drain_halted()
+        rpc.run('resume')
+    elif scenario == 'ebreak-debug':
+        rpc.run(f"resume 0x{symbols['trace_begin']:x}")
+        rpc.run('wait_halt 120000')
+        debug_event('ebreak-debug', 1, symbols['trace_debug_break'])
+        drain_halted()
+        # An ebreak entering Debug is not retired. Explicit debugger PC advance
+        # skips it once; both the original stop PC and write stay in the RPC log.
+        rpc.run(f"reg pc 0x{symbols['trace_after_ebreak']:x}")
+        if register('pc') != symbols['trace_after_ebreak']:
+            raise RuntimeError('debugger failed to advance beyond the non-retired ebreak')
+        rpc.run('resume')
+    else:
+        rpc.run(f"resume 0x{symbols['trace_begin']:x}")
     pressure_stalls = 0
     halt_pc = None
     if scenario == 'pressure':
@@ -136,19 +177,23 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
             rpc.run('wait_halt 120000')
             rpc.run('riscv dmi_write 0x10 0x1')  # clear HALTREQ; keep DMACTIVE
             halt_pc = register('pc')
-            for _ in range(30):
-                if read(0x20000000) & 8:
-                    break
-            else:
-                raise RuntimeError('queued retirement did not drain while the hart was halted')
+            debug_event('external-haltreq', 3, halt_pc)
+            drain_halted()
             rpc.run('resume')
     rpc.run('wait_halt 120000')
     metadata = {'memory_access': 'sysbus', 'pc': register('pc'), 'a0': register('a0'),
                 'scenario': scenario, 'pressure_stalls_before_release': pressure_stalls}
-    if scenario == 'exception':
+    if debug_entry or halt_during_pressure:
+        debug_event('hardware-trigger', 2, symbols['trace_done'])
+        metadata.update(debug_entry=debug_entry, debug_events=debug_events, require_debug_classification=True)
+    if scenario in ('exception', 'ebreak-exception'):
         metadata['trap_vector_readback'] = register('mtvec')
         if metadata['trap_vector_readback'] != symbols['trace_handler']:
             raise RuntimeError('actual mtvec differs from the workload handler')
+    if scenario == 'ebreak-exception':
+        metadata.update(ordinary_ebreak_cause=register('mcause'), ordinary_ebreak_tval=register('mtval'))
+        if metadata['ordinary_ebreak_cause'] != 3:
+            raise RuntimeError('ordinary ebreak did not update mcause to 3')
     if actual_features is not None:
         metadata.update(features_requested=features, features_readback=actual_features)
     if halt_pc is not None:
@@ -183,7 +228,7 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
     if metadata['rp'] != wp:
         raise RuntimeError('RAMData reads did not advance RP exactly once per word')
     config = {'source_bits': 8, 'sources': {'0': {'hart_id': 0, 'elf': '../workload/workload.elf'}}}
-    if scenario == 'exception':
+    if scenario in ('exception', 'ebreak-exception'):
         config['sources']['0']['trap_vectors'] = {'3': hex(metadata['trap_vector_readback'])}
     if discovery:
         config['discovery'] = 'discovery.bin'
@@ -271,13 +316,15 @@ def run_stages(args, layout):
     binary = layout.workload / 'workload.bin'
     elf = layout.workload / 'workload.elf'
     source_copy = layout.workload / 'source'
+    debug_entry = getattr(args, 'debug_entry', None)
     shutil.copytree(resources, source_copy)
     build_logs = layout.workload / 'logs'; build_logs.mkdir()
     with (build_logs / 'build.log').open('w') as build_log:
         subprocess.run([args.cross_prefix + 'gcc', '-march=rv64imc_zicsr_zifencei', '-mabi=lp64',
                         '-mcmodel=medany', '-nostdlib', '-static', '-Wl,--no-relax',
                         '-Wl,-T,' + str(source_copy / 'workload.ld'),
-                        str(source_copy / ('sba-pressure.S' if args.pressure else
+                        str(source_copy / ('sba-debug-ebreak.S' if debug_entry in ('ebreak-debug', 'ebreak-exception') else
+                                           'sba-pressure.S' if args.pressure else
                                            'sba-exception.S' if getattr(args, 'trap', False) else 'sba-workload.S')), '-o', str(elf)],
                        stdout=build_log, stderr=subprocess.STDOUT, check=True)
         subprocess.run([args.cross_prefix + 'objcopy', '-O', 'binary', str(elf), str(binary)],
@@ -288,11 +335,13 @@ def run_stages(args, layout):
         subprocess.run([args.cross_prefix + 'objdump', '-d', '-S', str(elf)], stdout=disasm, check=True)
     symbols = {name: int(address, 16) for address, _, name in (line.split() for line in nm.splitlines())
                if name in ('trace_begin', 'trace_done', 'trace_loop', 'trace_target',
-                           'trace_handler', 'trace_after_ecall', 'trace_after_illegal')}
+                           'trace_handler', 'trace_after_ecall', 'trace_after_illegal',
+                           'trace_debug_break', 'trace_after_ebreak')}
     if not {'trace_begin', 'trace_done'} <= set(symbols):
         raise RuntimeError('workload ELF is missing its entry/exit symbols')
     write_json(layout.workload / 'symbols.json', {name: hex(value) for name, value in symbols.items()})
-    scenario = 'pressure' if args.pressure else 'exception' if getattr(args, 'trap', False) else 'basic'
+    scenario = debug_entry if debug_entry in ('ebreak-debug', 'ebreak-exception') else (
+        'pressure' if args.pressure else 'exception' if getattr(args, 'trap', False) else 'basic')
     reference(symbols, scenario)
     write_json(layout.workload / 'scenario.json', {'scenario': scenario})
     rbb_port, tcl_port = free_port(), free_port()
@@ -333,7 +382,7 @@ def run_stages(args, layout):
                 run_checks(rpc, layout, getattr(args, 'sink', 'sram'))
             if getattr(args, 'sink', 'sram') == 'sram':
                 collect(rpc, directory, symbols, scenario, getattr(args, 'features', 0), getattr(args, 'discovery', False),
-                        getattr(args, 'halt_during_pressure', False))
+                        getattr(args, 'halt_during_pressure', False), debug_entry)
             else:
                 from .xiangshan_sink_capture import collect as collect_sink
                 collect_sink(rpc, directory, symbols, scenario, args)
@@ -371,7 +420,12 @@ def main():
     parser.add_argument('--rpc-timeout', type=int, default=300)
     parser.add_argument('--cpu-start', type=int, help='pin the eight emulator threads to consecutive host CPUs')
     parser.add_argument('--halt-during-pressure', action='store_true', help='halt while stalled, drain old retirement, then resume')
+    parser.add_argument('--debug-entry', choices=('hardware-trigger', 'single-step', 'ebreak-debug', 'ebreak-exception'),
+                        help='validate actual DCSR entry cause and ordered trace boundaries; requires the Q040 fix')
     args = parser.parse_args()
+    if args.debug_entry and (args.sink != 'sram' or args.trap or
+                             (args.pressure and args.debug_entry != 'hardware-trigger')):
+        parser.error('--debug-entry requires SRAM and a compatible basic/ebreak workload')
     if args.trap and args.pressure:
         parser.error('--trap and --pressure select different workloads')
     if not 0 <= args.pib_divider <= 65535 or (args.pib_center and args.pib_mode < 8):
