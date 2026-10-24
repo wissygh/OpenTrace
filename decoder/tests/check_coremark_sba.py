@@ -23,6 +23,17 @@ RESOURCES = Path(__file__).with_name('resources')
 PROJECT = Path(__file__).resolve().parents[2]
 
 
+def check_requested_features(metadata):
+    mode = metadata.get('mode', 'baseline')
+    if mode not in FEATURE_MODES:
+        raise ValueError('unknown optional CoreMark mode')
+    features = metadata.get('features_requested', 0)
+    mode_name(features)
+    if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0xffff != features:
+        raise ValueError('optional encoder CSR readback disagrees with the selected mode')
+    return features
+
+
 def observe_returns(decoder):
     """Count actual reconstruction decisions without changing decoder behavior."""
     counts = {'implicit_returns': 0, 'explicit_returns': 0, 'maximum_stack_depth': 0}
@@ -53,7 +64,7 @@ def check_optional_packets(packets, features):
         fmt = fields['format']
         if fmt == 3 and fields['subformat'] == 3:
             supports += 1
-            if fields['options'] & 62 != expected:
+            if fields['options'] != expected:
                 raise ValueError('support options disagree with the requested/read-back encoder features')
         if fmt == 0:
             subformat = fields['subformat']
@@ -164,12 +175,7 @@ def check(directory):
         result['benchmark_crc'] = check_benchmark_output((dut / 'logs/uart.log').read_text())
         if any(metadata[name] & 11 != 9 for name in ('encoder', 'funnel', 'sram')):
             raise ValueError('trace components were not disabled and empty')
-        mode = metadata.get('mode', 'baseline')
-        if mode not in FEATURE_MODES:
-            raise ValueError('unknown optional CoreMark mode')
-        features = metadata.get('features_requested', 0)
-        if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0xfb != features:
-            raise ValueError('optional encoder CSR readback disagrees with the selected mode')
+        features = check_requested_features(metadata)
         result.update(mode=mode_name(features), encoder_features=features)
         original_inputs = root / 'workload/inputs.json'
         benchmark = root / 'workload/benchmark.json'
@@ -215,7 +221,7 @@ def check(directory):
         result['optional_coverage'] = check_optional_packets(packets, features)
         result['return_coverage'] = return_counts
         if features & 8 and not return_counts['implicit_returns']:
-            raise ValueError('implicit mode did not reconstruct any actual inferred returns')
+            raise ValueError('implicit-return mode did not reconstruct any actual inferred returns')
         instructions = [e for e in events if e['kind'] == 'instruction']
         pcs = [e['pc'] for e in instructions]
         result.update(decoded_instructions=len(pcs), decoded_pcs=pcs)

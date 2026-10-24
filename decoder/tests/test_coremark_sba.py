@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, check, check_benchmark_output, check_storage, fst_include, check_optional_packets, observe_returns
+from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, check, check_benchmark_output, check_storage, fst_include, check_optional_packets, observe_returns, check_requested_features
 from decoder.tests.test_implicit_return import P, BASE, addr, image
 from decoder.tests.test_decoder import sync, support
 from decoder import Packet, ExecutionDecoder
@@ -57,6 +57,17 @@ class SRAMFSTMonitorTests(unittest.TestCase):
 
 
 class CoreMarkStorageChecks(unittest.TestCase):
+    def test_requested_mode_rejects_unimplemented_csr_bits_and_undeclared_sequential_jump(self):
+        for mode, features in COMBINATIONS.items():
+            metadata = {'mode': mode, 'features_requested': features, 'features_readback': 0x80000000 | features}
+            self.assertEqual(check_requested_features(metadata), features)
+            for bit in (2, 6, 7, 8, 9, 10, 15):
+                with self.subTest(mode=mode, unexpected_bit=bit), self.assertRaisesRegex(ValueError, 'CSR readback'):
+                    check_requested_features(dict(metadata, features_readback=metadata['features_readback'] | (1 << bit)))
+            with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, 'support options'):
+                check_optional_packets([{'fields': {'format': 3, 'subformat': 3,
+                    'options': support_options(features) | 1}}], features)
+
     def test_return_coverage_counts_actual_predictions_and_preserves_execution(self):
         code=image({0:0x100000ef,0x100:0x8067,4:0x13,8:0x13})
         decoder=ExecutionDecoder(code,P)
