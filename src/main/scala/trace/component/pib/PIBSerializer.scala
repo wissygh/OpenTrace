@@ -36,10 +36,10 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
   io.syncReq                              := (newSession || timer.io.request) && !io.calibrate
   val idle :: collecting :: sending :: finishing :: Nil = Enum(4)
   val state                                             = RegInit(idle)
-  val buffer                                            = Reg(Vec(maxNullSeq, UInt(8.W)))
-  val length                                            = Reg(UInt(log2Ceil(maxNullSeq + 1).W))
-  val collected                                         = RegInit(0.U(log2Ceil(maxNullSeq + 1).W))
-  val bitIndex                                          = RegInit(0.U(log2Ceil(maxNullSeq * 8 + 1).W))
+  val buffer                                            = Reg(Vec(maxNullSeq + 1, UInt(8.W)))
+  val length                                            = Reg(UInt(log2Ceil(maxNullSeq + 2).W))
+  val collected                                         = RegInit(0.U(log2Ceil(maxNullSeq + 2).W))
+  val bitIndex                                          = RegInit(0.U(log2Ceil((maxNullSeq + 1) * 8 + 1).W))
   val calibrating                                       = RegInit(false.B)
   val parallel                                          = io.mode >= 8.U && io.mode <= 12.U
   val uart                                              = io.mode === 5.U
@@ -100,25 +100,32 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
       manStop  := false.B
     }.otherwise(state := finishing)
   when(io.in.fire) {
-    val start    = Mux(state === collecting, collected, 0.U)
+    // Collection and finishing emit idle symbols. The final null before an
+    // unframed normal packet must be null.alignment (encapsulation 2.3), even
+    // when the interface already has an 8/16-bit physical byte boundary.
+    // Serialize the marker with the packet so no idle can separate the two.
+    val start    = Mux(state === collecting, collected, 1.U)
     val count    = io.in.bits.bytes +& 1.U
-    val expected = Mux(state === collecting, length, io.in.bits.packetBytes)
+    val expected = Mux(state === collecting, length, io.in.bits.packetBytes +& 1.U)
     val next     = start +& count
-    assert(expected =/= 0.U && expected <= maxNullSeq.U && next <= expected)
+    assert(expected > 1.U && expected <= (maxNullSeq + 1).U && next <= expected)
     assert(io.in.bits.last === (next === expected), "PIB input packet boundary is inconsistent")
-    when(state === collecting)(assert(io.in.bits.packetBytes === length))
+    when(state === collecting)(assert(io.in.bits.packetBytes +& 1.U === length))
     for (lane <- 0 until 4) {
       when(lane.U < count)(buffer(start + lane.U) := io.in.bits.data(8 * lane + 7, 8 * lane))
     }
-    when(state === idle)(length := io.in.bits.packetBytes)
-    collected                   := next
-    calibrating                 := false.B
-    bitIndex                    := 0.U
-    frame                       := 0.U
-    half                        := false.B
-    manStart                    := true.B
-    manStop                     := false.B
-    state                       := Mux(io.in.bits.last, sending, collecting)
+    when(state === idle) {
+      buffer(0) := 0x80.U
+      length    := expected
+    }
+    collected   := next
+    calibrating := false.B
+    bitIndex    := 0.U
+    frame       := 0.U
+    half        := false.B
+    manStart    := true.B
+    manStop     := false.B
+    state       := Mux(io.in.bits.last, sending, collecting)
   }
   when(state === idle && io.enable && alignmentPending && !io.calibrate) {
     timer.io.serviced := true.B
