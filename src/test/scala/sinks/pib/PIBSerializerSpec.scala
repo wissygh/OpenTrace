@@ -33,6 +33,57 @@ class PIBSerializerSpec extends AnyFlatSpec with ChiselScalatestTester with Matc
     d.io.in.valid.poke(false.B)
   }
 
+  it should "preserve byte alignment through every idle phase in the continuous parallel stream" in {
+    test(new PIBSerializer).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+      d.clock.setTimeout(100000)
+      for (mode <- 8 to 12; center <- Seq(false, true)) {
+        setup(d, mode, center, divider = 1)
+        val width = 1 << (mode - 8)
+        val symbols = ArrayBuffer.empty[Int]
+        var previous = d.io.pins.clock.peek().litToBoolean
+        def tick(): Unit = {
+          d.clock.step()
+          val now = d.io.pins.clock.peek().litToBoolean
+          if (now != previous) symbols += d.io.pins.data.peek().litValue.toInt
+          previous = now
+        }
+        def until(condition: => Boolean): Unit = {
+          var cycles = 0
+          while (!condition && cycles < 2000) { tick(); cycles += 1 }
+          assert(cycles < 2000, "PIB did not finish packet/alignment")
+        }
+        // Start sampling at the first physical clock edge, including disabled
+        // idle, startup alignment, collection gaps, and post-packet idle.
+        for (_ <- 0 until 7) tick()
+        d.io.enable.poke(true.B)
+        val expected = (0 until 10).map { gap =>
+          for (_ <- 0 until gap) tick()
+          until(d.io.in.ready.peek().litToBoolean)
+          val bytes = if ((gap & 1) == 0) Seq(3, 0, 0xa5, 0, 0x5a) else Seq(1, 0, 0x1f)
+          send(d, bytes, () => tick())
+          until(d.io.empty.peek().litToBoolean)
+          bytes
+        }
+        for (_ <- 0 until 32) tick()
+        val bits = symbols.flatMap(v => (0 until width).map(i => (v >> i) & 1))
+        val bytes = bits.grouped(8).filter(_.size == 8).map(b => b.zipWithIndex.map { case (v, i) => v << i }.sum).toSeq
+        val packets = ArrayBuffer.empty[Seq[Int]]
+        var offset = 0
+        while (offset < bytes.size) {
+          val length = bytes(offset) & 31
+          if (length == 0) offset += 1
+          else {
+            assert(offset + length + 2 <= bytes.size, "shifted/truncated byte stream")
+            packets += bytes.slice(offset, offset + length + 2)
+            offset += length + 2
+          }
+        }
+        packets.toSeq shouldBe expected
+        println(s"[PIB-byte-alignment] width=$width center=$center：全时钟流含所有idle/启动/10种间隔，10包逐byte一致")
+      }
+    }
+  }
+
   it should "transmit LSB-first parallel data at the normal and centered clock edges" in {
     test(new PIBSerializer(startupAlignment = false)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       for (mode <- 8 to 12; center <- Seq(false, true)) {
