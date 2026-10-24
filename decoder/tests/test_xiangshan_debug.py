@@ -4,16 +4,32 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import Mock
 
 from decoder.encapsulation import DecodeError
 from decoder.tests.check_xiangshan_sba import check_debug_boundaries
 from decoder.tests.xiangshan_sba_scenarios import reference
+from decoder.tests.run_xiangshan_sba import configure_ebreak_action
 
 
 class XiangShanDebugBoundaryTests(unittest.TestCase):
     symbols = {'trace_begin': 0x80000008, 'trace_done': 0x80000034,
                'trace_debug_break': 0x80000010, 'trace_after_ebreak': 0x80000014,
                'trace_handler': 0x80000020}
+
+    def test_ebreak_policy_survives_openocd_resume_and_checks_target_readback(self):
+        for debug, action in ((False, 'exception'), (True, 'halt')):
+            with self.subTest(debug=debug):
+                rpc = Mock()
+                rpc.run.side_effect = ['', action + '\n']
+                self.assertEqual(configure_ebreak_action(rpc, debug), action)
+                self.assertEqual([call.args[0] for call in rpc.run.call_args_list], [
+                    f'[target current] configure -ebreak m {action}',
+                    'dict get [[target current] cget -ebreak] m'])
+                rpc.run.reset_mock()
+                rpc.run.side_effect = ['', 'halt' if not debug else 'exception']
+                with self.assertRaisesRegex(RuntimeError, 'resume policy differs'):
+                    configure_ebreak_action(rpc, debug)
 
     def metadata(self, request='hardware-trigger'):
         entries = []

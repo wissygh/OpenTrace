@@ -73,6 +73,18 @@ def pin_threads(pid, cpu_start):
         os.sched_setaffinity(tid, {cpu_start + i % 8})
 
 
+def configure_ebreak_action(rpc, enter_debug):
+    """Keep the target's resume policy and the explicit DCSR write consistent."""
+    action = 'halt' if enter_debug else 'exception'
+    # OpenOCD reapplies this policy when resuming. A raw DCSR.EBREAKM write
+    # alone is overwritten by riscv-013.c:set_dcsr_ebreak before execution.
+    rpc.run(f'[target current] configure -ebreak m {action}')
+    actual = rpc.run('dict get [[target current] cget -ebreak] m').strip()
+    if actual != action:
+        raise RuntimeError(f'OpenOCD EBREAKM resume policy differs: {actual!r}, expected {action!r}')
+    return action
+
+
 def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=False, halt_during_pressure=False,
             debug_entry=None):
     directory = Path(directory)
@@ -110,6 +122,7 @@ def collect(rpc, directory, symbols, scenario='basic', features=0, discovery=Fal
     rpc.run('riscv set_mem_access sysbus')
     rpc.run(f"bp 0x{symbols['trace_done']:x} 2 hw")
     if scenario in ('ebreak-debug', 'ebreak-exception'):
+        configure_ebreak_action(rpc, scenario == 'ebreak-debug')
         dcsr = register('dcsr')
         dcsr = dcsr | (1 << 15) if scenario == 'ebreak-debug' else dcsr & ~(1 << 15)
         rpc.run(f'reg dcsr 0x{dcsr:x}')
