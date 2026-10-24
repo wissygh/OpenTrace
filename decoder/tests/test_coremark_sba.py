@@ -10,6 +10,7 @@ from decoder.tests.check_coremark_sba import PROJECT, RESOURCES, build_reader, c
 from decoder.tests.test_implicit_return import P, BASE, addr, image
 from decoder.tests.test_decoder import sync, support
 from decoder import Packet, ExecutionDecoder
+from decoder.modes import COMBINATIONS, FEATURE_MODES, mode_name, support_options
 
 
 class SRAMFSTMonitorTests(unittest.TestCase):
@@ -68,9 +69,13 @@ class CoreMarkStorageChecks(unittest.TestCase):
         self.assertTrue(decoder.start_of_trace)
 
     def test_csr_features_match_support_and_actual_format0_usage(self):
-        for features in (0, 2, 8, 10, 16, 18, 24, 26, 32, 34, 40, 42, 48, 50, 56, 58):
+        self.assertEqual(len(COMBINATIONS), 32)
+        self.assertEqual(set(COMBINATIONS.values()), {value for value in range(64) if not value & 4})
+        self.assertEqual(FEATURE_MODES['implicit-combined'], 56)
+        self.assertEqual(mode_name(56), 'delta-address+implicit-return+branch-prediction+jump-cache')
+        for features in COMBINATIONS.values():
             with self.subTest(features=features):
-                options = ((features & 0x30) >> 1) | ((features & 8) >> 2) | ((features & 2) << 1)
+                options = support_options(features)
                 fields = [{'format': 3, 'subformat': 3, 'options': options}]
                 if features & 16:
                     fields += [{'format': 0, 'subformat': 0, 'branch_count': 31, 'prediction_failed': True},
@@ -92,6 +97,7 @@ class CoreMarkStorageChecks(unittest.TestCase):
                 ([{'format': 0, 'subformat': 1, 'index': 0}], 0),
                 ([{'format': 0, 'subformat': 0, 'branch_count': 31}], 0), ([], 16),
                 ([{'format': 3, 'subformat': 3, 'options': 4}], 0),
+                ([{'format': 3, 'subformat': 3, 'options': 0}], 1),
                 ([{'format': 3, 'subformat': 3, 'options': 0}], 2)]:
             with self.assertRaises(ValueError):
                 check_optional_packets([{'fields': f} for f in fields], enabled)

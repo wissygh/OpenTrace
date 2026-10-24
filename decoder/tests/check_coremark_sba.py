@@ -16,12 +16,11 @@ from decoder.__main__ import load_config, number
 from decoder.artifacts import DecodeArtifacts, write_json, write_jsonl
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
 from decoder.tests.run_xiangshan_sba import Tee
+from decoder.modes import FEATURE_MODES, mode_name, support_options
 
 
 RESOURCES = Path(__file__).with_name('resources')
 PROJECT = Path(__file__).resolve().parents[2]
-FEATURE_MODES = {'baseline': 0, 'cache': 32, 'prediction': 16, 'combined': 48,
-                 'implicit': 8, 'implicit-prediction': 24, 'implicit-combined': 56}
 
 
 def observe_returns(decoder):
@@ -46,7 +45,7 @@ def observe_returns(decoder):
 
 def check_optional_packets(packets, features):
     """Check the on-wire feature declaration, and count actual Format0 uses."""
-    expected = ((features & 0x30) >> 1) | ((features & 8) >> 2) | ((features & 2) << 1)
+    expected = support_options(features)
     coverage = Counter()
     supports = 0
     for packet in packets:
@@ -54,7 +53,7 @@ def check_optional_packets(packets, features):
         fmt = fields['format']
         if fmt == 3 and fields['subformat'] == 3:
             supports += 1
-            if fields['options'] & 30 != expected:
+            if fields['options'] & 62 != expected:
                 raise ValueError('support options disagree with the requested/read-back encoder features')
         if fmt == 0:
             subformat = fields['subformat']
@@ -171,7 +170,7 @@ def check(directory):
         features = metadata.get('features_requested', 0)
         if features != FEATURE_MODES[mode] or metadata.get('features_readback', 0) & 0xfb != features:
             raise ValueError('optional encoder CSR readback disagrees with the selected mode')
-        result.update(mode=mode, encoder_features=features)
+        result.update(mode=mode_name(features), encoder_features=features)
         original_inputs = root / 'workload/inputs.json'
         benchmark = root / 'workload/benchmark.json'
         if not benchmark.exists():
