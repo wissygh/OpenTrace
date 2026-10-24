@@ -12,6 +12,7 @@ from decoder.tests.xiangshan_sink_capture import atb_bytes, pib_bytes
 from decoder.tests.xiangshan_sba_scenarios import reference
 from decoder.tests.check_xiangshan_sba import check as check_sram
 from decoder.tests.run_xiangshan_sba import stop_capture
+from decoder.tests.xiangshan_sink_capture import check as check_sink
 
 
 def pin_line(cycle, clock, data, control=0):
@@ -32,6 +33,30 @@ def serial_log(symbols, divider, idle):
 
 
 class XiangShanSinkExtractionTests(unittest.TestCase):
+    def test_real_stderr_capture_keeps_the_valid_prefix_and_rejects_unserved_sync(self):
+        temporary = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements10/tools'
+        temporary.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary) as directory:
+            root = Path(directory)
+            for name in ('dut/logs', 'workload', 'ref', 'diff'):
+                (root / name).mkdir(parents=True, exist_ok=True)
+            (root / 'workload/code.bin').write_bytes(bytes.fromhex(
+                '7310403001a00100014591420d05fd12e39e02fe1703000013030301e7000300150519a00505828001a00100'))
+            (root / 'dut/trace.json').write_text(json.dumps({'sources': {'0': {'hart_id': 0,
+                'raw': '../workload/code.bin', 'base': '0x80000000'}}}))
+            (root / 'workload/symbols.json').write_text(json.dumps({'trace_begin': '0x80000008', 'trace_done': '0x80000028'}))
+            (root / 'dut/metadata.json').write_text(json.dumps({'sink': 'atb', 'scenario': 'basic',
+                'memory_access': 'sysbus', 'bridge_atid': 42, 'pc': '0x80000028', 'a0': 18,
+                'encoder': 0xf10079, 'funnel': 9, 'sink_control': 0x2a09, 'dropped': 0, 'loss_markers': 0}))
+            (root / 'dut/logs/uart.log').write_text('UART has no pin observations\n')
+            fixture = Path(__file__).with_name('resources') / 'xiangshan_atb_basic.trace'
+            shutil.copyfile(fixture, root / 'ref/rob.log')
+            with self.assertRaisesRegex(DecodeError, 'additional instruction synchronization'):
+                check_sink(root)
+            result = json.loads((root / 'dut/decode-result.json').read_text())
+            self.assertEqual((result['instructions'], result['packets']), (21, 8))
+            self.assertEqual(json.loads((root / 'diff/comparison.json').read_text())['flush_acknowledgements'], 1)
+
     def test_sink_shutdown_flushes_the_final_buffered_observation_record(self):
         temporary = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements9/tools'
         temporary.mkdir(parents=True, exist_ok=True)

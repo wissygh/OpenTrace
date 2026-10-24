@@ -233,7 +233,9 @@ def check(directory):
         if m['scenario'] == 'pressure' and not (m['stall_cycles'] and m['pressure_stalls_before_release']):
             raise DecodeError('selected sink capture lacks real pressure evidence')
         if m['sink'] in ('atb', 'pib'):
-            text = (layout.dut / 'logs/uart.log').read_text(errors='replace')
+            # Chisel printf is $fwrite(0x80000002): the real Verilator probe
+            # records are on stderr alongside ROB. UART stdout is separate.
+            text = (layout.ref / 'rob.log').read_text(errors='replace')
             if m['sink'] == 'atb':
                 data, rows = atb_bytes(text, m['bridge_atid'])
                 requests = text.count('[OT-ATB-AF-REQ]')
@@ -271,7 +273,10 @@ def check(directory):
         result['stage'] = 'decode'
         observer = DecodeArtifacts(directory, overwrite=True)
         observer.snapshot(layout.dut / 'trace.bin', layout.dut / 'trace.json')
-        decoder = load_config(layout.dut / 'trace.json', acquire=m['sink'] in ('atb', 'pib'), observer=observer)
+        # This observer records from reset and sink enable, hence starts at a
+        # known packet boundary. Arbitrary-buffer acquisition would discard
+        # the valid prefix up to a later external synchronization request.
+        decoder = load_config(layout.dut / 'trace.json', observer=observer)
         events = []
         for offset in range(0, len(data), 3):
             events.extend(decoder.feed(data[offset:offset + 3]))
