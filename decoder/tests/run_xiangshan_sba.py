@@ -325,6 +325,9 @@ def run_stages(args, layout):
                     rpc = RPC(tcl_port, timeout=getattr(args, 'rpc_timeout', 300), transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
+            if getattr(args, 'check_control', False):
+                from .xiangshan_control_session import run_checks
+                run_checks(rpc, layout, getattr(args, 'sink', 'sram'))
             if getattr(args, 'sink', 'sram') == 'sram':
                 collect(rpc, directory, symbols, scenario, getattr(args, 'features', 0), getattr(args, 'discovery', False),
                         getattr(args, 'halt_during_pressure', False))
@@ -359,6 +362,7 @@ def main():
     parser.add_argument('--pib-center', action='store_true')
     parser.add_argument('--cross-prefix', default='riscv64-unknown-elf-')
     parser.add_argument('--features', type=lambda value: int(value, 0), default=0)
+    parser.add_argument('--check-control', action='store_true', help='run logged external SBA control-field interactions before workload')
     parser.add_argument('--discovery', action='store_true', help='read Table42 from real encoder vendor CSR')
     parser.add_argument('--startup-timeout', type=int, default=300)
     parser.add_argument('--rpc-timeout', type=int, default=300)

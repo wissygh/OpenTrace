@@ -9,9 +9,36 @@ from decoder.encapsulation import DecodeError
 from decoder.tests.check_xiangshan_sba import COMMIT, match_samples
 from decoder.tests.run_xiangshan_sba import RPC, listening, run, capture_discovery, collect
 from decoder.tests.xiangshan_sba_scenarios import reference
+from decoder.tests.xiangshan_control_session import ControlSession, run_checks
+from decoder.capture_layout import CaptureLayout
 
 
 class XiangShanSBAChecks(unittest.TestCase):
+    def test_control_interaction_persists_bad_readback_before_rejecting(self):
+        temporary = Path(__file__).resolve().parents[2] / 'delp/tmp'
+        with tempfile.TemporaryDirectory(dir=temporary) as directory:
+            layout = CaptureLayout(directory).create()
+            rpc = Mock()
+            rpc.run.return_value = '0x2'
+            session = ControlSession(rpc, layout)
+            with self.assertRaisesRegex(ValueError, 'control interaction failed'):
+                session.expect('test field', 0x20000008, 1, 1)
+            rows = [json.loads(line) for line in (layout.dut / 'control-interactions.jsonl').read_text().splitlines()]
+            self.assertEqual((rows[0]['status'], rows[0]['expected'], rows[0]['actual']), ('failed', '0x1', '0x2'))
+            self.assertEqual([call.args[0] for call in rpc.run.call_args_list], [
+                'write_memory 0x20000008 32 {0x1} phys', 'read_memory 0x20000008 32 1 phys'])
+
+    def test_control_session_rejects_running_core_without_programming_its_controls(self):
+        temporary = Path(__file__).resolve().parents[2] / 'delp/tmp'
+        with tempfile.TemporaryDirectory(dir=temporary) as directory:
+            layout = CaptureLayout(directory).create()
+            rpc = Mock()
+            rpc.run.side_effect = ['', 'running']
+            with self.assertRaisesRegex(ValueError, 'externally halted'):
+                run_checks(rpc, layout, 'sram')
+            self.assertEqual(rpc.run.call_count, 2)
+            self.assertEqual(json.loads((layout.diff / 'control-comparison.json').read_text())['status'], 'failed')
+
     def test_pressure_halt_drains_old_retirement_before_resume_using_only_physical_sysbus(self):
         commands=[]
         halted=False

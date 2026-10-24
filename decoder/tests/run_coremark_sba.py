@@ -50,24 +50,20 @@ def verify(directory, reference):
     if performance['status'] != 'passed':
         raise ValueError('storage performance prerequisites failed')
     write_json(directory / 'diff/storage-performance.json', performance)
-    print(f"[CoreMark] passed {mode_name(FEATURES)}: {performance['bits_per_instruction']:.9f} bit/instruction", flush=True)
+    print(f"[CoreMark] passed {mode_name(result['encoder_features'])}: {performance['bits_per_instruction']:.9f} bit/instruction", flush=True)
     return performance
 
 
-def layout(name):
+def layout():
     root=OUTPUT
     if root.exists() and any(root.iterdir()):raise RuntimeError('output exists: '+str(root))
     out=CaptureLayout(root).create();(out.dut/'logs').mkdir()
     shutil.copyfile(IMAGE,out.workload/'coremark.bin')
-    assert int.from_bytes(IMAGE.read_bytes()[END-0x80000000:END-0x80000000+4],'little')==0x5006b
+    if int.from_bytes(IMAGE.read_bytes()[END-0x80000000:END-0x80000000+4],'little') != 0x5006b:
+        raise ValueError('CoreMark exit instruction does not match this capture boundary')
     write_json(out.workload/'inputs.json',{'original_image':str(IMAGE),'sha256':hashlib.sha256(IMAGE.read_bytes()).hexdigest(),
       'load_base':'0x80000000','hardware_breakpoint_before_exit':hex(END),'iterations':2})
     return out
-
-def pin(pid, start):
-    time.sleep(0.4)
-    tids=sorted(int(p.name) for p in Path(f'/proc/{pid}/task').iterdir())
-    for tid in tids[:8]:os.sched_setaffinity(tid,set(range(start,start+8)))
 
 def pin_actual(parent, start):
     deadline=time.monotonic()+300
@@ -88,7 +84,7 @@ def command(out):
       '--dramsim3-outdir='+str(out.dut/'logs'),'-i',str(out.workload/'coremark.bin')]
 
 def trace():
-    out=layout(MODE)
+    out=layout()
     rb,tc=free_port(),free_port()
     while tc==rb:tc=free_port()
     env=dict(os.environ,OT_RBB_PORT=str(rb),OT_TCL_PORT=str(tc))
