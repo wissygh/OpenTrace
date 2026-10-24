@@ -22,18 +22,19 @@ class ControlSession:
     def write(self, address, value):
         self.rpc.run(f'write_memory 0x{address:x} 32 {{0x{value:x}}} phys')
 
-    def expect(self, name, address, value, expected):
+    def expect(self, name, address, value, expected, mask=0xffffffff):
         if value is not None:
             self.write(address, value)
         actual = self.read(address)
         row = {'stage': self.stage, 'field': name, 'address': hex(address),
                'write': None if value is None else hex(value), 'expected': hex(expected),
-               'actual': hex(actual), 'status': 'passed' if actual == expected else 'failed'}
+               'actual': hex(actual), 'mask': hex(mask),
+               'status': 'passed' if actual & mask == expected & mask else 'failed'}
         self.rows.append(row)
         with (self.layout.dut / 'control-interactions.jsonl').open('a') as output:
             output.write(json.dumps(row) + '\n')
         print(f"[CTRL][{self.stage}] {name} @{address:#x} write={row['write']} expected={expected:#x} actual={actual:#x} {row['status']}", flush=True)
-        if actual != expected:
+        if actual & mask != expected & mask:
             raise ValueError('control interaction failed: ' + name)
         return actual
 
@@ -74,7 +75,9 @@ def run_checks(rpc, layout, sink):
         for value in (1, 5, 0x801, 0x2001, 0xf00001, 0x1001):
             # InstTracing requires Enable; RW1C status cannot be set by software.
             expected = 0x10079 | (value & 0xf02802) | (value & 4 if value & 2 else 0)
-            session.expect('InstTracing/InstTrigEnable/InstStallEna/InstSyncMax/RW1C', ENCODER, value, expected)
+            # Feature edits can queue support packets while downstream remains
+            # disabled. Empty is live state, checked separately at reset/drain.
+            session.expect('InstTracing/InstTrigEnable/InstStallEna/InstSyncMax/RW1C', ENCODER, value, expected, mask=0xfffffff7)
         session.stage = 'filter and comparator fields'
         session.rw('TeInstFilters selector', ENCODER + 12, 1)
         # The selected filter is disabled while individual fields are programmed.
@@ -119,7 +122,7 @@ def run_checks(rpc, layout, sink):
             for pointer in (0x20, 0x28):
                 for value in (0, 0x3fc, 0xffffffff, 0):
                     session.expect('SRAM aligned bounded WP/RP and Wrap clear', base + pointer, value, value & 0x3fc)
-            session.rw('SRAM StopOnWrap/reserved MemFormat/AsyncFreq', base, 0x100, 9)
+            session.rw('SRAM StopOnWrap/reserved MemFormat/AsyncFreq', base, 0x100, 9, values=(1, 0xfffffffd, 1))
         elif sink == 'atb':
             session.rw('ATB AsyncFreq/implementation', base + 4, 0x7000, 0xe01)
             identity = 1

@@ -39,6 +39,17 @@ class XiangShanSBAChecks(unittest.TestCase):
             self.assertEqual(rpc.run.call_count, 2)
             self.assertEqual(json.loads((layout.diff / 'control-comparison.json').read_text())['status'], 'failed')
 
+    def test_live_empty_does_not_mask_an_actual_instruction_control_mismatch(self):
+        temporary = Path(__file__).resolve().parents[2] / 'delp/tmp'
+        with tempfile.TemporaryDirectory(dir=temporary) as directory:
+            rpc = Mock()
+            rpc.run.return_value = '0x10071'  # Empty=0 while queued support awaits downstream.
+            session = ControlSession(rpc, CaptureLayout(directory).create())
+            session.expect('control fields', 0x20000000, 1, 0x10079, mask=0xfffffff7)
+            rpc.run.return_value = '0x10075'  # Unexpected InstTracing=1 is still a failure.
+            with self.assertRaisesRegex(ValueError, 'control interaction failed'):
+                session.expect('control fields', 0x20000000, 1, 0x10079, mask=0xfffffff7)
+
     def test_pressure_halt_drains_old_retirement_before_resume_using_only_physical_sysbus(self):
         commands=[]
         halted=False
