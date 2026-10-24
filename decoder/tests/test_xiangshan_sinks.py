@@ -1,14 +1,17 @@
 from pathlib import Path
 import json
+import signal
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 from decoder.encapsulation import DecodeError
 from decoder.tests.xiangshan_sink_capture import atb_bytes, pib_bytes
 from decoder.tests.xiangshan_sba_scenarios import reference
 from decoder.tests.check_xiangshan_sba import check as check_sram
+from decoder.tests.run_xiangshan_sba import stop_capture
 
 
 def pin_line(cycle, clock, data, control=0):
@@ -29,6 +32,33 @@ def serial_log(symbols, divider, idle):
 
 
 class XiangShanSinkExtractionTests(unittest.TestCase):
+    def test_sink_shutdown_flushes_the_final_buffered_observation_record(self):
+        temporary = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements9/tools'
+        temporary.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=temporary) as directory:
+            root = Path(directory)
+            ready = root / 'ready'
+            program = ('import signal,sys; from pathlib import Path; '
+                       'signal.signal(signal.SIGINT,lambda *_:sys.exit(0)); '
+                       'print("final accepted sink transfer",flush=False); '
+                       'Path(sys.argv[1]).write_text("ready"); signal.pause()')
+            with (root / 'stdout.log').open('w') as log:
+                process = subprocess.Popen(['python3', '-c', program, str(ready)], stdout=log)
+                try:
+                    deadline = time.monotonic() + 5
+                    while not ready.exists():
+                        self.assertIsNone(process.poll())
+                        if time.monotonic() > deadline:
+                            self.fail('buffered observer did not start')
+                        time.sleep(0.01)
+                    self.assertEqual((root / 'stdout.log').read_text(), '')
+                    stop_capture(process, None, flush_output=True)
+                    self.assertEqual(process.returncode, 0)
+                    self.assertEqual((root / 'stdout.log').read_text(), 'final accepted sink transfer\n')
+                finally:
+                    if process.poll() is None:
+                        process.kill(); process.wait()
+
     def test_ordinary_exception_checker_rejects_wrong_tval_even_with_identical_retired_pcs(self):
         # Actual feature-zero capture; the mutation changes tval only, retaining
         # the handler, all retired PCs and the independent ROB samples.

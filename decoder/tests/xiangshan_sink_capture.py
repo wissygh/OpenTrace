@@ -158,7 +158,9 @@ def collect(rpc, directory, symbols, scenario, args):
     if scenario != 'pressure':
         write(base, configuration | 2)
     write(0x20010000, 3)
-    write(0x20000000, 0x2007)
+    # Keep periodic resynchronization out of this short control experiment: a
+    # second Format30 must come from the real external ATB SYNCREQ.
+    write(0x20000000, 0xf02007)
     print(f'[XS-{sink}][2/4] resume pure workload; pressure holds selected sink disabled until actual stall', flush=True)
     rpc.run(f"resume 0x{symbols['trace_begin']:x}")
     metadata['pressure_stalls_before_release'] = 0
@@ -182,7 +184,7 @@ def collect(rpc, directory, symbols, scenario, args):
     if metadata['pc'] != symbols['trace_done'] or metadata['a0'] != expected_a0:
         raise RuntimeError('workload did not reach the expected exit/a0')
     print(f'[XS-{sink}][3/4] stop encoder→Funnel→selected sink, checking Disabled/Empty', flush=True)
-    for name, address, off in (('encoder', 0x20000000, 1), ('funnel', 0x20010000, 1), ('sink_control', base, configuration)):
+    for name, address, off in (('encoder', 0x20000000, 0xf00001), ('funnel', 0x20010000, 1), ('sink_control', base, configuration)):
         write(address, off)
         for _ in range(30):
             metadata[name] = read(address)
@@ -238,6 +240,9 @@ def check(directory):
                 acknowledgements = text.count('[OT-ATB-AF-ACK]')
                 if requests != 1 or acknowledgements != 1 or '[OT-ATB-SYNC]' not in text:
                     raise DecodeError('external ATB flush/sync did not complete')
+                frontier = re.search(r'\[OT-ATB-AF-REQ\]\s+cycle=\s*(\d+)\s+oldTransfers=\s*(\d+)', text)
+                if frontier is None or int(frontier.group(2)) < 12:
+                    raise DecodeError('ATB flush was requested before actual instruction trace reached the pins')
                 result.update(flush_requests=requests, flush_acknowledgements=acknowledgements, sync_requests=1)
             else:
                 data, rows = pib_bytes(text, m['pib_mode'], m['pib_divider'])
@@ -271,6 +276,12 @@ def check(directory):
         for offset in range(0, len(data), 3):
             events.extend(decoder.feed(data[offset:offset + 3]))
         decoder.finish()
+        if m['sink'] == 'atb':
+            packets = [json.loads(line)['fields'] for line in (layout.dut / 'packets.jsonl').read_text().splitlines()]
+            synchronizations = sum((p['format'], p.get('subformat')) == (3, 0) for p in packets)
+            if synchronizations < 2:
+                raise DecodeError('external ATB SYNCREQ did not produce an additional instruction synchronization')
+            result['instruction_synchronizations'] = synchronizations
         pcs = [event['pc'] for event in events if event['kind'] == 'instruction']
         if pcs != expected:
             first = next((i for i, pair in enumerate(zip(pcs, expected)) if pair[0] != pair[1]), min(len(pcs), len(expected)))

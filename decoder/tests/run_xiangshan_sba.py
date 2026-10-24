@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import socket
 import shutil
+import signal
 import subprocess
 import time
 import struct
@@ -216,6 +217,20 @@ def stop(process):
             process.wait()
 
 
+def stop_capture(emu, debugger, flush_output=False):
+    """Finish owned sink observers before closing JTAG and forcing shutdown."""
+    if flush_output and emu is not None and emu.poll() is None:
+        # Emu's SIGINT handler exits its normal loop and flushes buffered printf
+        # records. Those records contain the final external pin/AXI transfers.
+        emu.send_signal(signal.SIGINT)
+        try:
+            emu.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+    stop(debugger)
+    stop(emu)
+
+
 class Tee:
     def __init__(self, console, log):
         self.console, self.log = console, log
@@ -321,8 +336,7 @@ def run_stages(args, layout):
                 rpc.close()
             # SimJTAG can wait indefinitely on EOF after OpenOCD exits. Stop both
             # owned processes; this does not require a guest trap instruction.
-            stop(openocd)
-            stop(emu)
+            stop_capture(emu, openocd, flush_output=getattr(args, 'sink', 'sram') != 'sram')
     diff_logs = layout.diff / 'logs'; diff_logs.mkdir()
     with (diff_logs / 'check.log').open('w') as output, redirect_stdout(Tee(sys.stdout, output)):
         if getattr(args, 'sink', 'sram') != 'sram':
