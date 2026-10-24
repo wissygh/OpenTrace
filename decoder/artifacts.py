@@ -7,7 +7,8 @@ import os
 from .capture_layout import CaptureLayout
 from .execution import unpack
 from .image import signed
-from .report import STREAMS, TEXT_REPORT_FILES, render_record, packet_type, report_end
+from .report import (STREAMS, TEXT_REPORT_FILES, render_record, packet_type, report_end,
+                     report_header, render_instructions)
 
 
 PC_FIELDS = {'pc', 'decoded_pc', 'rob_pc', 'expected_pc', 'actual_pc', 'epc', 'reference_pc', 'reported_pc',
@@ -46,6 +47,9 @@ class DecodeArtifacts:
             raise ValueError('decoder artifact files already exist; use a new output directory')
         self.files = {name: (self.directory / name).open('w') for name in names[:-1]}
         self.record_counts = {name: 0 for name in JSONL_REPORT_FILES}
+        for stream in STREAMS:
+            self.files[stream + '.txt'].write(report_header(stream))
+        self.decoders = {}
         self.files['instructions.tsv'].write('index\tpacket_index\tsource_id\thart_id\tpc\tinstruction\tsize\n')
         self.frames = {}
         self.framing_packet_count = 0
@@ -129,6 +133,7 @@ class DecodeArtifacts:
         self._line('framing.jsonl', row)
 
     def packet(self, packet, decoder):
+        self.decoders[packet.source_id] = decoder
         self.packet_index = self.packet_count
         self.packet_count += 1
         row = dict(self.frames.pop(id(packet), {}), packet_index=self.packet_index,
@@ -165,6 +170,9 @@ class DecodeArtifacts:
             self._line('events.jsonl', row)
             if event['kind'] == 'instruction':
                 row['index'] = self.instruction_index
+                decoder = self.decoders.get(event['source_id'])
+                if decoder is not None:
+                    row['xlen'] = decoder.contexts.get(event.get('context'), decoder.image).xlen
                 self._line('instructions.jsonl', row)
                 output = self.files['instructions.tsv']
                 output.write(f"{self.instruction_index}\t{self.packet_index}\t{event['source_id']}\t"
@@ -177,6 +185,7 @@ class DecodeArtifacts:
             self.files[name].write(report_end(error))
         for output in self.files.values():
             output.close()
+        render_instructions(self.directory, error)
         write_json(self.directory / 'decode-result.json', {'status': 'failed' if error else 'passed',
                    'error': str(error) if error else None, 'packets': self.packet_count,
                    'null_packets': self.nulls, 'instructions': self.instruction_index})
