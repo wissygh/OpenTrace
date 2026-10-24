@@ -43,7 +43,7 @@ class ReadableReports(unittest.TestCase):
         outcomes = render_record('packets', {'fields': {'format': 1, 'branches': 2, 'branch_map': 2}}, 0)
         self.assertIn('branch_outcomes: T N', outcomes)
 
-    def test_chunked_decode_automatically_exports_multiline_views_and_replay_does_not_change_evidence(self):
+    def test_detailed_multiline_views_keep_wire_profile_and_events_and_replay_does_not_change_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'code.bin').write_bytes((0x13).to_bytes(4, 'little') * 2)
@@ -63,7 +63,7 @@ class ReadableReports(unittest.TestCase):
             dut = output / 'dut'
             for stem in ('framing', 'packets', 'events', 'instructions'):
                 text = (dut / (stem + '.txt')).read_text()
-                self.assertLess(len(text.splitlines()), 50)
+                self.assertGreater(len(text.splitlines()), 6)
                 self.assertIn('解码状态: 完成', text)
             packet = json.loads((dut / 'packets.jsonl').read_text().splitlines()[0])
             self.assertEqual(packet['packet_type'], 'Format30')
@@ -71,9 +71,14 @@ class ReadableReports(unittest.TestCase):
             self.assertIn('NULL', (dut / 'framing.txt').read_text())
             self.assertIn('packet_index: 0', (dut / 'framing.txt').read_text())
             instruction_text = (dut / 'instructions.txt').read_text()
-            self.assertIn('0x00000013 nop', instruction_text)
+            self.assertIn('instruction: 0x13  nop  size: 4 bytes', instruction_text)
             self.assertEqual(instruction_text.count('packet='), 2)
-            self.assertNotIn('0x80001000', (dut / 'events.txt').read_text())
+            self.assertIn('0x80001000', (dut / 'events.txt').read_text())
+            packet_text = (dut / 'packets.txt').read_text()
+            for detail in ('decoded_fields', 'wire_fields', 'profile:', 'raw_hex:', 'payload_hex:', 'header:'):
+                self.assertIn(detail, packet_text)
+            self.assertIn('privilege:', instruction_text)
+            self.assertIn('context:', instruction_text)
             self.assertEqual(len((dut / 'events.jsonl').read_text().splitlines()), 3)
             views = {p: p.read_bytes() for p in dut.glob('*.txt')}
             before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in dut.iterdir() if p.suffix != '.txt'}
