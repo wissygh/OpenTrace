@@ -136,6 +136,28 @@ def run_checks(rpc, layout, sink):
                 value = 1 | (mode << 4) | (3 << 16) | 0x100
                 expected = 9 | (mode << 4) | (3 << 16) | (0x100 if mode >= 8 else 0)
                 session.expect('PIB Mode/Divider/ClkCenter serial-vs-parallel', base, value, expected)
+        elif sink == 'smem':
+            memory = 0x83000000
+            session.ro('SMEM implementation/HasSMEM/HasSRAM', base + 4, 0x2901)
+            for offset, expected in ((0x10, memory), (0x14, 0), (0x18, memory + 0xfffc),
+                                     (0x1c, 0), (0x20, memory), (0x24, 0)):
+                session.expect('SMEM reset window/pointer', base + offset, None, expected)
+            for offset in (0x28, 0x2c, 0x40):
+                session.ro('SMEM absent RP/Data registers', base + offset, 0)
+            session.ro('SMEM initial idle/fault/partial-byte status', base + 0xf00, 0)
+            session.expect('SMEM aligned pointer and Wrap clear', base + 0x20, memory + 3, memory)
+            # Address halves may temporarily form invalid configurations. Only
+            # a subsequent legal complete configuration clears the fault.
+            session.expect('SMEM high address half edit', base + 0x14, 1, 1)
+            session.ro('SMEM invalid configuration fault is read-only', base + 0xf00, 1)
+            session.expect('SMEM invalid-config fault pointer', base + 0xf04, None, memory)
+            session.expect('SMEM restore legal high half', base + 0x14, 0, 0)
+            session.expect('SMEM legal reconfiguration clears fault', base + 0xf00, None, 0)
+            session.expect('SMEM fault address clears on legal config', base + 0xf04, None, 0)
+            session.expect('SMEM legal pointer edit', base + 0x20, memory + 4, memory + 4)
+            session.expect('SMEM restore capture pointer', base + 0x20, memory, memory)
+            session.rw('SMEM StopOnWrap/fixed mode/reserved fields', base, 0x100, 0x19,
+                       values=(1, 0xfffffffd, 1))
         # Reset every modified component before the separately checked workload.
         session.stage = 'restore'
         for base in (ENCODER, FUNNEL, SINKS[sink]):
