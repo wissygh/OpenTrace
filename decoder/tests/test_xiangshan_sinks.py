@@ -6,13 +6,15 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock
 
 from decoder.encapsulation import DecodeError
 from decoder.tests.xiangshan_sink_capture import atb_bytes, pib_bytes
 from decoder.tests.xiangshan_sba_scenarios import reference
 from decoder.tests.check_xiangshan_sba import check as check_sram
 from decoder.tests.run_xiangshan_sba import stop_capture
-from decoder.tests.xiangshan_sink_capture import check as check_sink
+from decoder.tests.xiangshan_sink_capture import check as check_sink, capture_sba_capabilities
+from decoder.capture_layout import CaptureLayout
 
 
 def pin_line(cycle, clock, data, control=0):
@@ -33,6 +35,22 @@ def serial_log(symbols, divider, idle):
 
 
 class XiangShanSinkExtractionTests(unittest.TestCase):
+    def test_smem_requires_actual_sba_address_bits_and_word_access_before_capture(self):
+        parent = Path(__file__).resolve().parents[2] / 'delp/tmp'
+        for bits, access32, expected in ((30, True, False), (32, True, True), (48, True, True), (32, False, False)):
+            with self.subTest(bits=bits, access32=access32), tempfile.TemporaryDirectory(dir=parent) as directory:
+                layout = CaptureLayout(directory).create()
+                rpc = Mock()
+                rpc.run.return_value = hex((1 << 29) | (bits << 5) | (4 if access32 else 0))
+                if expected:
+                    self.assertEqual(capture_sba_capabilities(rpc, layout)['address_bits'], bits)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'cannot address'):
+                        capture_sba_capabilities(rpc, layout)
+                data = json.loads((layout.dut / 'sba-capabilities.json').read_text())
+                self.assertEqual(data['status'], 'supported' if expected else 'unsupported')
+                rpc.run.assert_called_once_with('riscv dmi_read 0x38')
+
     def test_real_stderr_capture_keeps_the_valid_prefix_and_rejects_unserved_sync(self):
         temporary = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements10/tools'
         temporary.mkdir(parents=True, exist_ok=True)

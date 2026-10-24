@@ -325,6 +325,9 @@ def run_stages(args, layout):
                     rpc = RPC(tcl_port, timeout=getattr(args, 'rpc_timeout', 300), transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(0.5)
+            if getattr(args, 'sink', 'sram') == 'smem':
+                from .xiangshan_sink_capture import capture_sba_capabilities
+                capture_sba_capabilities(rpc, layout)
             if getattr(args, 'check_control', False):
                 from .xiangshan_control_session import run_checks
                 run_checks(rpc, layout, getattr(args, 'sink', 'sram'))

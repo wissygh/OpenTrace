@@ -19,6 +19,21 @@ PINS = re.compile(r'\[OT-PIB-PINS\]\s+cycle=\s*(\d+)\s+clock=\s*([01])\s+'
                   r'control=\s*([01])\s+data=0x([0-9a-fA-F]+)')
 
 
+def capture_sba_capabilities(rpc, layout, window_end=0x8300ffff):
+    """Read actual Debug SBCS before attempting a system-memory capture."""
+    sbcs = int(rpc.run('riscv dmi_read 0x38'), 0)
+    bits = (sbcs >> 5) & 127
+    word_access = bool(sbcs & 4)
+    supported = bits >= window_end.bit_length() and word_access
+    result = {'sbcs': hex(sbcs), 'address_bits': bits, 'sbaccess32': word_access,
+              'window_end': hex(window_end), 'status': 'supported' if supported else 'unsupported'}
+    write_json(layout.dut / 'sba-capabilities.json', result)
+    print(f'[XS-smem][SBA] SBCS={sbcs:#x} address_bits={bits} sbaccess32={word_access}', flush=True)
+    if not supported:
+        raise RuntimeError('Debug SBA cannot address the reserved SMEM buffer with 32-bit physical accesses')
+    return result
+
+
 def atb_bytes(text, bridge_id=42):
     data = bytearray()
     rows = []
@@ -139,6 +154,8 @@ def collect(rpc, directory, symbols, scenario, args):
     metadata = {'sink': sink, 'scenario': scenario, 'memory_access': 'sysbus',
                 'features_requested': args.features, 'features_readback': features,
                 'sink_implementation': hex(read(base + 4))}
+    if sink == 'smem':
+        metadata['sba_address_bits'] = json.loads((layout.dut / 'sba-capabilities.json').read_text())['address_bits']
     if sink == 'atb':
         configuration |= 42 << 8
         metadata['bridge_atid'] = 42
