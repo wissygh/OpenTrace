@@ -81,9 +81,9 @@ class PIBSerializer(startupAlignment: Boolean = true) extends Module with TraceP
   }.elsewhen(dataTick && parallel) {
     bytePhase := bytePhase + parallelWidth
   }
-  val totalBits     = length << 3
-  val bits          = buffer.asUInt >> bitIndex
-  val idleData      = Mux(uart, 1.U(16.W), 0.U(16.W))
+  val totalBits = length << 3
+  val bits      = buffer.asUInt >> bitIndex
+  val idleData  = Mux(uart, 1.U(16.W), 0.U(16.W))
   io.pins.clock   := traceClock && parallel
   io.pins.data    := pins
   io.pins.control := false.B
