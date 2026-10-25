@@ -41,6 +41,32 @@ def _signature(event):
             number(event['instruction']), number(event['size']))
 
 
+def _check_storage_metadata(metadata, data):
+    if not metadata:
+        return
+    storage = metadata.get('storage', metadata)
+    if metadata.get('capture_method') == 'all physical SRAM writes plus SBA tail':
+        # A complete observed ring write stream can be much longer than its
+        # final modulo pointer. The physical-port checker verifies every write;
+        # also tie the measurement to its actual pointer and SBA tail snapshot.
+        if not data or len(data) % 4:
+            raise ValueError('circular SRAM stream is empty or not word aligned')
+        words = len(data) // 4
+        wp = number(storage['wp_register'])
+        if (wp & ~3) != (words % 256) * 4 or bool(wp & 1) != (words >= 256):
+            raise ValueError('circular SRAM WP/Wrap disagrees with full stored bytes')
+        if storage['sample_start_word'] != (words - 16) % 256 or storage['rp_after_sample'] != wp & ~3:
+            raise ValueError('circular SRAM SBA sample pointers disagree')
+        expected = [int.from_bytes(data[i:i + 4], 'little') for i in range(len(data) - 64, len(data), 4)]
+        if len(data) < 64 or storage['sample_words'] != expected:
+            raise ValueError('circular SRAM bytes differ from the actual SBA tail')
+    elif number(storage['wp']) != len(data) or number(storage['rp']) != len(data):
+        raise ValueError('SRAM WP/RP do not match the complete captured byte count')
+    for hart in metadata.get('harts', {}).values():
+        if hart.get('dropped') or hart.get('loss_markers'):
+            raise ValueError('a source reported loss in the shared SRAM capture')
+
+
 class _Frames:
     def __init__(self, source_bytes, timestamp_bytes):
         self.source_bytes = source_bytes
@@ -128,8 +154,7 @@ def measure(directory):
         metadata = _json(metadata_path) if metadata_path.exists() else {}
         if metadata:
             result['input_sha256'][str(metadata_path.resolve())] = _digest(metadata_path)
-            if number(metadata['wp']) != len(data) or number(metadata['rp']) != len(data):
-                raise ValueError('SRAM WP/RP do not match the complete captured byte count')
+            _check_storage_metadata(metadata, data)
 
         # Fingerprint the images that define 16/32-bit dynamic retirement counts.
         def images(description):
