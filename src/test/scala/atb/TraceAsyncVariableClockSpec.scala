@@ -65,6 +65,11 @@ private class TraceAsyncVariableClockHarness extends Module {
     val received = RegInit(0.U(8.W))
     val captured = Reg(Vec(128, UInt(32.W)))
     val cycles = RegInit(0.U(16.W))
+    val held = RegNext(bridge.io.out.bits)
+    val heldValid = RegNext(bridge.io.out.valid && !io.ready && !commonReset, false.B)
+    when(heldValid && !commonReset && !bridge.io.sinkResetActive) {
+      assert(bridge.io.out.valid && bridge.io.out.bits === held)
+    }
     cycles := cycles + 1.U
     when(bridge.io.out.fire && !commonReset && !bridge.io.sinkResetActive) {
       assert(received < 128.U)
@@ -159,6 +164,17 @@ class TraceAsyncVariableClockSpec extends AnyFlatSpec with ChiselScalatestTester
         for (_ <- 0 until 80) tick()
         d.io.received.expect((before + 8).U)
       }
+      println("[CDC-variable] 持续随机反压与变频，完整检查64个新word及stalled valid/data保持")
+      val begin = d.io.received.peek().litValue.toInt
+      val random = new scala.util.Random(0x81)
+      d.io.limit.poke(72.U)
+      var remaining = 5000
+      while (d.io.received.peek().litValue < begin + 64 && remaining > 0) {
+        d.io.ready.poke((random.nextInt(5) == 0).B)
+        tick(); remaining -= 1
+      }
+      assert(remaining > 0, "random backpressure stream did not complete")
+      words(begin, begin + 64) shouldBe (8 until 72).map(i => (BigInt(3) << 24) + i)
     }
   }
 }
