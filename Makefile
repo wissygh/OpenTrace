@@ -165,7 +165,7 @@ test-smem:
 
 test-atb:
 	@echo "[ATB-test] AF/SYNCREQ/ATCLKEN/ATWAKEUP 与多时钟端到端验证"
-	mill -i OpenTrace.test.testOnly trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.component.TraceATBAdapterSpec trace.component.PacketGenSpec
+	mill -i OpenTrace.test.testOnly trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.component.ATBClockRequestSpec trace.component.TraceATBAdapterSpec trace.component.PacketGenSpec
 
 check-hpm-rtl:
 	@echo "[core-HPM-rtl] 双 hart HPM 接口与默认端口不变检查"
@@ -206,7 +206,7 @@ test-decoder:
 
 test-trace:
 	@echo "[trace-test] 1/4 Scala RTL 行为与编码 golden 测试开始"
-	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.IngressReferenceSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.InstructionReferenceSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.PacketFormat3Spec trace.component.PacketSupportSpec trace.component.PacketJumpCacheSpec trace.component.PacketBranchPredictionSpec trace.component.PacketMixedFormatsSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SRAMControlSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec trace.component.FunnelInputSpec trace.component.FunnelDrainSpec trace.component.TraceATBAdapterSpec trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.component.SingleHartAcceptanceSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.TraceSystemSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.control.ControlRegisterMapSpec trace.control.CoreHPMSpec trace.control.PIBControlSpec trace.TraceParametersSpec
+	mill -i OpenTrace.test.testOnly trace.component.FifoSpec trace.component.PacketArbiterSpec trace.component.BlockBufferSpec trace.component.IngressReferenceSpec trace.component.BlockBackpressureSpec trace.component.PacketGenSpec trace.component.ETraceCodecSpec trace.component.PacketEncodingSpec trace.component.InstructionReferenceSpec trace.component.PacketLifecycleSpec trace.component.PacketTrapSpec trace.component.PacketContextSpec trace.component.PacketFormat3Spec trace.component.PacketSupportSpec trace.component.PacketJumpCacheSpec trace.component.PacketBranchPredictionSpec trace.component.PacketMixedFormatsSpec trace.component.EncoderCapabilitiesSpec trace.component.EncoderTimestampSpec trace.component.EncoderStatisticsSpec trace.component.PIBSerializerSpec trace.component.TraceComparatorSpec trace.component.TraceFilterLogicSpec trace.component.TraceTrapFilterSpec trace.component.TraceLossSpec trace.component.SRAMSinkCoreSpec trace.component.SRAMControlSpec trace.component.SMEMSinkCoreSpec trace.component.SMEMAXIWriterSpec trace.component.SMEMControlSpec trace.component.TraceSinkPacketGuardSpec trace.component.SourcePacketStagerSpec trace.component.FunnelResetSpec trace.component.FunnelInputSpec trace.component.FunnelDrainSpec trace.component.TraceATBAdapterSpec trace.component.TraceAlignmentSpec trace.component.ATBProtocolSpec trace.component.ATBCrossingSpec trace.component.ATBClockRequestSpec trace.component.TraceAsyncVariableClockSpec trace.TraceControlClockSpec trace.component.SingleHartAcceptanceSpec trace.MultiHartTraceSpec trace.MultiHartExecutionSpec trace.TraceSystemSpec trace.control.TraceControlEndpointSpec trace.control.ComponentDiscoverySpec trace.control.ControlRegisterMapSpec trace.control.CoreHPMSpec trace.control.PIBControlSpec trace.TraceParametersSpec
 	@echo "[trace-test] 2/4 Python decoder 单元测试开始"
 	python3 -m unittest discover -s decoder/tests -v
 	@echo "[trace-test] 3/4 双核 SRAM 捕获：启动与完整执行流解码"
@@ -232,3 +232,8 @@ test-trace:
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-jump-cache
 	python3 -m decoder.tests.check_packetgen_capture build/validation packetgen-branch-pred
 	python3 -m decoder.tests.check_mixed_capture build/validation/mixed-packets
+
+.PHONY: check-atb-clock-request-rtl
+check-atb-clock-request-rtl:
+	@echo "[ATB-clock-request] 默认接口不变/可选源域请求；全停clock恢复与标准ATWAKEUP保持本域"
+	mill -i OpenTrace.test.runMain trace.TraceClockRequestMain
