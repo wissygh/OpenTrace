@@ -192,6 +192,7 @@ test-system:
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-reset
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-funnel-reset
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-mask
+	python3 -m decoder.tests.check_trace_system build/validation trace-system-clock-gate
 
 test-integration:
 	@echo "[trace-integration] 双核完整执行流经过真实仲裁和 SRAM 存储后交给 decoder"
@@ -215,6 +216,7 @@ test-trace:
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-reset
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-funnel-reset
 	python3 -m decoder.tests.check_trace_system build/validation trace-system-mask
+	python3 -m decoder.tests.check_trace_system build/validation trace-system-clock-gate
 	python3 -m decoder.tests.check_multihart_flow build/validation
 	python3 -m decoder.tests.check_multihart_flow build/validation two-hart-smem
 	python3 -m decoder.tests.check_multihart_flow build/validation two-hart-pib

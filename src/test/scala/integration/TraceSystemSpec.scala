@@ -14,9 +14,10 @@ import trace.interface._
 /** Actual Trace, including TL control CDC, always-on endpoints, encoders,
   * per-source data CDC, funnel, standard ATB and its separate output clock.
   */
-private class TraceSystemHarness extends Module {
+private class TraceSystemHarness(autoGate: Boolean = false) extends Module {
   implicit val p: Parameters = Parameters.empty
-  val design = LazyModule(new Trace(BusType.TL, numHarts = 2, useAtbSink = true))
+  val design = LazyModule(new Trace(BusType.TL, numHarts = 2, useAtbSink = true,
+    exposeAtbClockRequest = autoGate))
   val top = Module(design.module)
   val ctrl = design.ctrlTLMaster.get.getWrappedValue.head
   val io = IO(new Bundle {
@@ -31,6 +32,7 @@ private class TraceSystemHarness extends Module {
     val count = Output(UInt(9.W))
     val data = Output(Vec(256, new ATData(4)))
     val flushes = Output(UInt(8.W))
+    val clockRequest = Output(Bool())
   })
   ctrl <> io.control
   val coreLevel = RegInit(false.B)
@@ -44,7 +46,11 @@ private class TraceSystemHarness extends Module {
   val atbLevel = RegInit(false.B)
   val atbDivide = RegInit(0.U(3.W))
   atbDivide := Mux(atbDivide === 4.U, 0.U, atbDivide + 1.U)
-  when(atbDivide === 4.U) { atbLevel := !atbLevel }
+  val request = top.io.atb_clock_request.getOrElse(false.B)
+  val synchronizedRequest = freechips.rocketchip.util.AsyncResetSynchronizerShiftReg(request, 3)
+  val runAtb = if(autoGate) synchronizedRequest || io.flush || io.sync || reset.asBool else true.B
+  when(atbDivide === 4.U && (runAtb || atbLevel)) { atbLevel := !atbLevel }
+  io.clockRequest := request
   val atbClock = atbLevel.asClock
   top.io.clock_ctrl := clock; top.io.reset_ctrl := reset.asAsyncReset
   top.io.clock_core := coreClock; top.io.reset_core := reset.asAsyncReset
@@ -73,12 +79,13 @@ private class TraceSystemHarness extends Module {
 
 class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matchers {
   behavior of "actual Trace control and data domains"
-  for (restart <- Seq("none", "source", "funnel", "mask")) {
+  for (restart <- Seq("none", "source", "funnel", "mask", "clock-gate")) {
   val resetSource = restart == "source"
   val resetFunnel = restart == "funnel"
   val maskSource = restart == "mask"
+  val autoGate = restart == "clock-gate"
   it should s"configure real TL registers through all clock crossings, restart=$restart" in {
-    test(new TraceSystemHarness).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
+    test(new TraceSystemHarness(autoGate)).withAnnotations(Seq(VerilatorBackendAnnotation)) { d =>
       d.clock.setTimeout(20000)
       d.io.control.a.valid.poke(false.B); d.io.control.d.ready.poke(true.B)
       d.io.control.a.bits.opcode.poke(TLMessages.Get); d.io.control.a.bits.param.poke(0.U)
@@ -142,6 +149,17 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
       }
       encoders.foreach(address => access(address, write = true, value = 7))
       until(d.io.toCore.forall(_.enable.peek().litToBoolean))
+      if(autoGate) {
+        // Enabling the real bridge can emit startup encapsulation/support
+        // before retirement starts. Drain those actual bytes before idle.
+        d.io.ready.poke(true.B); d.clock.step(500)
+        until(!d.io.clockRequest.peek().litToBoolean, 3000)
+        d.clock.step(120)
+        val before = d.io.sinkCycles.peek().litValue
+        d.clock.step(100);d.io.sinkCycles.expect(before.U);d.io.clockRequest.expect(false.B)
+        d.io.ready.poke(false.B)
+        println("[Trace-system-clock] 两核trace启用但无指令，ATCLK已全停；后续packet必须通过source request自动恢复")
+      }
       println("[Trace-system][2/5] 下游到上游启用，真实srcID发现通过；ATREADY反压期间注入两核输入")
       for (group <- 0 until 4) {
         for (hart <- 0 until 2) {
@@ -154,6 +172,10 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         d.clock.step(4)
       }
       d.clock.step(200)
+      if(autoGate) {
+        d.io.clockRequest.expect(true.B)
+        println("[Trace-system-clock] 真实Encoder/Funnel/Bridge积压在ATREADY反压下保持clock request")
+      }
       if (maskSource) {
         access(encoders.head, write = true, value = 3)
         var attempts = 0
@@ -247,7 +269,7 @@ class TraceSystemSpec extends AnyFlatSpec with ChiselScalatestTester with Matche
         Iterator.iterate(Paths.get("").toAbsolutePath)(_.getParent).takeWhile(_ != null)
           .find(p => Files.isRegularFile(p.resolve("build.sc"))).get)
       val out = workspace.resolve(Paths.get("build", "validation")); Files.createDirectories(out)
-      val stem = if (resetSource) "trace-system-reset" else if (resetFunnel) "trace-system-funnel-reset" else if (maskSource) "trace-system-mask" else "trace-system"
+      val stem = if (resetSource) "trace-system-reset" else if (resetFunnel) "trace-system-funnel-reset" else if (maskSource) "trace-system-mask" else if(autoGate) "trace-system-clock-gate" else "trace-system"
       Files.write(out.resolve(s"$stem.bin"), capture)
       val nopCode = Array.fill[Byte](0x1020)(0)
       for (index <- 0 until nopCode.length / 4) nopCode(index * 4) = 0x13
