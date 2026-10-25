@@ -10,13 +10,30 @@ import unittest
 from decoder.__main__ import load_config
 from decoder.artifacts import DecodeArtifacts, write_json
 from decoder.encapsulation import PacketParser
-from decoder.performance import main, measure
+from decoder.performance import main, measure, _check_storage_metadata
 from decoder.tests.check_xiangshan_sba import check
 from decoder.tests import test_artifacts
 from decoder.tests.test_decoder import address, encaps, support, sync
 
 
 class TracePerformanceTests(unittest.TestCase):
+    def test_shared_circular_stream_checks_full_length_against_modulo_pointer_and_real_sba_tail(self):
+        data = b''.join(i.to_bytes(4, 'little') for i in range(300))
+        storage = {'wp_register': 44 * 4 | 1, 'sample_start_word': 28,
+                   'sample_words': list(range(284, 300)), 'rp_after_sample': 176}
+        metadata = {'capture_method': 'all physical SRAM writes plus SBA tail',
+                    'storage': storage, 'harts': {'0': {'dropped': 0}, '1': {'loss_markers': 0}}}
+        _check_storage_metadata(metadata, data)
+        for field, value in (('wp_register', 176), ('sample_start_word', 29),
+                             ('sample_words', list(range(283, 299))), ('rp_after_sample', 180)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                _check_storage_metadata(dict(metadata, storage=dict(storage, **{field: value})), data)
+        with self.assertRaisesRegex(ValueError, 'source reported loss'):
+            _check_storage_metadata(dict(metadata, harts={'1': {'dropped': 1}}), data)
+        _check_storage_metadata({'storage': {'wp': 8, 'rp': 8}}, b'abcdefgh')
+        with self.assertRaisesRegex(ValueError, 'WP/RP'):
+            _check_storage_metadata({'storage': {'wp': 8, 'rp': 4}}, b'abcdefgh')
+
     def real_basic(self, root):
         test_artifacts.SBACaptureArtifacts().fixture(root)
         with redirect_stdout(io.StringIO()):
