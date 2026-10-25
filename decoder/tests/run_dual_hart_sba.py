@@ -123,7 +123,7 @@ def collect(rpc, out, manifest, features, pressure=False, long_capture=False, ti
                     if status['pc'] != int(manifest['harts'][hart]['symbols']['trace_done'], 0):
                         raise RuntimeError(f'hart {hart} stopped before its real completion boundary')
                     if manifest['kind'] == 'coremark':
-                        status['benchmark_result'] = {'magic': reg('a7'), 'hart': reg('s0'), 'errors': status['a0'],
+                        status['benchmark_result'] = {'magic': reg('a7'), 'hart': reg('fp'), 'errors': status['a0'],
                             'iterations': reg('a6'), 'seedcrc': reg('a1'), 'crclist': reg('a2'),
                             'crcmatrix': reg('a3'), 'crcstate': reg('a4'), 'crcfinal': reg('a5'),
                             'cycle_interval': reg('s1'), 'instret_interval': reg('s2')}
