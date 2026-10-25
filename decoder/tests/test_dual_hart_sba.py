@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 from decoder.tests.build_dual_hart_workload import build, BASES, CRC, RESOURCES
-from decoder.tests.check_dual_hart_sba import tuple_hash
+from decoder.tests.check_dual_hart_sba import tuple_hash, check_short_storage
+from decoder.tests.run_dual_hart_sba import check_recorder_provenance
 
 
 class DualHartWorkloadTests(unittest.TestCase):
@@ -22,6 +23,35 @@ class DualHartWorkloadTests(unittest.TestCase):
         self.assertEqual(tuple_hash(a, BASES[0]), tuple_hash(b, BASES[1]))
         self.assertNotEqual(tuple_hash(a, BASES[0]), tuple_hash(a[:2], BASES[0]))
         self.assertNotEqual(tuple_hash(a, BASES[0]), tuple_hash(list(reversed(a)), BASES[0]))
+
+    def test_short_capture_requires_all_original_sba_words_in_their_actual_order(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as tmp:
+            dut = Path(tmp) / 'dut'; dut.mkdir()
+            data = bytes.fromhex('4433221188776655')
+            storage = {'wp': 8, 'rp': 8}
+            path = dut / 'sba-words.json'
+            path.write_text(json.dumps([0x11223344, 0x55667788]))
+            check_short_storage(tmp, data, storage)
+            for words in ([0x55667788, 0x11223344], [0x11223344], [True, 0x55667788], [-1, 0x55667788]):
+                path.write_text(json.dumps(words))
+                with self.subTest(words=words), self.assertRaises(ValueError):
+                    check_short_storage(tmp, data, storage)
+
+    def test_long_recorder_requires_validation_for_this_immutable_emu(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as tmp:
+            tmp = Path(tmp); emu = tmp / 'emu'; emu.write_bytes(b'actual test binary')
+            recorder = tmp / 'recorder.sh'; recorder.touch()
+            provenance = {'status': 'prepared_not_yet_validated',
+                          'emu_sha256': hashlib.sha256(emu.read_bytes()).hexdigest()}
+            path = tmp / 'provenance.json'; path.write_text(json.dumps(provenance))
+            check_recorder_provenance(recorder, emu, False)
+            with self.assertRaisesRegex(ValueError, 'requires validated'):
+                check_recorder_provenance(recorder, emu, True)
+            provenance['status'] = 'validated'; path.write_text(json.dumps(provenance))
+            check_recorder_provenance(recorder, emu, True)
+            emu.write_bytes(b'replaced test binary')
+            with self.assertRaisesRegex(ValueError, 'another emu'):
+                check_recorder_provenance(recorder, emu, False)
 
     @unittest.skipUnless(shutil.which('riscv64-unknown-elf-gcc'), 'RISC-V compiler unavailable')
     def test_both_fixed_workloads_have_private_images_and_independent_reference_symbols(self):

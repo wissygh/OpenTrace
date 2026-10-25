@@ -21,6 +21,16 @@ def tuple_hash(rows, base):
     return digest.hexdigest()
 
 
+def check_short_storage(directory, data, storage):
+    if not data or len(data) % 4 or storage['wp'] != len(data) or storage['rp'] != len(data):
+        raise ValueError('short SRAM capture pointers/length differ')
+    words = json.loads((Path(directory) / 'dut/sba-words.json').read_text())
+    if any(type(word) is not int or not 0 <= word < 2**32 for word in words):
+        raise ValueError('invalid actual SBA word')
+    if b''.join(word.to_bytes(4, 'little') for word in words) != data:
+        raise ValueError('short trace bytes differ from all actual SBA words')
+
+
 def check(directory, baseline=None, isa_reference=None):
     directory = Path(directory)
     result = {'status': 'failed', 'stage': 'inputs', 'error': None,
@@ -40,8 +50,7 @@ def check(directory, baseline=None, isa_reference=None):
             words = [json.loads(line) for line in (directory / 'dut/sram-writes.jsonl').read_text().splitlines()]
             check_storage(data, words, metadata['storage'])
         else:
-            if metadata['storage']['wp'] != len(data) or metadata['storage']['rp'] != len(data):
-                raise ValueError('short SRAM capture pointers/length differ')
+            check_short_storage(directory, data, metadata['storage'])
         if hashlib.sha256((directory / 'workload/workload.bin').read_bytes()).hexdigest() != manifest['image_sha256']:
             raise ValueError('dual workload image fingerprint changed')
         observer = DecodeArtifacts(directory, overwrite=True)
@@ -74,6 +83,8 @@ def check(directory, baseline=None, isa_reference=None):
         for description in manifest['harts']:
             hart = description['hart_id']
             status = metadata['harts'][str(hart)]
+            if status['actual_mhartid'] != hart:
+                raise ValueError('debug target physical hart identity differs')
             base = number(description['base'])
             symbols = {k: number(v) for k, v in description['symbols'].items()}
             if status['encoder'] & 11 != 9 or status['dropped'] or status['loss_markers']:
@@ -82,7 +93,7 @@ def check(directory, baseline=None, isa_reference=None):
                 raise ValueError(f'hart {hart} did not reach the real hardware breakpoint')
             features = status['features_requested']
             mode_name(features)
-            if status['features_readback'] & 0xffff != features:
+            if status['features_readback'] & 0xffff != features or (status['features_readback'] >> 16) & 0xfff != hart:
                 raise ValueError('per-hart feature readback differs')
             instructions = [e for e in events if e['kind'] == 'instruction' and e['source_id'] == hart]
             if not instructions or any(e['hart_id'] != hart or e['privilege'] == 4 for e in instructions):
@@ -105,8 +116,13 @@ def check(directory, baseline=None, isa_reference=None):
                     raise ValueError(f'hart {hart} actual CoreMark CRC differs')
                 if pcs[0] != symbols['trace_begin'] or symbols['trace_done'] in pcs:
                     raise ValueError('benchmark trace entry/exit retirement differs')
-            samples = [s for s in all_samples[hart] if symbols['trace_begin'] <= s['pc'] < symbols['trace_done'] or
-                       (manifest['kind'] == 'coremark' and base <= s['pc'] < base + 0x80000 and s['pc'] != symbols['trace_done'])]
+            # Initial ROM/park retirement is outside the explicitly configured
+            # trace interval, even if buffered log output arrives after resume.
+            end = base + 0x80000 if manifest['kind'] == 'coremark' else symbols['trace_done']
+            samples = [s for s in all_samples[hart] if symbols['trace_begin'] <= s['pc'] < end
+                       and s['pc'] != symbols['trace_done']]
+            if not samples:
+                raise ValueError(f'hart {hart} has no independent ROB retirement samples')
             if any((b['cycle'], b['slot']) <= (a['cycle'], a['slot']) for a, b in zip(samples, samples[1:])):
                 raise ValueError('per-hart ROB samples reordered')
             indices = match_samples(pcs, [s['pc'] for s in samples])

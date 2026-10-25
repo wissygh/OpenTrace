@@ -26,6 +26,16 @@ FUNNEL = 0x20020000
 SRAM = 0x20050000
 
 
+def check_recorder_provenance(recorder, emu, long_capture):
+    path = Path(recorder).resolve().parent / 'provenance.json'
+    provenance = json.loads(path.read_text())
+    if provenance.get('emu_sha256') != hashlib.sha256(Path(emu).read_bytes()).hexdigest():
+        raise ValueError('physical SRAM recorder provenance belongs to another emu')
+    if long_capture and provenance.get('status') != 'validated':
+        raise ValueError('long capture requires validated full/filtered signals and complete short SBA byte equality')
+    return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), **provenance}
+
+
 def collect(rpc, out, manifest, features, pressure=False, long_capture=False, timeout=7200):
     read = lambda address: int(rpc.run(f'read_memory 0x{address:x} 32 1 phys'), 0)
     def write(address, value):
@@ -191,17 +201,20 @@ def run(args):
     command = [str(args.emu.resolve()), '--no-diff', '--enable-jtag', f'--remote-jtag-port={rb}',
                '--ram-size=64MB', '--max-cycles=20000000', '--dramsim3-outdir=' + str(logs),
                '-i', str(out.workload / 'workload.bin')]
-    if args.kind == 'coremark':
-        if not args.recorder:
-            raise ValueError('long circular SRAM capture needs a validated physical-port recorder')
+    if args.kind == 'coremark' and not args.recorder:
+        raise ValueError('long circular SRAM capture needs a validated physical-port recorder')
+    provenance = None
+    if args.recorder:
+        provenance = check_recorder_provenance(args.recorder, args.emu, args.kind == 'coremark')
         command = [str(args.recorder.resolve()), *command, '--dump-wave-full', '--wave-path=' + str(out.dut / 'trace.fst')]
     emu = debugger = rpc = None
     write_json(out.dut / 'run.json', {'command': command, 'emu_sha256': hashlib.sha256(args.emu.read_bytes()).hexdigest(),
-               'features': args.features, 'modes': [mode_name(f) for f in args.features], 'same_core_clock': True})
+               'features': args.features, 'modes': [mode_name(f) for f in args.features], 'same_core_clock': True,
+               'recorder_provenance': provenance})
     try:
         with (logs / 'uart.log').open('w') as uart, (out.ref / 'rob.log').open('w') as rob, (logs / 'openocd.log').open('w') as debug:
             emu = subprocess.Popen(command, cwd=directory, stdout=uart, stderr=rob)
-            if args.kind != 'coremark':
+            if not args.recorder:
                 pin_threads(emu.pid, args.cpu_start)
             else:
                 from decoder.tests.run_coremark_sba import pin_actual
@@ -224,7 +237,7 @@ def run(args):
     finally:
         if rpc is not None:
             rpc.close()
-        if args.kind == 'coremark' and emu is not None and emu.poll() is None:
+        if args.recorder and emu is not None and emu.poll() is None:
             children = Path(f'/proc/{emu.pid}/task/{emu.pid}/children')
             if children.exists():
                 for child in children.read_text().split():
@@ -236,12 +249,13 @@ def run(args):
                 except subprocess.TimeoutExpired:
                     pass
         stop_capture(emu, debugger, flush_output=True)
-    if args.kind == 'coremark':
+    if args.recorder:
         with (logs / 'fst-reader.log').open('w') as log:
             reader_dir = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements12/fst-reader'
             reader_dir.mkdir(exist_ok=True)
             tool = build_reader(reader_dir, log)
-            subprocess.run([str(tool), str(out.dut / 'trace.fst'), str(out.dut / 'trace.bin'),
+            physical_capture = out.dut / ('trace.bin' if args.kind == 'coremark' else 'physical-sram.bin')
+            subprocess.run([str(tool), str(out.dut / 'trace.fst'), str(physical_capture),
                             str(out.dut / 'sram-writes.tsv'), str(out.dut / 'sram-signals.tsv')],
                            stdout=log, stderr=subprocess.STDOUT, check=True)
         rows = []
@@ -249,6 +263,12 @@ def run(args):
             index, when, address, value = line.split('\t')
             rows.append({'word_index': int(index), 'fst_time': int(when), 'word_address': int(address), 'data': int(value, 0)})
         write_jsonl(out.dut / 'sram-writes.jsonl', rows)
+        if args.kind != 'coremark':
+            if physical_capture.read_bytes() != (out.dut / 'trace.bin').read_bytes():
+                raise ValueError('FST physical SRAM writes differ from all independently read SBA bytes')
+            write_json(out.diff / 'physical-vs-sba.json', {'status': 'passed', 'bytes': physical_capture.stat().st_size,
+                       'sha256': hashlib.sha256(physical_capture.read_bytes()).hexdigest(),
+                       'method': 'all physical write-port bytes equal the entire independently read SBA capture'})
     result, performance = check_and_measure(directory, args.baseline, args.isa_reference)
     print(f'[dual-hart][6/6] passed: {result["decoded_instructions"]} complete retirement, '
           f'{result["rob_samples"]} independent ROB samples, {performance["bits_per_instruction"]:.9f} bit/instruction', flush=True)
