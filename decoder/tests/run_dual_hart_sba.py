@@ -27,6 +27,19 @@ FUNNEL = 0x20020000
 SRAM = 0x20050000
 
 
+def read_benchmark_result(reg, hart, errors):
+    # The installed OpenOCD names architectural x8 "fp" rather than "s0".
+    record = {'magic': reg('a7'), 'hart': reg('fp'), 'errors': errors,
+              'iterations': reg('a6'), 'seedcrc': reg('a1'), 'crclist': reg('a2'),
+              'crcmatrix': reg('a3'), 'crcstate': reg('a4'), 'crcfinal': reg('a5'),
+              'cycle_interval': reg('s1'), 'instret_interval': reg('s2')}
+    if record['magic'] != 0x434d4f54 or record['hart'] != hart or errors or record['iterations'] != 2:
+        raise RuntimeError('actual per-hart benchmark result is invalid')
+    if any(record[key] != value for key, value in CRC.items()):
+        raise RuntimeError('actual per-hart CoreMark CRC mismatch')
+    return record
+
+
 def check_recorder_provenance(recorder, emu, long_capture):
     path = Path(recorder).resolve().parent / 'provenance.json'
     provenance = json.loads(path.read_text())
@@ -123,15 +136,7 @@ def collect(rpc, out, manifest, features, pressure=False, long_capture=False, ti
                     if status['pc'] != int(manifest['harts'][hart]['symbols']['trace_done'], 0):
                         raise RuntimeError(f'hart {hart} stopped before its real completion boundary')
                     if manifest['kind'] == 'coremark':
-                        status['benchmark_result'] = {'magic': reg('a7'), 'hart': reg('fp'), 'errors': status['a0'],
-                            'iterations': reg('a6'), 'seedcrc': reg('a1'), 'crclist': reg('a2'),
-                            'crcmatrix': reg('a3'), 'crcstate': reg('a4'), 'crcfinal': reg('a5'),
-                            'cycle_interval': reg('s1'), 'instret_interval': reg('s2')}
-                        record = status['benchmark_result']
-                        if record['magic'] != 0x434d4f54 or record['hart'] != hart or record['errors'] or record['iterations'] != 2:
-                            raise RuntimeError('actual per-hart benchmark result is invalid')
-                        if any(record[key] != value for key, value in CRC.items()):
-                            raise RuntimeError('actual per-hart CoreMark CRC mismatch')
+                        status['benchmark_result'] = read_benchmark_result(reg, hart, status['a0'])
                     print(f'[dual-hart][3/6] hart={hart} completed, actual PC={status["pc"]:#x}, DCSR={status["dcsr"]:#x}', flush=True)
             if pending:
                 if time.monotonic() > deadline:

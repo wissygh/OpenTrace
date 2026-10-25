@@ -8,13 +8,35 @@ import unittest
 
 from decoder.tests.build_dual_hart_workload import build, BASES, CRC, RESOURCES
 from decoder.tests.check_dual_hart_sba import tuple_hash, check_short_storage
-from decoder.tests.run_dual_hart_sba import check_recorder_provenance
+from decoder.tests.run_dual_hart_sba import check_recorder_provenance, read_benchmark_result
 
 
 class DualHartWorkloadTests(unittest.TestCase):
     def setUp(self):
         self.parent = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements12/tests'
         self.parent.mkdir(parents=True, exist_ok=True)
+
+    def test_real_coremark_result_uses_installed_debugger_fp_name_and_all_crc_values(self):
+        values = dict(a7=0x434d4f54, fp=1, a6=2, a1=CRC['seedcrc'], a2=CRC['crclist'],
+                      a3=CRC['crcmatrix'], a4=CRC['crcstate'], a5=CRC['crcfinal'], s1=12345, s2=785000)
+        called = []
+        def reg(name):
+            called.append(name)
+            return values[name]
+        result = read_benchmark_result(reg, 1, 0)
+        self.assertIn('fp', called)
+        self.assertNotIn('s0', called)
+        self.assertEqual((result['cycle_interval'], result['instret_interval']), (12345, 785000))
+        self.assertEqual({key: result[key] for key in CRC}, CRC)
+        for name in ('a7', 'fp', 'a6', 'a1', 'a2', 'a3', 'a4', 'a5'):
+            with self.subTest(register=name):
+                prior = values[name]
+                values[name] ^= 1
+                with self.assertRaises(RuntimeError):
+                    read_benchmark_result(reg, 1, 0)
+                values[name] = prior
+        with self.assertRaises(RuntimeError):
+            read_benchmark_result(reg, 1, 1)
 
     def test_retirement_hash_normalizes_only_the_private_image_base_and_keeps_repetitions(self):
         a = [{'pc': '0x80000008', 'instruction': 0x13, 'size': 4},
