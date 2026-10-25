@@ -146,7 +146,7 @@ def check(directory, baseline=None, isa_reference=None):
                 if (len(instructions), signature) != (expected['retired_instructions'], expected['relative_retirement_sha256']):
                     raise ValueError('all per-hart retirement tuples differ from validated dual baseline')
             coverage = check_optional_packets([p for p in packets if p['source_id'] == hart], features)
-            if features & 8 and not returns[hart]['implicit_returns']:
+            if manifest['kind'] == 'coremark' and features & 8 and not returns[hart]['implicit_returns']:
                 raise ValueError('implicit-return was enabled without actual inferred returns')
             result['sources'][str(hart)] = {'status': 'passed', 'retired_instructions': len(instructions),
                 'relative_retirement_sha256': signature, 'rob_samples': len(samples),

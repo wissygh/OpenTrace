@@ -14,6 +14,7 @@ import time
 from decoder.artifacts import write_json, write_jsonl
 from decoder.capture_layout import CaptureLayout
 from decoder.discovery import read_snapshot
+from decoder.image import ProgramImage
 from decoder.modes import mode_name
 from decoder.tests.build_dual_hart_workload import build, CRC
 from decoder.tests.check_coremark_sba import build_reader
@@ -48,7 +49,7 @@ def collect(rpc, out, manifest, features, pressure=False, long_capture=False, ti
         if not match:
             raise RuntimeError('missing actual architectural register: ' + name)
         return int(match.group(1), 16)
-    metadata = {'status': 'incomplete', 'same_core_clock': True, 'pressure': pressure,
+    metadata = {'status': 'incomplete', 'same_core_clock': True, 'pressure': pressure or long_capture,
                 'capture_method': 'all physical SRAM writes plus SBA tail' if long_capture else 'all bytes from physical SBA RAMData',
                 'harts': {}, 'control': 'external JTAG -> Debug SBA physical sysbus'}
     try:
@@ -59,7 +60,9 @@ def collect(rpc, out, manifest, features, pressure=False, long_capture=False, ti
             if actual_hart != hart:
                 raise RuntimeError('debug target selected the wrong physical hart')
             symbols = description['symbols']
-            rpc.run(f"bp {symbols['trace_done']} 4 hw")
+            image = ProgramImage.from_elf(out.workload / description['elf'])
+            size = image.instruction(int(symbols['trace_done'], 0)).size
+            rpc.run(f"bp {symbols['trace_done']} {size} hw")
             metadata['harts'][str(hart)] = {'actual_mhartid': actual_hart, 'features_requested': features[hart]}
         select(0)
         for address in (*ENCODERS, FUNNEL, SRAM):
@@ -251,8 +254,8 @@ def run(args):
         stop_capture(emu, debugger, flush_output=True)
     if args.recorder:
         with (logs / 'fst-reader.log').open('w') as log:
-            reader_dir = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements12/fst-reader'
-            reader_dir.mkdir(exist_ok=True)
+            reader_dir = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements12/fst-readers' / directory.name
+            reader_dir.mkdir(parents=True, exist_ok=True)
             tool = build_reader(reader_dir, log)
             physical_capture = out.dut / ('trace.bin' if args.kind == 'coremark' else 'physical-sram.bin')
             subprocess.run([str(tool), str(out.dut / 'trace.fst'), str(physical_capture),
