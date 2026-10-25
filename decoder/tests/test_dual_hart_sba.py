@@ -70,6 +70,11 @@ class DualHartWorkloadTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'requires validated'):
                 check_recorder_provenance(recorder, emu, True)
             provenance['status'] = 'validated'; path.write_text(json.dumps(provenance))
+            with self.assertRaisesRegex(ValueError, 'requires validated'):
+                check_recorder_provenance(recorder, emu, True)
+            provenance['full_vs_filtered'] = {'status': 'passed', 'signals': 5, 'end_times_equal': True}
+            provenance['physical_vs_sba'] = {'status': 'passed', 'bytes': 80, 'sha256': '0' * 64}
+            path.write_text(json.dumps(provenance))
             check_recorder_provenance(recorder, emu, True)
             emu.write_bytes(b'replaced test binary')
             with self.assertRaisesRegex(ValueError, 'another emu'):

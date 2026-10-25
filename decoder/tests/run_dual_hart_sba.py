@@ -45,8 +45,14 @@ def check_recorder_provenance(recorder, emu, long_capture):
     provenance = json.loads(path.read_text())
     if provenance.get('emu_sha256') != hashlib.sha256(Path(emu).read_bytes()).hexdigest():
         raise ValueError('physical SRAM recorder provenance belongs to another emu')
-    if long_capture and provenance.get('status') != 'validated':
-        raise ValueError('long capture requires validated full/filtered signals and complete short SBA byte equality')
+    if long_capture:
+        signals = provenance.get('full_vs_filtered', {})
+        physical = provenance.get('physical_vs_sba', {})
+        if (provenance.get('status') != 'validated' or signals.get('status') != 'passed' or
+                signals.get('signals') != 5 or not signals.get('end_times_equal') or
+                physical.get('status') != 'passed' or physical.get('bytes', 0) <= 0 or
+                len(physical.get('sha256', '')) != 64):
+            raise ValueError('long capture requires validated full/filtered signals and complete short SBA byte equality')
     return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), **provenance}
 
 
