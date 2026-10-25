@@ -54,6 +54,9 @@ def collect(rpc, out, manifest, features, pressure=False, long_capture=False, ti
                 'harts': {}, 'control': 'external JTAG -> Debug SBA physical sysbus'}
     try:
         print('[dual-hart][1/6] select both actual debug targets, install independent completion breakpoints', flush=True)
+        # Every completion check below explicitly polls the selected hart.
+        # Background polling otherwise adds two DMI scans before each Tcl RPC.
+        rpc.run('poll off')
         for hart, description in enumerate(manifest['harts']):
             select(hart); rpc.run('riscv set_mem_access sysbus')
             actual_hart = reg('mhartid')
@@ -222,7 +225,8 @@ def run(args):
             else:
                 from decoder.tests.run_coremark_sba import pin_actual
                 pin_actual(emu.pid, args.cpu_start)
-            deadline = time.monotonic() + 900
+            deadline = time.monotonic() + args.startup_timeout
+            progress = time.monotonic()
             while not listening(rb):
                 if emu.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError('dual-hart emu JTAG listener unavailable')
@@ -236,6 +240,10 @@ def run(args):
                     rpc = RPC(tc, timeout=900, transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(.5)
+                    if time.monotonic() - progress >= 30:
+                        print('[dual-hart][startup] OpenOCD is examining/halting both physical harts; '
+                              f'{max(0, int(deadline-time.monotonic()))}s remain; original logs are live', flush=True)
+                        progress = time.monotonic()
             collect(rpc, out, manifest, args.features, args.kind == 'pressure', args.kind == 'coremark', args.timeout)
     finally:
         if rpc is not None:
@@ -289,6 +297,8 @@ def main():
     parser.add_argument('--isa-reference', type=Path)
     parser.add_argument('--cpu-start', type=int, default=160)
     parser.add_argument('--timeout', type=int, default=7200)
+    parser.add_argument('--startup-timeout', type=int, default=3600,
+                        help='wall-clock allowance for slow JTAG target examination with waveform capture')
     args = parser.parse_args()
     for f in args.features:
         mode_name(f)
