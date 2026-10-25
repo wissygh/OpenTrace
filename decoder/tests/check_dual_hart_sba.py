@@ -21,7 +21,7 @@ def tuple_hash(rows, base):
     return digest.hexdigest()
 
 
-def check(directory, baseline=None):
+def check(directory, baseline=None, isa_reference=None):
     directory = Path(directory)
     result = {'status': 'failed', 'stage': 'inputs', 'error': None,
               'reference_kind': 'per-hart fixed assembly or validated benchmark baseline plus independent ROB',
@@ -113,8 +113,19 @@ def check(directory, baseline=None):
             write_jsonl(directory / f'ref/hart{hart}-commit-pc.jsonl', samples)
             write_json(directory / f'diff/hart{hart}-rob-matches.json', {'status': 'passed', 'indices': indices})
             signature = tuple_hash(instructions, base)
+            if manifest['kind'] == 'coremark':
+                if isa_reference is None:
+                    raise ValueError('CoreMark requires an independent complete ISA reference for each hart')
+                path = Path(isa_reference) / f'hart{hart}/summary.json'
+                independent = json.loads(path.read_text())
+                if independent['status'] != 'passed' or independent['binary_sha256'] != description['binary_sha256']:
+                    raise ValueError('independent ISA reference fingerprint differs from the actual workload')
+                if (len(instructions), signature) != (independent['retired_instructions'], independent['relative_retirement_sha256']):
+                    raise ValueError(f'hart {hart} complete retirement tuples differ from independent NEMU execution')
             if baseline is not None:
                 prior = json.loads((Path(baseline) / 'diff/comparison.json').read_text())
+                if prior['status'] != 'passed':
+                    raise ValueError('dual-hart baseline has not passed independent validation')
                 expected = prior['sources'][str(hart)]
                 if (len(instructions), signature) != (expected['retired_instructions'], expected['relative_retirement_sha256']):
                     raise ValueError('all per-hart retirement tuples differ from validated dual baseline')
@@ -143,8 +154,8 @@ def check(directory, baseline=None):
         write_json(directory / 'diff/comparison.json', result)
 
 
-def check_and_measure(directory, baseline=None):
-    result = check(directory, baseline)
+def check_and_measure(directory, baseline=None, isa_reference=None):
+    result = check(directory, baseline, isa_reference)
     performance = measure(directory)
     if performance['status'] != 'passed':
         raise ValueError('dual-hart measurement prerequisites failed: ' + str(performance['reason']))

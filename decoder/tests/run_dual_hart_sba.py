@@ -249,7 +249,7 @@ def run(args):
             index, when, address, value = line.split('\t')
             rows.append({'word_index': int(index), 'fst_time': int(when), 'word_address': int(address), 'data': int(value, 0)})
         write_jsonl(out.dut / 'sram-writes.jsonl', rows)
-    result, performance = check_and_measure(directory, args.baseline)
+    result, performance = check_and_measure(directory, args.baseline, args.isa_reference)
     print(f'[dual-hart][6/6] passed: {result["decoded_instructions"]} complete retirement, '
           f'{result["rob_samples"]} independent ROB samples, {performance["bits_per_instruction"]:.9f} bit/instruction', flush=True)
 
@@ -263,6 +263,7 @@ def main():
     parser.add_argument('--coremark-source', type=Path)
     parser.add_argument('--recorder', type=Path)
     parser.add_argument('--baseline', type=Path)
+    parser.add_argument('--isa-reference', type=Path)
     parser.add_argument('--cpu-start', type=int, default=160)
     parser.add_argument('--timeout', type=int, default=7200)
     args = parser.parse_args()
