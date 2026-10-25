@@ -18,11 +18,12 @@ import trace.interface._
 import utils._
 
 class TraceTopIO(
-    numHarts:    Int = 1,
-    useAtbSink:  Boolean = false,
-    useSMEMSink: Boolean = false,
-    enableHPM:   Boolean = false,
-    usePibSink:  Boolean = false
+    numHarts:              Int = 1,
+    useAtbSink:            Boolean = false,
+    useSMEMSink:           Boolean = false,
+    enableHPM:             Boolean = false,
+    usePibSink:            Boolean = false,
+    exposeAtbClockRequest: Boolean = false
 ) extends Bundle
     with TraceParameters {
   override def supportHPM = enableHPM
@@ -34,6 +35,7 @@ class TraceTopIO(
   val atbm                = Option.when(useAtbSink)(new ATBMaster(funnelAtbDataBeats))
   val clock_atb           = Option.when(useAtbSink)(Input(Clock()))
   val reset_atb_n         = Option.when(useAtbSink)(Input(Bool()))
+  val atb_clock_request   = Option.when(useAtbSink && exposeAtbClockRequest)(Output(Bool()))
   val clock_core          = Input(Clock())
   val reset_core          = Input(Reset())
   val clock_ctrl          = Input(Clock())
@@ -43,19 +45,21 @@ class TraceTopIO(
 }
 
 class Trace(
-    busType:        BusType = BusType.TL,
-    xs_socmisc:     Boolean = false,
-    val numHarts:   Int = 1,
-    val useAtbSink: Boolean = false,
-    val smemWindow: Option[SMEMWindow] = None,
-    val enableHPM:  Boolean = false,
-    val usePibSink: Boolean = false,
-    val ingress:    TraceIngressConfig = TraceIngressConfig()
+    busType:                   BusType = BusType.TL,
+    xs_socmisc:                Boolean = false,
+    val numHarts:              Int = 1,
+    val useAtbSink:            Boolean = false,
+    val smemWindow:            Option[SMEMWindow] = None,
+    val enableHPM:             Boolean = false,
+    val usePibSink:            Boolean = false,
+    val ingress:               TraceIngressConfig = TraceIngressConfig(),
+    val exposeAtbClockRequest: Boolean = false
 )(implicit p: Parameters) extends LazyModule
     with TraceParameters {
 
   require(!usePibSink || (!useAtbSink && smemWindow.isEmpty), "PIB is an exclusive output sink")
   require(!useAtbSink || smemWindow.isEmpty, "select only one output sink")
+  require(!exposeAtbClockRequest || useAtbSink, "ATB clock request requires the ATB sink")
   require(numHarts > 0 && numHarts <= 16, "Funnel supports 1 to 16 harts")
   override def hart_num                     = numHarts
   override def supportHPM                   = enableHPM
@@ -167,7 +171,7 @@ class Trace(
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyRawModuleImp(wrapper) {
-    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty, enableHPM, usePibSink))
+    val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty, enableHPM, usePibSink, exposeAtbClockRequest))
 
     /**
      * io
@@ -238,7 +242,8 @@ class Trace(
     if (useAtbSink) {
       atbMod.io.in <> sinkGuard.io.out
       funnelMod.io.control <> atbMod.io.upstream
-      val crossing = Module(new ATBAsyncBridge(funnelAtbDataBeats))
+      val crossing = Module(new ATBAsyncBridge(funnelAtbDataBeats, exposeClockRequest = exposeAtbClockRequest))
+      io.atb_clock_request.zip(crossing.io.sourceClockRequest).foreach { case (port, request) => port := request }
       crossing.io.sourceClock := io.clock_trace
       crossing.io.sourceReset := atbMod.reset.asAsyncReset
       crossing.io.sinkClock   := io.clock_atb.get

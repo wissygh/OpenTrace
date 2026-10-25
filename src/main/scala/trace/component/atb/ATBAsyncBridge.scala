@@ -6,14 +6,15 @@ import freechips.rocketchip.util._
 import trace.interface._
 
 /** Standard ATB endpoints on unrelated clocks. Flush markers never reach ATDATA. */
-class ATBAsyncBridge(dataBytes: Int = 4, depth: Int = 16) extends RawModule {
+class ATBAsyncBridge(dataBytes: Int = 4, depth: Int = 16, exposeClockRequest: Boolean = false) extends RawModule {
   val io = IO(new Bundle {
-    val sourceClock = Input(Clock())
-    val sourceReset = Input(AsyncReset())
-    val sinkClock   = Input(Clock())
-    val sinkReset   = Input(AsyncReset())
-    val slave       = new ATBSlave(dataBytes)
-    val master      = new ATBMaster(dataBytes)
+    val sourceClock        = Input(Clock())
+    val sourceReset        = Input(AsyncReset())
+    val sinkClock          = Input(Clock())
+    val sinkReset          = Input(AsyncReset())
+    val slave              = new ATBSlave(dataBytes)
+    val master             = new ATBMaster(dataBytes)
+    val sourceClockRequest = Option.when(exposeClockRequest)(Output(Bool()))
   })
   val bridge = Module(new TraceAsyncBridge(new ATData(dataBytes), depth))
   bridge.io.sourceClock := io.sourceClock
@@ -23,6 +24,17 @@ class ATBAsyncBridge(dataBytes: Int = 4, depth: Int = 16) extends RawModule {
   val commonReset = io.sourceReset.asBool || io.sinkReset.asBool
   val sourceReset = ResetCatchAndSync(io.sourceClock, commonReset).asAsyncReset
   val sinkReset   = ResetCatchAndSync(io.sinkClock, commonReset).asAsyncReset
+  if (exposeClockRequest) {
+    val wake = Module(new TraceClockRequest(depth))
+    wake.io.sourceClock       := io.sourceClock
+    wake.io.sourceReset       := io.sourceReset
+    wake.io.sinkClock         := io.sinkClock
+    wake.io.sinkReset         := io.sinkReset
+    wake.io.accepted          := bridge.io.in.fire
+    wake.io.delivered         := bridge.io.out.fire
+    wake.io.sourcePending     := io.slave.at.valid || io.slave.wakeup || bridge.io.sourceControl.flushReq
+    io.sourceClockRequest.get := wake.io.request
+  }
   bridge.io.in.valid := io.slave.at.valid && io.slave.atclken
   bridge.io.in.bits  := io.slave.at.bits
   io.slave.at.ready  := bridge.io.in.ready && io.slave.atclken
