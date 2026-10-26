@@ -17,7 +17,7 @@ private class ATBClockRequestHarness extends Module {
     val gateOpen = Output(Bool())
     val sinkCycles = Output(UInt(16.W))
     val received = Output(UInt(8.W))
-    val data = Output(Vec(16, new ATData(4)))
+    val data = Output(Vec(64, new ATData(4)))
     val wakeup = Output(Bool())
     val valid = Output(Bool())
     val resetSink = Input(Bool())
@@ -57,9 +57,9 @@ private class ATBClockRequestHarness extends Module {
   withClockAndReset(sinkClock, (reset.asBool || io.resetSink).asAsyncReset) {
     val cycles = RegInit(0.U(16.W)); cycles := cycles + 1.U
     val received = RegInit(0.U(8.W))
-    val data = Reg(Vec(16, new ATData(4)))
+    val data = Reg(Vec(64, new ATData(4)))
     when(bridge.io.master.at.fire && io.clockEnable) {
-      data(received(3,0)) := bridge.io.master.at.bits; received := received + 1.U
+      data(received(5,0)) := bridge.io.master.at.bits; received := received + 1.U
     }
     io.sinkCycles := cycles; io.received := received; io.data := data
   }
@@ -104,7 +104,7 @@ class ATBClockRequestSpec extends AnyFlatSpec with ChiselScalatestTester with Ma
       d.io.data(0).data.expect(0x44332211L.U); d.io.data(0).id.expect(0x42.U); d.io.data(0).bytes.expect(3.U)
       stopped()
       println("[ATB-clock-request][3/4] 多次门控/重启和计数器wrap仍不丢不重")
-      for(i <- 1 until 16){
+      for(i <- 1 until 40){
         d.io.in.bits.data.poke((0x100+i).U);d.io.in.valid.poke(true.B)
         until("accept after clock stop"){d.io.in.ready.peek().litToBoolean}
         d.clock.step();d.io.in.valid.poke(false.B)
