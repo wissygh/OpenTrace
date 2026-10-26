@@ -248,7 +248,7 @@ def run(args):
                 if debugger.poll() is not None or emu.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError('dual-hart OpenOCD did not initialize both targets')
                 try:
-                    rpc = RPC(tc, timeout=900, transcript=logs / 'rpc.jsonl')
+                    rpc = RPC(tc, timeout=args.rpc_timeout, transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(.5)
                     if time.monotonic() - progress >= 30:
@@ -310,6 +310,8 @@ def main():
     parser.add_argument('--timeout', type=int, default=7200)
     parser.add_argument('--startup-timeout', type=int, default=3600,
                         help='wall-clock allowance for slow JTAG target examination with waveform capture')
+    parser.add_argument('--rpc-timeout', type=int, default=3600,
+                        help='wall-clock allowance per JTAG transaction, including first trigger enumeration')
     args = parser.parse_args()
     for f in args.features:
         mode_name(f)
