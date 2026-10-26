@@ -107,7 +107,7 @@ def collect(rpc, out, features, timeout):
             select(hart); rpc.run('riscv set_mem_access sysbus')
             identity, start = reg('mhartid'), reg('pc')
             validate_initial_hart(hart, identity, start)
-            rpc.run(f'bp {BOUNDARIES[hart]:#x} {4 if hart else 2} hw')
+            rpc.run(f'bp {BOUNDARIES[hart]:#x} 4 hw')
             metadata['harts'][str(hart)] = {'actual_mhartid': identity, 'initial_pc': start,
                 'features_requested': features, 'expected_stop': BOUNDARIES[hart]}
         select(0)
@@ -226,7 +226,7 @@ def run(args):
                 if debugger.poll() is not None or emu.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError('SMP OpenOCD initialization failed')
                 try:
-                    rpc = RPC(tc, timeout=900, transcript=logs / 'rpc.jsonl')
+                    rpc = RPC(tc, timeout=args.rpc_timeout, transcript=logs / 'rpc.jsonl')
                 except ConnectionRefusedError:
                     time.sleep(.5)
                     if time.monotonic() - progress >= 30:
@@ -273,6 +273,8 @@ def main():
     parser.add_argument('--features', type=lambda x: int(x, 0), choices=(0, 8, 24, 56), default=0)
     parser.add_argument('--cpu-start', type=int, default=176)
     parser.add_argument('--timeout', type=int, default=7200)
+    parser.add_argument('--rpc-timeout', type=int, default=3600,
+                        help='wall-clock limit per JTAG transaction, including first trigger enumeration')
     args = parser.parse_args()
     try:
         run(args)
