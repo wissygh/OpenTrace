@@ -48,8 +48,9 @@ test-jump-cache:
 .PHONY: test-implicit-return
 test-implicit-return:
 	@echo "[implicit-return] 返回栈/packet/实际Encoder→Funnel→SRAM；逐条核对递归/失配/压缩/组合"
-	mill -i OpenTrace.test.testOnly trace.component.TraceReturnStackSpec trace.component.ImplicitReturnCodecSpec trace.component.PacketImplicitReturnSpec trace.component.ImplicitReturnSramSpec
+	mill -i OpenTrace.test.testOnly trace.component.TraceReturnStackSpec trace.component.ImplicitReturnCodecSpec trace.component.PacketPrivilegeReturnSpec trace.component.PacketImplicitReturnSpec trace.component.ImplicitReturnSramSpec
 	python3 -m decoder.tests.check_implicit_return build/validation/implicit-return
+	python3 -m decoder.tests.check_implicit_return build/validation/requirements13-xret/packet
 
 .PHONY: test-implicit-exception
 test-implicit-exception:

@@ -30,6 +30,14 @@ private[component] object ImplicitReturnScenarios {
       (1 to 20).map(i => (i * 0x100 + 4) -> 0x8067).toMap ++ Map(0x1500 -> 0x8067, 4 -> 0x13, 8 -> 0x13)
     Seq(
       scenario("nested", nested, nestedCode),
+      scenario("mret-live-call-stack", Seq(input(0, 9), input(0x100, 3),
+        PacketInput(pc(0x200), privilege = 1), PacketInput(pc(0x204), 5, privilege = 1),
+        PacketInput(pc(0x20c), privilege = 1)),
+        Map(0 -> 0x100000ef, 0x100 -> 0x30200073, 0x200 -> 0x13, 0x204 -> 0x463, 0x20c -> 0x13)),
+      scenario("sret-live-call-stack", Seq(PacketInput(pc(0), 9, privilege = 1),
+        PacketInput(pc(0x100), 3, privilege = 1), PacketInput(pc(0x200), privilege = 0),
+        PacketInput(pc(0x204), 5, privilege = 0), PacketInput(pc(0x20c), privilege = 0)),
+        Map(0 -> 0x100000ef, 0x100 -> 0x10200073, 0x200 -> 0x13, 0x204 -> 0x463, 0x20c -> 0x13)),
       scenario("return-then-call-stop", Seq(input(0, 9), input(0x100, 13), input(4, 9), input(0x200), input(0x204)),
         Map(0 -> 0x100000ef, 0x100 -> 0x8067, 4 -> 0x1fc000ef, 0x200 -> 0x13, 0x204 -> 0x13)),
       scenario("modified", Seq(input(0, 9), input(0x100, 9), input(0x200, 13), input(0x300), input(0x304)),
