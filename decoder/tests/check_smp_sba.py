@@ -30,6 +30,14 @@ def ordered_reference(samples, pcs):
     return match_samples(pcs, [sample['pc'] for sample in samples])
 
 
+def check_boot_privileges(instructions, hart):
+    for event in instructions:
+        pc = number(event['pc'])
+        expected = 3 if BASE <= pc < BASE + PAYLOAD else 1
+        if event['hart_id'] != hart or event['source_id'] != hart or event['privilege'] != expected:
+            raise ValueError('original BBL/kernel instruction privilege or source identity differs')
+
+
 def audit_rpc(directory, metadata):
     rows = [json.loads(line) for line in (directory / 'dut/logs/rpc.jsonl').read_text().splitlines()]
     if not rows or any(row['return_code'] != '0' for row in rows):
@@ -91,6 +99,14 @@ def check(directory):
         switches = sum(a != b for a, b in zip(sources, sources[1:]))
         if set(sources) != {0, 1} or switches < 2:
             raise ValueError('both sources must actually interleave in complete parsed packets')
+        result['packet_layout'] = {
+            'packets': len(packets),
+            'packets_crossing_sram_words': sum(p['offset'] // 4 != (p['offset'] + p['byte_length'] - 1) // 4
+                                               for p in packets),
+            'source_switches_sharing_sram_word': sum(a['source_id'] != b['source_id'] and
+                (a['offset'] + a['byte_length'] - 1) // 4 == b['offset'] // 4
+                for a, b in zip(packets, packets[1:])),
+        }
         all_samples = {0: [], 1: []}
         # rob_byte_start was recorded while both harts were halted, immediately
         # before natural resume. Keep every non-Debug sample after that actual
@@ -118,10 +134,13 @@ def check(directory):
                 raise ValueError('source was not drained without loss')
             if number(status['pc']) != BOUNDARIES[hart] or number(status['dcsr']) >> 6 & 7 != 2:
                 raise ValueError('source did not stop at its original hardware breakpoint')
+            if status['a0'] != hart:
+                raise ValueError('actual SMP entry argument disagrees with physical hart identity')
             features = status['features_requested']
             if status['features_readback'] & 0xffff != features or status['features_readback'] >> 16 & 0xfff != hart:
                 raise ValueError('source ID or feature readback differs')
             instructions = [e for e in events if e['kind'] == 'instruction' and e['source_id'] == hart]
+            check_boot_privileges(instructions, hart)
             pcs = [e['pc'] for e in instructions]
             if not pcs or any(e['hart_id'] != hart or e['privilege'] == 4 for e in instructions):
                 raise ValueError('source mapping or Debug qualification differs')

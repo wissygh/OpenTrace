@@ -6,10 +6,18 @@ import unittest
 
 from decoder.image import ProgramImage
 from decoder.tests.run_smp_sba import BASE, KERNEL, PAYLOAD, image_elf, validate_initial_hart
-from decoder.tests.check_smp_sba import canonical_pc, ordered_reference, audit_rpc
+from decoder.tests.check_smp_sba import canonical_pc, ordered_reference, audit_rpc, check_boot_privileges
 
 
 class SMPBootTests(unittest.TestCase):
+    def test_first_kernel_instruction_must_belong_to_new_privilege_and_same_source(self):
+        rows = [{'pc': BASE + 0x2484, 'hart_id': 0, 'source_id': 0, 'privilege': 3},
+                {'pc': BASE + PAYLOAD, 'hart_id': 0, 'source_id': 0, 'privilege': 1}]
+        check_boot_privileges(rows, 0)
+        for key, value in (('privilege', 3), ('hart_id', 1), ('source_id', 1)):
+            with self.subTest(field=key), self.assertRaises(ValueError):
+                check_boot_privileges([rows[0], dict(rows[1], **{key: value})], 0)
+
     def test_initial_external_halt_accepts_real_bbl_continuation_without_assuming_rom(self):
         for hart, pc in ((0, 0x800007ba), (1, 0x800002b0)):
             validate_initial_hart(hart, hart, pc)
