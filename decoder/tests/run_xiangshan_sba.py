@@ -20,20 +20,43 @@ from .xiangshan_sba_scenarios import reference
 
 
 class RPC:
-    def __init__(self, port, timeout=300, transcript=None):
+    def __init__(self, port, timeout=300, transcript=None, progress_interval=30):
         self.socket = socket.create_connection(('127.0.0.1', port), timeout=timeout)
         self.pending = b''
         self.transcript = transcript
+        self.timeout = timeout
+        self.progress_interval = progress_interval
+        self.broken = False
 
     def run(self, command):
+        if self.broken:
+            raise RuntimeError('previous RPC transport failed; reconnect before sending another command')
         start = time.monotonic()
         wrapper = 'set __rc [catch {' + command + '} __value]; format "%d|%s" $__rc $__value'
-        self.socket.sendall((wrapper + '\x1a').encode())
-        while b'\x1a' not in self.pending:
-            data = self.socket.recv(65536)
-            if not data:
-                raise RuntimeError('OpenOCD closed the Tcl RPC connection')
-            self.pending += data
+        try:
+            self.socket.sendall((wrapper + '\x1a').encode())
+            while b'\x1a' not in self.pending:
+                elapsed = time.monotonic() - start
+                remaining = self.timeout - elapsed
+                if remaining <= 0:
+                    raise TimeoutError(f'OpenOCD RPC timed out after {elapsed:.1f}s: {command}')
+                self.socket.settimeout(min(self.progress_interval, remaining))
+                try:
+                    data = self.socket.recv(65536)
+                except socket.timeout:
+                    print(f'[SBA RPC 等待 {time.monotonic()-start:.1f}s/{self.timeout}s] {command}', flush=True)
+                    continue
+                if not data:
+                    raise RuntimeError('OpenOCD closed the Tcl RPC connection')
+                self.pending += data
+        except (OSError, RuntimeError) as exc:
+            self.broken = True
+            if self.transcript is not None:
+                with Path(self.transcript).open('a') as output:
+                    output.write(json.dumps({'command': command, 'return_code': None, 'result': str(exc),
+                        'partial_response': self.pending.decode(errors='replace'),
+                        'elapsed_seconds': time.monotonic() - start, 'transport_error': True}) + '\n')
+            raise
         response, self.pending = self.pending.split(b'\x1a', 1)
         code, separator, value = response.decode().partition('|')
         elapsed = time.monotonic() - start

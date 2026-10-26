@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import struct
+import socket
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from decoder.encapsulation import DecodeError
@@ -167,6 +168,35 @@ class XiangShanSBAChecks(unittest.TestCase):
         self.assertEqual(rpc.run('read_memory 0x20040004 32 1'), '0x1901')
         self.assertEqual(rpc.run('test-command'), 'next')
         self.assertTrue(all(call.args[0].endswith(b'\x1a') for call in connection.sendall.call_args_list))
+
+    def test_rpc_progress_timeout_does_not_resend_or_lose_partial_response(self):
+        connection = Mock()
+        connection.recv.side_effect = [b'0|0x', socket.timeout(), b'1234\x1a']
+        with patch('socket.create_connection', return_value=connection), patch('builtins.print') as progress:
+            rpc = RPC(1234, timeout=3600)
+            self.assertEqual(rpc.run('slow-trigger-enumeration'), '0x1234')
+        connection.sendall.assert_called_once()
+        self.assertTrue(any('SBA RPC 等待' in call.args[0] for call in progress.call_args_list))
+        self.assertFalse(rpc.broken)
+
+    def test_rpc_wall_deadline_preserves_failure_and_requires_reconnection(self):
+        parent = Path(__file__).resolve().parents[2] / 'delp/tmp/requirements13/tests'
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as tmp:
+            transcript = Path(tmp) / 'rpc.jsonl'
+            connection = Mock(); connection.recv.side_effect = [b'0|partial']
+            with patch('socket.create_connection', return_value=connection):
+                rpc = RPC(1234, timeout=3, transcript=transcript)
+            with patch('decoder.tests.run_xiangshan_sba.time.monotonic', side_effect=[0, 1, 4, 4]):
+                with self.assertRaisesRegex(TimeoutError, 'slow-command'):
+                    rpc.run('slow-command')
+            row = json.loads(transcript.read_text())
+            self.assertIsNone(row['return_code']); self.assertTrue(row['transport_error'])
+            self.assertEqual(row['partial_response'], '0|partial')
+            self.assertEqual(row['command'], 'slow-command')
+            with self.assertRaisesRegex(RuntimeError, 'reconnect'):
+                rpc.run('next-command')
+            connection.sendall.assert_called_once()
 
     def test_rpc_reports_target_errors_and_closed_connections(self):
         for reply in (b'1|SBA error\x1a', b''):
