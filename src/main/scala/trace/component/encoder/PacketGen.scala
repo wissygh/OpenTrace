@@ -343,7 +343,12 @@ class PacketGen extends Module with TraceParameters {
         when(generated.fire)(trapReported := true.B)
       }
     }.elsewhen(syncRequired && branchCount === 0.U &&
-      (!implicitReturns || returnStack.io.depth === 0.U || returnSyncPrepared)) {
+      (!implicitReturns || returnStack.io.depth === 0.U || returnSyncPrepared ||
+        previous.itype === Itype.ExpIntReturn)) {
+      // xret is an explicit discontinuity, so the sync address unambiguously
+      // identifies its target and clears the old return stack. Delaying this
+      // sync to prepare a depth anchor would label the first new-privilege
+      // instruction with the old privilege and move the sync past xret.
       synchronization()
     }.elsewhen(!tail && !trapPhase && !contextReported && cur.ctype === Ctype.Imprecisely) {
       // A higher-priority address/notify must not swallow an imprecise event.
