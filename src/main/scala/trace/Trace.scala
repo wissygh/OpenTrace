@@ -166,12 +166,15 @@ class Trace(
   apbmaster.foreach(
     tlXbar.node :=
       TLWidthWidget(ctrlTLSizeMin) :=
-      APBToTL() :=
+      LazyModule(new TraceAPBToTL).node :=
       _
   )
 
   class TraceImp(wrapper: Trace)(implicit p: Parameters) extends LazyRawModuleImp(wrapper) {
     val io = IO(new TraceTopIO(numHarts, useAtbSink, smemWindow.nonEmpty, enableHPM, usePibSink, exposeAtbClockRequest))
+    // RawModule defaults disable anonymous/adaptor children unless driven.
+    childClock := io.clock_ctrl
+    childReset := io.reset_ctrl
 
     /**
      * io
