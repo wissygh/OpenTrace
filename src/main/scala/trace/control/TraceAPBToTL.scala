@@ -47,15 +47,15 @@ class TraceAPBToTL(implicit p: Parameters) extends LazyModule {
       in.pslverr  := in.pready && (rejected || out.d.bits.denied || out.d.bits.corrupt)
       in.prdata   := Mux(out.d.valid && !rejected, out.d.bits.data, 0.U)
       in.pduser :<= out.d.bits.user
-      when(out.a.fire)(pending := true.B)
-      when(out.d.fire)(pending := false.B)
+      when(out.a.fire)(pending                                 := true.B)
+      when(out.d.fire)(pending                                 := false.B)
       when(active && !pending && !rejected && !legal)(rejected := true.B)
-      when(active && rejected)(rejected := false.B)
-      out.b.ready := true.B
-      out.c.valid := false.B
-      out.c.bits  := 0.U.asTypeOf(out.c.bits)
-      out.e.valid := false.B
-      out.e.bits  := 0.U.asTypeOf(out.e.bits)
+      when(active && rejected)(rejected                        := false.B)
+      out.b.ready                                              := true.B
+      out.c.valid                                              := false.B
+      out.c.bits                                               := 0.U.asTypeOf(out.c.bits)
+      out.e.valid                                              := false.B
+      out.e.bits                                               := 0.U.asTypeOf(out.e.bits)
     }
   }
 }
